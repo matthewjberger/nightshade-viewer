@@ -1,6 +1,3 @@
-use std::sync::Arc;
-use winit::window::{Theme, Window};
-
 #[cfg(target_arch = "wasm32")]
 use futures::channel::oneshot::Receiver;
 
@@ -15,19 +12,19 @@ use wasm_bindgen::prelude::*;
 
 #[derive(Default)]
 pub struct App {
-    window: Option<Arc<Window>>,
+    scene: crate::Scene,
+    window: Option<std::sync::Arc<winit::window::Window>>,
     renderer: Option<crate::graphics::Renderer>,
     gui_state: Option<egui_winit::State>,
     last_render_time: Option<Instant>,
     #[cfg(target_arch = "wasm32")]
     renderer_receiver: Option<Receiver<crate::graphics::Renderer>>,
     last_size: (u32, u32),
-    panels_visible: bool,
 }
 
 impl winit::application::ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let mut attributes = Window::default_attributes();
+        let mut attributes = winit::window::Window::default_attributes();
 
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -57,7 +54,7 @@ impl winit::application::ApplicationHandler for App {
 
         if let Ok(window) = event_loop.create_window(attributes) {
             let first_window_handle = self.window.is_none();
-            let window_handle = Arc::new(window);
+            let window_handle = std::sync::Arc::new(window);
             self.window = Some(window_handle.clone());
             if first_window_handle {
                 let gui_context = egui::Context::default();
@@ -79,7 +76,7 @@ impl winit::application::ApplicationHandler for App {
                     viewport_id,
                     &window_handle,
                     Some(window_handle.scale_factor() as _),
-                    Some(Theme::Dark),
+                    Some(winit::window::Theme::Dark),
                     None,
                 );
 
@@ -187,51 +184,84 @@ impl winit::application::ApplicationHandler for App {
                 let delta_time = now - *last_render_time;
                 *last_render_time = now;
 
+                crate::run_systems(&mut self.scene);
+
                 let gui_input = gui_state.take_egui_input(window);
                 gui_state.egui_ctx().begin_pass(gui_input);
 
-                #[cfg(not(target_arch = "wasm32"))]
-                let title = "Rust/Wgpu";
-
-                #[cfg(feature = "webgpu")]
-                let title = "Rust/Wgpu/Webgpu";
-
-                #[cfg(feature = "webgl")]
-                let title = "Rust/Wgpu/Webgl";
-
-                if self.panels_visible {
-                    egui::TopBottomPanel::top("top").show(gui_state.egui_ctx(), |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("File");
-                            ui.label("Edit");
+                egui::TopBottomPanel::top("menu").show(gui_state.egui_ctx(), |ui| {
+                    egui::menu::bar(ui, |ui| {
+                        egui::global_theme_preference_switch(ui);
+                        ui.separator();
+                        ui.menu_button("Project", |ui| {
+                            let _ = ui.button("Save");
+                            let _ = ui.button("Load");
                         });
+                        ui.separator();
+                        // ui.horizontal(|ui| {
+                        //     ui.label(format!("FPS: {}", world.resources.frames_per_second));
+                        //     ui.separator();
+                        // });
+                        ui.separator();
                     });
-
-                    egui::SidePanel::left("left").show(gui_state.egui_ctx(), |ui| {
-                        ui.heading("Scene Explorer");
-                        if ui.button("Click me!").clicked() {
-                            log::info!("Button clicked!");
-                        }
-                    });
-
-                    egui::SidePanel::right("right").show(gui_state.egui_ctx(), |ui| {
-                        ui.heading("Inspector");
-                        if ui.button("Click me!").clicked() {
-                            log::info!("Button clicked!");
-                        }
-                    });
-
-                    egui::TopBottomPanel::bottom("bottom").show(gui_state.egui_ctx(), |ui| {
-                        ui.heading("Assets");
-                        if ui.button("Click me!").clicked() {
-                            log::info!("Button clicked!");
-                        }
-                    });
-                }
-
-                egui::Window::new(title).show(gui_state.egui_ctx(), |ui| {
-                    ui.checkbox(&mut self.panels_visible, "Show Panels");
                 });
+
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::none())
+                    .show(gui_state.egui_ctx(), |ui| {
+                        let crate::Resources {
+                            tile_tree: Some(tile_tree),
+                            tile_tree_context,
+                            ..
+                        } = &mut self.scene.resources
+                        else {
+                            return;
+                        };
+                        tile_tree.ui(tile_tree_context, ui);
+
+                        if let Some(parent) = tile_tree_context.add_child_to.take() {
+                            let new_child = tile_tree.tiles.insert_pane(crate::Pane {});
+                            if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(
+                                tabs,
+                            ))) = tile_tree.tiles.get_mut(parent)
+                            {
+                                tabs.add_child(new_child);
+                                tabs.set_active(new_child);
+                            }
+                        }
+
+                        if let Some(parent) = tile_tree_context.child_removed.take() {
+                            if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(
+                                tabs,
+                            ))) = tile_tree.tiles.get_mut(parent)
+                            {
+                                if let Some(active_child) = tabs.active.take() {
+                                    tile_tree.remove_recursively(active_child);
+                                }
+                            }
+                        }
+                    });
+
+                // egui::SidePanel::left("left").show(gui_state.egui_ctx(), |ui| {
+                //     ui.heading("Scene");
+                //     if ui.button("Click me!").clicked() {
+                //         log::info!("Button clicked!");
+                //     }
+                // });
+
+                // egui::SidePanel::right("right").show(gui_state.egui_ctx(), |ui| {
+                //     ui.heading("Inspector");
+                //     if ui.button("Click me!").clicked() {
+                //         log::info!("Button clicked!");
+                //     }
+                // });
+
+                // egui::TopBottomPanel::bottom("bottom").show(gui_state.egui_ctx(), |ui| {
+                //     ui.heading("Assets");
+                //     if ui.button("Click me!").clicked() {
+                //         log::info!("Button clicked!");
+                //     }
+                // });
 
                 let egui_winit::egui::FullOutput {
                     textures_delta,
