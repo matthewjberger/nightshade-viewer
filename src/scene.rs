@@ -63,9 +63,10 @@ pub mod resources {
 
     #[derive(Default)]
     pub struct UserInterface {
-        pub gui_state: Option<egui_winit::State>,
+        pub state: Option<egui_winit::State>,
         pub tile_tree: Option<egui_tiles::Tree<Pane>>,
-        pub tile_tree_context: TreeBehavior,
+        pub tile_tree_behavior: TreeBehavior,
+        pub frame_output: Option<(egui::FullOutput, Vec<egui::ClippedPrimitive>)>,
         pub show_left_panel: bool,
         pub show_right_panel: bool,
     }

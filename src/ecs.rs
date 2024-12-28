@@ -125,7 +125,7 @@ macro_rules! ecs {
                     ),
                 );
                 entities.push(entity);
-                location_insert(
+                insert_location(
                     &mut world.entity_locations,
                     entity,
                     (table_index, world.tables[table_index].entity_indices.len() - 1),
@@ -182,7 +182,7 @@ macro_rules! ecs {
 
         /// Get a specific component for an entity
         pub fn get_component<T: 'static>(world: &$world, entity: EntityId, mask: u32) -> Option<&T> {
-           let (table_index, array_index) = location_get(&world.entity_locations, entity)?;
+           let (table_index, array_index) = get_location(&world.entity_locations, entity)?;
 
            // Early return if entity is despawned
            if !world.entity_locations.locations[entity.id as usize].allocated {
@@ -200,7 +200,7 @@ macro_rules! ecs {
                    // SAFETY: This operation is safe because:
                    // 1. We verify the component type T exactly matches $type via TypeId
                    // 2. We confirm the table contains this component via mask check
-                   // 3. array_index is valid from location_get bounds check
+                   // 3. array_index is valid from get_location bounds check
                    // 4. The reference is valid for the lifetime of the return value
                    //    because it's tied to the table reference lifetime
                    // 5. No mutable aliases can exist during the shared borrow
@@ -214,7 +214,7 @@ macro_rules! ecs {
 
         /// Get a mutable reference to a specific component for an entity
         pub fn get_component_mut<T: 'static>(world: &mut $world, entity: EntityId, mask: u32) -> Option<&mut T> {
-            let (table_index, array_index) = location_get(&world.entity_locations, entity)?;
+            let (table_index, array_index) = get_location(&world.entity_locations, entity)?;
             let table = &mut world.tables[table_index];
             if table.mask & mask == 0 {
                 return None;
@@ -225,7 +225,7 @@ macro_rules! ecs {
                     // SAFETY: This operation is safe because:
                     // 1. We verify the component type T exactly matches $type via TypeId
                     // 2. We confirm the table contains this component via mask check
-                    // 3. array_index is valid from location_get bounds check
+                    // 3. array_index is valid from get_location bounds check
                     // 4. We have exclusive access through the mutable borrow
                     // 5. The borrow checker ensures no other references exist
                     // 6. The pointer cast is valid as we verified the types are identical
@@ -297,7 +297,7 @@ macro_rules! ecs {
 
         /// Add components to an entity
         pub fn add_components(world: &mut $world, entity: EntityId, mask: u32) -> bool {
-            if let Some((table_index, array_index)) = location_get(&world.entity_locations, entity) {
+            if let Some((table_index, array_index)) = get_location(&world.entity_locations, entity) {
                 let current_mask = world.tables[table_index].mask;
                 if current_mask & mask == mask {
                     return true;
@@ -321,7 +321,7 @@ macro_rules! ecs {
 
         /// Remove components from an entity
         pub fn remove_components(world: &mut $world, entity: EntityId, mask: u32) -> bool {
-            if let Some((table_index, array_index)) = location_get(&world.entity_locations, entity) {
+            if let Some((table_index, array_index)) = get_location(&world.entity_locations, entity) {
                 let current_mask = world.tables[table_index].mask;
                 if current_mask & mask == 0 {
                     return true;
@@ -346,7 +346,7 @@ macro_rules! ecs {
 
         /// Get the current component mask for an entity
         pub fn component_mask(world: &$world, entity: EntityId) -> Option<u32> {
-            location_get(&world.entity_locations, entity)
+            get_location(&world.entity_locations, entity)
                 .map(|(table_index, _)| world.tables[table_index].mask)
         }
 
@@ -378,10 +378,10 @@ macro_rules! ecs {
             let components = get_components(&world.tables[from_table], from_index);
             add_to_table(&mut world.tables[to_table], entity, components);
             let new_index = world.tables[to_table].entity_indices.len() - 1;
-            location_insert(&mut world.entity_locations, entity, (to_table, new_index));
+            insert_location(&mut world.entity_locations, entity, (to_table, new_index));
 
             if let Some(swapped) = remove_from_table(&mut world.tables[from_table], from_index) {
-                location_insert(
+                insert_location(
                     &mut world.entity_locations,
                     swapped,
                     (from_table, from_index),
@@ -404,7 +404,7 @@ macro_rules! ecs {
             )
         }
 
-        fn location_get(locations: &EntityLocations, entity: EntityId) -> Option<(usize, usize)> {
+        fn get_location(locations: &EntityLocations, entity: EntityId) -> Option<(usize, usize)> {
             let id = entity.id as usize;
             if id >= locations.locations.len() {
                 return None;
@@ -418,7 +418,7 @@ macro_rules! ecs {
 
             Some((location.table_index as usize, location.array_index as usize))        }
 
-        fn location_insert(
+        fn insert_location(
             locations: &mut EntityLocations,
             entity: EntityId,
             location: (usize, usize),

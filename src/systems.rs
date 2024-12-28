@@ -2,6 +2,7 @@
 pub fn run_systems(scene: &mut crate::Scene) {
     update_frame_timing_system(scene);
     ensure_tile_tree_system(scene);
+    ui_system(scene);
 }
 
 /// Calculates and refreshes frame timing values such as delta time
@@ -83,20 +84,13 @@ fn ensure_tile_tree_system(scene: &mut crate::Scene) {
 
 /// Creates the UI for the frame and
 /// emits the resources needed for rendering
-pub fn ui_system(
-    scene: &mut crate::Scene,
-) -> Option<(
-    egui::Context,
-    egui::TexturesDelta,
-    Vec<egui::epaint::ClippedShape>,
-    f32,
-)> {
+fn ui_system(scene: &mut crate::Scene) {
     let ui = {
-        let Some(gui_state) = scene.resources.user_interface.gui_state.as_mut() else {
-            return None;
+        let Some(gui_state) = scene.resources.user_interface.state.as_mut() else {
+            return;
         };
         let Some(window_handle) = scene.resources.window.handle.as_ref() else {
-            return None;
+            return;
         };
         let gui_input = gui_state.take_egui_input(window_handle);
         gui_state.egui_ctx().begin_pass(gui_input);
@@ -129,13 +123,14 @@ pub fn ui_system(
     });
     let crate::UserInterface {
         tile_tree: Some(tile_tree),
-        tile_tree_context,
-        gui_state: Some(gui_state),
+        tile_tree_behavior: tile_tree_context,
+        state: Some(gui_state),
         show_left_panel,
         show_right_panel,
+        frame_output,
     } = &mut scene.resources.user_interface
     else {
-        return None;
+        return;
     };
     if *show_left_panel {
         egui::SidePanel::left("left").show(gui_state.egui_ctx(), |ui| {
@@ -161,11 +156,7 @@ pub fn ui_system(
                 }
             }
         });
-    let egui_winit::egui::FullOutput {
-        textures_delta,
-        shapes,
-        pixels_per_point,
-        ..
-    } = ui.end_pass();
-    Some((ui, textures_delta, shapes, pixels_per_point))
+    let output = ui.end_pass();
+    let paint_jobs = ui.tessellate(output.shapes.clone(), output.pixels_per_point);
+    *frame_output = Some((output, paint_jobs));
 }

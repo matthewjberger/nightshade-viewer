@@ -112,7 +112,7 @@ impl winit::application::ApplicationHandler for App {
                     });
                 }
 
-                self.scene.resources.user_interface.gui_state = Some(gui_state);
+                self.scene.resources.user_interface.state = Some(gui_state);
                 self.scene.resources.frame_timing.last_frame_start_instant = Some(Instant::now());
             }
         }
@@ -147,7 +147,7 @@ impl winit::application::ApplicationHandler for App {
         };
 
         // Receive gui window event
-        if let Some(gui_state) = &mut self.scene.resources.user_interface.gui_state {
+        if let Some(gui_state) = &mut self.scene.resources.user_interface.state {
             if let Some(window_handle) = self.scene.resources.window.handle.as_ref() {
                 if gui_state.on_window_event(window_handle, &event).consumed {
                     return;
@@ -182,29 +182,25 @@ impl winit::application::ApplicationHandler for App {
             winit::event::WindowEvent::RedrawRequested => {
                 crate::run_systems(&mut self.scene);
 
-                let (ui, textures_delta, shapes, pixels_per_point) =
-                    match crate::ui_system(&mut self.scene) {
-                        Some(value) => value,
-                        None => return,
-                    };
+                if let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
+                    self.scene.resources.user_interface.frame_output.take()
+                {
+                    if let Some(window_handle) = self.scene.resources.window.handle.as_ref() {
+                        let screen_descriptor = {
+                            let (width, height) = self.last_size;
+                            egui_wgpu::ScreenDescriptor {
+                                size_in_pixels: [width, height],
+                                pixels_per_point: window_handle.scale_factor() as f32,
+                            }
+                        };
 
-                let paint_jobs = ui.tessellate(shapes, pixels_per_point);
-
-                if let Some(window_handle) = self.scene.resources.window.handle.as_ref() {
-                    let screen_descriptor = {
-                        let (width, height) = self.last_size;
-                        egui_wgpu::ScreenDescriptor {
-                            size_in_pixels: [width, height],
-                            pixels_per_point: window_handle.scale_factor() as f32,
-                        }
-                    };
-
-                    renderer.render_frame(
-                        screen_descriptor,
-                        paint_jobs,
-                        textures_delta,
-                        self.scene.resources.frame_timing.delta_time,
-                    );
+                        renderer.render_frame(
+                            screen_descriptor,
+                            paint_jobs,
+                            textures_delta,
+                            self.scene.resources.frame_timing.delta_time,
+                        );
+                    }
                 }
             }
             _ => (),
