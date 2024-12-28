@@ -5,9 +5,7 @@ crate::ecs! {
         parent: Parent => PARENT,
     }
     Resources {
-        #[serde(skip)] frames_per_second: f32,
-        #[serde(skip)] delta_time: f32,
-        #[serde(skip)] last_render_time: Option<crate::Instant>,
+        #[serde(skip)] frame_timing: FrameTiming,
         #[serde(skip)] gui_state: Option<egui_winit::State>,
         #[serde(skip)] tile_tree: Option<egui_tiles::Tree<Pane>>,
         #[serde(skip)] tile_tree_context: TreeBehavior,
@@ -58,6 +56,30 @@ pub mod components {
 pub use resources::*;
 pub mod resources {
     use std::collections::{HashMap, HashSet};
+
+    #[derive(Default, Debug, Copy, Clone, PartialEq)]
+    pub struct FrameTiming {
+        /// The number of frames rendered per second
+        pub frames_per_second: f32,
+
+        /// The time between the last frame and the current frame
+        pub delta_time: f32,
+
+        /// The time the current frame was started
+        pub last_frame_start_instant: Option<crate::Instant>,
+
+        /// When the current frame started
+        pub current_frame_start_instant: Option<crate::Instant>,
+
+        /// When the initial frame started, when the application starts up
+        pub initial_frame_start_instant: Option<crate::Instant>,
+
+        /// A monotonically increasing counter incremented each frame
+        pub frame_counter: u32,
+
+        /// Milliseconds that the process has been running continuously
+        pub uptime_milliseconds: u64,
+    }
 
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
     pub struct Pane {}

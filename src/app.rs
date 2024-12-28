@@ -114,7 +114,7 @@ impl winit::application::ApplicationHandler for App {
                 }
 
                 self.scene.resources.gui_state = Some(gui_state);
-                self.scene.resources.last_render_time = Some(Instant::now());
+                self.scene.resources.frame_timing.last_frame_start_instant = Some(Instant::now());
             }
         }
     }
@@ -199,12 +199,13 @@ impl winit::application::ApplicationHandler for App {
                             let _ = ui.button("Save");
                             let _ = ui.button("Load");
                         });
-                        ui.separator();
-                        // ui.horizontal(|ui| {
-                        //     ui.label(format!("FPS: {}", world.resources.frames_per_second));
-                        //     ui.separator();
-                        // });
-                        ui.separator();
+                        ui.horizontal(|ui| {
+                            ui.label(format!(
+                                "FPS: {}",
+                                self.scene.resources.frame_timing.frames_per_second
+                            ));
+                            ui.separator();
+                        });
                     });
                 });
 
@@ -286,7 +287,7 @@ impl winit::application::ApplicationHandler for App {
                     screen_descriptor,
                     paint_jobs,
                     textures_delta,
-                    self.scene.resources.delta_time,
+                    self.scene.resources.frame_timing.delta_time,
                 );
             }
             _ => (),

@@ -1,26 +1,76 @@
 /// This runs the systems that update the scene
 pub fn run_systems(scene: &mut crate::Scene) {
-    delta_time_system(scene);
+    update_frame_timing_system(scene);
     ensure_tile_tree_system(scene);
 }
 
-fn delta_time_system(scene: &mut crate::Scene) {
+/// Calculates and refreshes frame timing values such as delta time
+fn update_frame_timing_system(scene: &mut crate::Scene) {
     let now = crate::Instant::now();
-    let delta_time = if let Some(last_render_time) = scene.resources.last_render_time {
-        (now - last_render_time).as_secs_f32()
-    } else {
-        0.0
-    };
-    scene.resources.last_render_time = Some(now);
-    scene.resources.delta_time = delta_time;
+
+    let crate::Scene {
+        resources:
+            crate::Resources {
+                frame_timing:
+                    crate::FrameTiming {
+                        frames_per_second,
+                        delta_time,
+                        last_frame_start_instant,
+                        current_frame_start_instant,
+                        initial_frame_start_instant,
+                        frame_counter,
+                        uptime_milliseconds,
+                    },
+                ..
+            },
+        ..
+    } = scene;
+
+    // Capture first instant
+    if initial_frame_start_instant.is_none() {
+        *initial_frame_start_instant = Some(now);
+    }
+
+    // Delta time
+    *delta_time =
+        last_frame_start_instant.map_or(0.0, |last_frame| (now - last_frame).as_secs_f32());
+
+    // Last frame start
+    *last_frame_start_instant = Some(now);
+
+    // Current frame start
+    if current_frame_start_instant.is_none() {
+        *current_frame_start_instant = Some(now);
+    }
+
+    // Calculate uptime
+    if let Some(app_start) = *initial_frame_start_instant {
+        *uptime_milliseconds = (now - app_start).as_millis() as u64;
+    }
+
+    // Calculate frames per second
+    *frame_counter += 1;
+    match current_frame_start_instant.as_ref() {
+        Some(start) => {
+            if (now - *start).as_secs_f32() >= 1.0 {
+                *frames_per_second = *frame_counter as f32;
+                *frame_counter = 0;
+                *current_frame_start_instant = Some(now);
+            }
+        }
+        None => {
+            *current_frame_start_instant = Some(now);
+        }
+    }
 }
 
 /// Ensures a default layout when the tile tree is emptied
 fn ensure_tile_tree_system(scene: &mut crate::Scene) {
-    if scene.resources.tile_tree.is_some() {
-        return;
+    if let Some(tile_tree) = &scene.resources.tile_tree {
+        if !tile_tree.tiles.is_empty() {
+            return;
+        }
     }
-    log::info!("Creating default tile tree");
     let mut tiles = egui_tiles::Tiles::default();
     let mut tab_tiles = vec![];
     let tab_tile_child = tiles.insert_pane(crate::Pane::default());
