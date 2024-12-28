@@ -6,6 +6,7 @@ crate::ecs! {
     }
     Resources {
         #[serde(skip)] window: Window,
+        #[serde(skip)] graphics: Graphics,
         #[serde(skip)] frame_timing: FrameTiming,
         #[serde(skip)] user_interface: UserInterface,
     }
@@ -59,6 +60,15 @@ pub mod resources {
     #[derive(Default)]
     pub struct Window {
         pub handle: Option<std::sync::Arc<winit::window::Window>>,
+    }
+
+    #[derive(Default)]
+    pub struct Graphics {
+        pub renderer: Option<crate::graphics::Renderer>,
+        #[cfg(target_arch = "wasm32")]
+        pub renderer_receiver:
+            Option<futures::channel::oneshot::Receiver<crate::graphics::Renderer>>,
+        pub last_size: (u32, u32),
     }
 
     #[derive(Default)]

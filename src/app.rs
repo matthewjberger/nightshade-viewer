@@ -4,10 +4,6 @@ use wasm_bindgen::prelude::*;
 #[derive(Default)]
 pub struct App {
     scene: crate::Scene,
-    renderer: Option<crate::graphics::Renderer>,
-    #[cfg(target_arch = "wasm32")]
-    renderer_receiver: Option<futures::channel::oneshot::Receiver<crate::graphics::Renderer>>,
-    last_size: (u32, u32),
 }
 
 impl winit::application::ApplicationHandler for App {
@@ -36,7 +32,7 @@ impl winit::application::ApplicationHandler for App {
                 .unwrap();
             canvas_width = canvas.width();
             canvas_height = canvas.height();
-            self.last_size = (canvas_width, canvas_height);
+            self.scene.resources.graphics.last_size = (canvas_width, canvas_height);
             attributes = attributes.with_canvas(Some(canvas));
         }
 
@@ -50,7 +46,7 @@ impl winit::application::ApplicationHandler for App {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     let inner_size = window_handle.inner_size();
-                    self.last_size = (inner_size.width, inner_size.height);
+                    self.scene.resources.graphics.last_size = (inner_size.width, inner_size.height);
                 }
 
                 #[cfg(target_arch = "wasm32")]
@@ -80,13 +76,13 @@ impl winit::application::ApplicationHandler for App {
                     let renderer = pollster::block_on(async move {
                         crate::graphics::Renderer::new(window_handle.clone(), width, height).await
                     });
-                    self.renderer = Some(renderer);
+                    self.scene.resources.graphics.renderer = Some(renderer);
                 }
 
                 #[cfg(target_arch = "wasm32")]
                 {
                     let (sender, receiver) = futures::channel::oneshot::channel();
-                    self.renderer_receiver = Some(receiver);
+                    self.scene.resources.graphics.renderer_receiver = Some(receiver);
                     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
                     console_log::init().expect("Failed to initialize logger!");
                     log::info!("Canvas dimensions: ({canvas_width} x {canvas_height})");
@@ -119,24 +115,20 @@ impl winit::application::ApplicationHandler for App {
         #[cfg(target_arch = "wasm32")]
         {
             let mut renderer_received = false;
-            if let Some(receiver) = self.renderer_receiver.as_mut() {
+            if let Some(receiver) = self.scene.resources.graphics.renderer_receiver.as_mut() {
                 if let Ok(Some(renderer)) = receiver.try_recv() {
-                    self.renderer = Some(renderer);
+                    self.scene.resources.graphics.renderer = Some(renderer);
                     renderer_received = true;
                 }
             }
             if renderer_received {
-                self.renderer_receiver = None;
+                self.scene.resources.graphics.renderer_receiver = None;
             }
         }
 
-        let Self {
-            renderer: Some(renderer),
-            ..
-        } = self
-        else {
+        if self.scene.resources.graphics.renderer.is_none() {
             return;
-        };
+        }
 
         // Receive gui window event
         if let Some(gui_state) = &mut self.scene.resources.user_interface.state {
@@ -164,8 +156,10 @@ impl winit::application::ApplicationHandler for App {
             }
             winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) => {
                 log::info!("Resizing renderer surface to: ({width}, {height})");
-                renderer.resize(width, height);
-                self.last_size = (width, height);
+                if let Some(renderer) = self.scene.resources.graphics.renderer.as_mut() {
+                    renderer.resize(width, height);
+                }
+                self.scene.resources.graphics.last_size = (width, height);
             }
             winit::event::WindowEvent::CloseRequested => {
                 log::info!("Close requested. Exiting...");
@@ -179,19 +173,22 @@ impl winit::application::ApplicationHandler for App {
                 {
                     if let Some(window_handle) = self.scene.resources.window.handle.as_ref() {
                         let screen_descriptor = {
-                            let (width, height) = self.last_size;
+                            let (width, height) = self.scene.resources.graphics.last_size;
                             egui_wgpu::ScreenDescriptor {
                                 size_in_pixels: [width, height],
                                 pixels_per_point: window_handle.scale_factor() as f32,
                             }
                         };
 
-                        renderer.render_frame(
-                            screen_descriptor,
-                            paint_jobs,
-                            textures_delta,
-                            self.scene.resources.frame_timing.delta_time,
-                        );
+                        let delta_time = self.scene.resources.frame_timing.delta_time;
+                        if let Some(renderer) = self.scene.resources.graphics.renderer.as_mut() {
+                            renderer.render_frame(
+                                screen_descriptor,
+                                paint_jobs,
+                                textures_delta,
+                                delta_time,
+                            );
+                        }
                     }
                 }
             }
