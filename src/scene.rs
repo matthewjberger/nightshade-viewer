@@ -7,9 +7,7 @@ crate::ecs! {
     Resources {
         #[serde(skip)] window: Window,
         #[serde(skip)] frame_timing: FrameTiming,
-        #[serde(skip)] gui_state: Option<egui_winit::State>,
-        #[serde(skip)] tile_tree: Option<egui_tiles::Tree<Pane>>,
-        #[serde(skip)] tile_tree_context: TreeBehavior,
+        #[serde(skip)] user_interface: UserInterface,
     }
 }
 
@@ -63,6 +61,15 @@ pub mod resources {
         pub handle: Option<std::sync::Arc<winit::window::Window>>,
     }
 
+    #[derive(Default)]
+    pub struct UserInterface {
+        pub gui_state: Option<egui_winit::State>,
+        pub tile_tree: Option<egui_tiles::Tree<Pane>>,
+        pub tile_tree_context: TreeBehavior,
+        pub show_left_panel: bool,
+        pub show_right_panel: bool,
+    }
+
     #[derive(Default, Debug, Copy, Clone, PartialEq)]
     pub struct FrameTiming {
         /// The number of frames rendered per second
@@ -95,7 +102,6 @@ pub mod resources {
         pub visible_tiles: HashSet<egui_tiles::TileId>,
         pub tile_rects: HashMap<egui_tiles::TileId, egui::Rect>,
         pub add_child_to: Option<egui_tiles::TileId>,
-        pub child_removed: Option<egui_tiles::TileId>,
     }
 
     impl egui_tiles::Behavior<Pane> for TreeBehavior {
@@ -136,9 +142,6 @@ pub mod resources {
         ) {
             if ui.button("➕").clicked() {
                 self.add_child_to = Some(tile_id);
-            }
-            if ui.button("🗑").clicked() {
-                self.child_removed = Some(tile_id);
             }
         }
 

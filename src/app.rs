@@ -112,7 +112,7 @@ impl winit::application::ApplicationHandler for App {
                     });
                 }
 
-                self.scene.resources.gui_state = Some(gui_state);
+                self.scene.resources.user_interface.gui_state = Some(gui_state);
                 self.scene.resources.frame_timing.last_frame_start_instant = Some(Instant::now());
             }
         }
@@ -147,7 +147,7 @@ impl winit::application::ApplicationHandler for App {
         };
 
         // Receive gui window event
-        if let Some(gui_state) = &mut self.scene.resources.gui_state {
+        if let Some(gui_state) = &mut self.scene.resources.user_interface.gui_state {
             if let Some(window_handle) = self.scene.resources.window.handle.as_ref() {
                 if gui_state.on_window_event(window_handle, &event).consumed {
                     return;
@@ -182,99 +182,11 @@ impl winit::application::ApplicationHandler for App {
             winit::event::WindowEvent::RedrawRequested => {
                 crate::run_systems(&mut self.scene);
 
-                let ui = {
-                    let Some(gui_state) = self.scene.resources.gui_state.as_mut() else {
-                        return;
+                let (ui, textures_delta, shapes, pixels_per_point) =
+                    match crate::ui_system(&mut self.scene) {
+                        Some(value) => value,
+                        None => return,
                     };
-                    let Some(window_handle) = self.scene.resources.window.handle.as_ref() else {
-                        return;
-                    };
-                    let gui_input = gui_state.take_egui_input(window_handle);
-                    gui_state.egui_ctx().begin_pass(gui_input);
-                    gui_state.egui_ctx().clone()
-                };
-
-                egui::TopBottomPanel::top("menu").show(&ui, |ui| {
-                    egui::menu::bar(ui, |ui| {
-                        egui::global_theme_preference_switch(ui);
-                        ui.separator();
-                        ui.menu_button("Project", |ui| {
-                            let _ = ui.button("Save");
-                            let _ = ui.button("Load");
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label(format!(
-                                "FPS: {}",
-                                self.scene.resources.frame_timing.frames_per_second
-                            ));
-                            ui.separator();
-                        });
-                    });
-                });
-
-                egui::CentralPanel::default()
-                    .frame(egui::Frame::none())
-                    .show(&ui, |ui| {
-                        let crate::Resources {
-                            tile_tree: Some(tile_tree),
-                            tile_tree_context,
-                            ..
-                        } = &mut self.scene.resources
-                        else {
-                            return;
-                        };
-                        tile_tree.ui(tile_tree_context, ui);
-
-                        if let Some(parent) = tile_tree_context.add_child_to.take() {
-                            let new_child = tile_tree.tiles.insert_pane(crate::Pane {});
-                            if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(
-                                tabs,
-                            ))) = tile_tree.tiles.get_mut(parent)
-                            {
-                                tabs.add_child(new_child);
-                                tabs.set_active(new_child);
-                            }
-                        }
-
-                        if let Some(parent) = tile_tree_context.child_removed.take() {
-                            if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(
-                                tabs,
-                            ))) = tile_tree.tiles.get_mut(parent)
-                            {
-                                if let Some(active_child) = tabs.active.take() {
-                                    tile_tree.remove_recursively(active_child);
-                                }
-                            }
-                        }
-                    });
-
-                // egui::SidePanel::left("left").show(gui_state.egui_ctx(), |ui| {
-                //     ui.heading("Scene");
-                //     if ui.button("Click me!").clicked() {
-                //         log::info!("Button clicked!");
-                //     }
-                // });
-
-                // egui::SidePanel::right("right").show(gui_state.egui_ctx(), |ui| {
-                //     ui.heading("Inspector");
-                //     if ui.button("Click me!").clicked() {
-                //         log::info!("Button clicked!");
-                //     }
-                // });
-
-                // egui::TopBottomPanel::bottom("bottom").show(gui_state.egui_ctx(), |ui| {
-                //     ui.heading("Assets");
-                //     if ui.button("Click me!").clicked() {
-                //         log::info!("Button clicked!");
-                //     }
-                // });
-
-                let egui_winit::egui::FullOutput {
-                    textures_delta,
-                    shapes,
-                    pixels_per_point,
-                    ..
-                } = ui.end_pass();
 
                 let paint_jobs = ui.tessellate(shapes, pixels_per_point);
 

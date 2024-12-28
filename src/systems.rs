@@ -66,7 +66,7 @@ fn update_frame_timing_system(scene: &mut crate::Scene) {
 
 /// Ensures a default layout when the tile tree is emptied
 fn ensure_tile_tree_system(scene: &mut crate::Scene) {
-    if let Some(tile_tree) = &scene.resources.tile_tree {
+    if let Some(tile_tree) = &scene.resources.user_interface.tile_tree {
         if !tile_tree.tiles.is_empty() {
             return;
         }
@@ -78,5 +78,94 @@ fn ensure_tile_tree_system(scene: &mut crate::Scene) {
     tab_tiles.push(tab_tile);
     let root = tiles.insert_tab_tile(tab_tiles);
     let tiles = egui_tiles::Tree::new("tree", root, tiles);
-    scene.resources.tile_tree = Some(tiles);
+    scene.resources.user_interface.tile_tree = Some(tiles);
+}
+
+/// Creates the UI for the frame and
+/// emits the resources needed for rendering
+pub fn ui_system(
+    scene: &mut crate::Scene,
+) -> Option<(
+    egui::Context,
+    egui::TexturesDelta,
+    Vec<egui::epaint::ClippedShape>,
+    f32,
+)> {
+    let ui = {
+        let Some(gui_state) = scene.resources.user_interface.gui_state.as_mut() else {
+            return None;
+        };
+        let Some(window_handle) = scene.resources.window.handle.as_ref() else {
+            return None;
+        };
+        let gui_input = gui_state.take_egui_input(window_handle);
+        gui_state.egui_ctx().begin_pass(gui_input);
+        gui_state.egui_ctx().clone()
+    };
+    egui::TopBottomPanel::top("menu").show(&ui, |ui| {
+        egui::menu::bar(ui, |ui| {
+            egui::global_theme_preference_switch(ui);
+            ui.separator();
+            ui.menu_button("Project", |ui| {
+                let _ = ui.button("Save");
+                let _ = ui.button("Load");
+            });
+            ui.separator();
+            ui.label(format!(
+                "FPS: {}",
+                scene.resources.frame_timing.frames_per_second
+            ));
+            ui.separator();
+            ui.checkbox(
+                &mut scene.resources.user_interface.show_left_panel,
+                "Show Left Panel",
+            );
+            ui.checkbox(
+                &mut scene.resources.user_interface.show_right_panel,
+                "Show Right Panel",
+            );
+            ui.separator();
+        });
+    });
+    let crate::UserInterface {
+        tile_tree: Some(tile_tree),
+        tile_tree_context,
+        gui_state: Some(gui_state),
+        show_left_panel,
+        show_right_panel,
+    } = &mut scene.resources.user_interface
+    else {
+        return None;
+    };
+    if *show_left_panel {
+        egui::SidePanel::left("left").show(gui_state.egui_ctx(), |ui| {
+            ui.collapsing("Scene", |_ui| {});
+        });
+    }
+    if *show_right_panel {
+        egui::SidePanel::right("right").show(gui_state.egui_ctx(), |ui| {
+            ui.heading("Inspector");
+        });
+    }
+    egui::CentralPanel::default()
+        .frame(egui::Frame::none())
+        .show(&ui, |ui| {
+            tile_tree.ui(tile_tree_context, ui);
+            if let Some(parent) = tile_tree_context.add_child_to.take() {
+                let new_child = tile_tree.tiles.insert_pane(crate::Pane {});
+                if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
+                    tile_tree.tiles.get_mut(parent)
+                {
+                    tabs.add_child(new_child);
+                    tabs.set_active(new_child);
+                }
+            }
+        });
+    let egui_winit::egui::FullOutput {
+        textures_delta,
+        shapes,
+        pixels_per_point,
+        ..
+    } = ui.end_pass();
+    Some((ui, textures_delta, shapes, pixels_per_point))
 }
