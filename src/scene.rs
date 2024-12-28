@@ -5,7 +5,10 @@ crate::ecs! {
         parent: Parent => PARENT,
     }
     Resources {
-        frames_per_second: f32,
+        #[serde(skip)] frames_per_second: f32,
+        #[serde(skip)] delta_time: f32,
+        #[serde(skip)] last_render_time: Option<crate::Instant>,
+        #[serde(skip)] gui_state: Option<egui_winit::State>,
         #[serde(skip)] tile_tree: Option<egui_tiles::Tree<Pane>>,
         #[serde(skip)] tile_tree_context: TreeBehavior,
     }

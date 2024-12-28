@@ -15,8 +15,6 @@ pub struct App {
     scene: crate::Scene,
     window: Option<std::sync::Arc<winit::window::Window>>,
     renderer: Option<crate::graphics::Renderer>,
-    gui_state: Option<egui_winit::State>,
-    last_render_time: Option<Instant>,
     #[cfg(target_arch = "wasm32")]
     renderer_receiver: Option<Receiver<crate::graphics::Renderer>>,
     last_size: (u32, u32),
@@ -115,8 +113,8 @@ impl winit::application::ApplicationHandler for App {
                     });
                 }
 
-                self.gui_state = Some(gui_state);
-                self.last_render_time = Some(Instant::now());
+                self.scene.resources.gui_state = Some(gui_state);
+                self.scene.resources.last_render_time = Some(Instant::now());
             }
         }
     }
@@ -141,18 +139,20 @@ impl winit::application::ApplicationHandler for App {
             }
         }
 
-        let (Some(gui_state), Some(renderer), Some(window), Some(last_render_time)) = (
-            self.gui_state.as_mut(),
-            self.renderer.as_mut(),
-            self.window.as_ref(),
-            self.last_render_time.as_mut(),
-        ) else {
+        let Self {
+            window: Some(window),
+            renderer: Some(renderer),
+            ..
+        } = self
+        else {
             return;
         };
 
         // Receive gui window event
-        if gui_state.on_window_event(window, &event).consumed {
-            return;
+        if let Some(gui_state) = &mut self.scene.resources.gui_state {
+            if gui_state.on_window_event(window, &event).consumed {
+                return;
+            }
         }
 
         // If the gui didn't consume the event, handle it
@@ -180,16 +180,18 @@ impl winit::application::ApplicationHandler for App {
                 event_loop.exit();
             }
             winit::event::WindowEvent::RedrawRequested => {
-                let now = Instant::now();
-                let delta_time = now - *last_render_time;
-                *last_render_time = now;
-
                 crate::run_systems(&mut self.scene);
 
-                let gui_input = gui_state.take_egui_input(window);
-                gui_state.egui_ctx().begin_pass(gui_input);
+                let ui = {
+                    let Some(gui_state) = self.scene.resources.gui_state.as_mut() else {
+                        return;
+                    };
+                    let gui_input = gui_state.take_egui_input(window);
+                    gui_state.egui_ctx().begin_pass(gui_input);
+                    gui_state.egui_ctx().clone()
+                };
 
-                egui::TopBottomPanel::top("menu").show(gui_state.egui_ctx(), |ui| {
+                egui::TopBottomPanel::top("menu").show(&ui, |ui| {
                     egui::menu::bar(ui, |ui| {
                         egui::global_theme_preference_switch(ui);
                         ui.separator();
@@ -208,7 +210,7 @@ impl winit::application::ApplicationHandler for App {
 
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none())
-                    .show(gui_state.egui_ctx(), |ui| {
+                    .show(&ui, |ui| {
                         let crate::Resources {
                             tile_tree: Some(tile_tree),
                             tile_tree_context,
@@ -268,9 +270,9 @@ impl winit::application::ApplicationHandler for App {
                     shapes,
                     pixels_per_point,
                     ..
-                } = gui_state.egui_ctx().end_pass();
+                } = ui.end_pass();
 
-                let paint_jobs = gui_state.egui_ctx().tessellate(shapes, pixels_per_point);
+                let paint_jobs = ui.tessellate(shapes, pixels_per_point);
 
                 let screen_descriptor = {
                     let (width, height) = self.last_size;
@@ -280,7 +282,12 @@ impl winit::application::ApplicationHandler for App {
                     }
                 };
 
-                renderer.render_frame(screen_descriptor, paint_jobs, textures_delta, delta_time);
+                renderer.render_frame(
+                    screen_descriptor,
+                    paint_jobs,
+                    textures_delta,
+                    self.scene.resources.delta_time,
+                );
             }
             _ => (),
         }

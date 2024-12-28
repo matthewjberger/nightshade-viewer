@@ -44,10 +44,8 @@ impl Renderer {
         screen_descriptor: egui_wgpu::ScreenDescriptor,
         paint_jobs: Vec<egui::epaint::ClippedPrimitive>,
         textures_delta: egui::TexturesDelta,
-        delta_time: crate::Duration,
+        delta_time: f32,
     ) {
-        let delta_time = delta_time.as_secs_f32();
-
         self.scene
             .update(&self.gpu.queue, self.gpu.aspect_ratio(), delta_time);
 
