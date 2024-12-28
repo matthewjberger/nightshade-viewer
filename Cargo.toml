@@ -6,7 +6,7 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
-name = "app_core"
+name = "hemlock"
 
 [dependencies]
 bytemuck = { version = "1.21.0", features = ["derive"] }
