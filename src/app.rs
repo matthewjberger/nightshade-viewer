@@ -1,13 +1,4 @@
 #[cfg(target_arch = "wasm32")]
-use futures::channel::oneshot::Receiver;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use std::time::{Duration, Instant};
-
-#[cfg(target_arch = "wasm32")]
-pub use web_time::{Duration, Instant};
-
-#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 #[derive(Default)]
@@ -15,7 +6,7 @@ pub struct App {
     scene: crate::Scene,
     renderer: Option<crate::graphics::Renderer>,
     #[cfg(target_arch = "wasm32")]
-    renderer_receiver: Option<Receiver<crate::graphics::Renderer>>,
+    renderer_receiver: Option<futures::channel::oneshot::Receiver<crate::graphics::Renderer>>,
     last_size: (u32, u32),
 }
 
@@ -113,7 +104,8 @@ impl winit::application::ApplicationHandler for App {
                 }
 
                 self.scene.resources.user_interface.state = Some(gui_state);
-                self.scene.resources.frame_timing.last_frame_start_instant = Some(Instant::now());
+                self.scene.resources.frame_timing.last_frame_start_instant =
+                    Some(web_time::Instant::now());
             }
         }
     }

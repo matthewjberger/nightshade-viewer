@@ -80,13 +80,13 @@ pub mod resources {
         pub delta_time: f32,
 
         /// The time the current frame was started
-        pub last_frame_start_instant: Option<crate::Instant>,
+        pub last_frame_start_instant: Option<web_time::Instant>,
 
         /// When the current frame started
-        pub current_frame_start_instant: Option<crate::Instant>,
+        pub current_frame_start_instant: Option<web_time::Instant>,
 
         /// When the initial frame started, when the application starts up
-        pub initial_frame_start_instant: Option<crate::Instant>,
+        pub initial_frame_start_instant: Option<web_time::Instant>,
 
         /// A monotonically increasing counter incremented each frame
         pub frame_counter: u32,

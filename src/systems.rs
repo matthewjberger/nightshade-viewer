@@ -7,7 +7,7 @@ pub fn run_systems(scene: &mut crate::Scene) {
 
 /// Calculates and refreshes frame timing values such as delta time
 fn update_frame_timing_system(scene: &mut crate::Scene) {
-    let now = crate::Instant::now();
+    let now = web_time::Instant::now();
 
     let crate::Scene {
         resources:
