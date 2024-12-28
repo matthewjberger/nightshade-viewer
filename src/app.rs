@@ -13,7 +13,6 @@ use wasm_bindgen::prelude::*;
 #[derive(Default)]
 pub struct App {
     scene: crate::Scene,
-    window: Option<std::sync::Arc<winit::window::Window>>,
     renderer: Option<crate::graphics::Renderer>,
     #[cfg(target_arch = "wasm32")]
     renderer_receiver: Option<Receiver<crate::graphics::Renderer>>,
@@ -51,9 +50,9 @@ impl winit::application::ApplicationHandler for App {
         }
 
         if let Ok(window) = event_loop.create_window(attributes) {
-            let first_window_handle = self.window.is_none();
+            let first_window_handle = self.scene.resources.window.handle.is_none();
             let window_handle = std::sync::Arc::new(window);
-            self.window = Some(window_handle.clone());
+            self.scene.resources.window.handle = Some(window_handle.clone());
             if first_window_handle {
                 let gui_context = egui::Context::default();
 
@@ -140,7 +139,6 @@ impl winit::application::ApplicationHandler for App {
         }
 
         let Self {
-            window: Some(window),
             renderer: Some(renderer),
             ..
         } = self
@@ -150,8 +148,10 @@ impl winit::application::ApplicationHandler for App {
 
         // Receive gui window event
         if let Some(gui_state) = &mut self.scene.resources.gui_state {
-            if gui_state.on_window_event(window, &event).consumed {
-                return;
+            if let Some(window_handle) = self.scene.resources.window.handle.as_ref() {
+                if gui_state.on_window_event(window_handle, &event).consumed {
+                    return;
+                }
             }
         }
 
@@ -186,7 +186,10 @@ impl winit::application::ApplicationHandler for App {
                     let Some(gui_state) = self.scene.resources.gui_state.as_mut() else {
                         return;
                     };
-                    let gui_input = gui_state.take_egui_input(window);
+                    let Some(window_handle) = self.scene.resources.window.handle.as_ref() else {
+                        return;
+                    };
+                    let gui_input = gui_state.take_egui_input(window_handle);
                     gui_state.egui_ctx().begin_pass(gui_input);
                     gui_state.egui_ctx().clone()
                 };
@@ -275,24 +278,28 @@ impl winit::application::ApplicationHandler for App {
 
                 let paint_jobs = ui.tessellate(shapes, pixels_per_point);
 
-                let screen_descriptor = {
-                    let (width, height) = self.last_size;
-                    egui_wgpu::ScreenDescriptor {
-                        size_in_pixels: [width, height],
-                        pixels_per_point: window.scale_factor() as f32,
-                    }
-                };
+                if let Some(window_handle) = self.scene.resources.window.handle.as_ref() {
+                    let screen_descriptor = {
+                        let (width, height) = self.last_size;
+                        egui_wgpu::ScreenDescriptor {
+                            size_in_pixels: [width, height],
+                            pixels_per_point: window_handle.scale_factor() as f32,
+                        }
+                    };
 
-                renderer.render_frame(
-                    screen_descriptor,
-                    paint_jobs,
-                    textures_delta,
-                    self.scene.resources.frame_timing.delta_time,
-                );
+                    renderer.render_frame(
+                        screen_descriptor,
+                        paint_jobs,
+                        textures_delta,
+                        self.scene.resources.frame_timing.delta_time,
+                    );
+                }
             }
             _ => (),
         }
 
-        window.request_redraw();
+        if let Some(window_handle) = self.scene.resources.window.handle.as_mut() {
+            window_handle.request_redraw();
+        }
     }
 }

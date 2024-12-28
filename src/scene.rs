@@ -5,6 +5,7 @@ crate::ecs! {
         parent: Parent => PARENT,
     }
     Resources {
+        #[serde(skip)] window: Window,
         #[serde(skip)] frame_timing: FrameTiming,
         #[serde(skip)] gui_state: Option<egui_winit::State>,
         #[serde(skip)] tile_tree: Option<egui_tiles::Tree<Pane>>,
@@ -56,6 +57,11 @@ pub mod components {
 pub use resources::*;
 pub mod resources {
     use std::collections::{HashMap, HashSet};
+
+    #[derive(Default)]
+    pub struct Window {
+        pub handle: Option<std::sync::Arc<winit::window::Window>>,
+    }
 
     #[derive(Default, Debug, Copy, Clone, PartialEq)]
     pub struct FrameTiming {
