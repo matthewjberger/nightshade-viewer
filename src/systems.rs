@@ -3,6 +3,7 @@ pub fn run_systems(scene: &mut crate::Scene) {
     update_frame_timing_system(scene);
     ensure_tile_tree_system(scene);
     ui_system(scene);
+    render_system(scene);
 }
 
 /// Calculates and refreshes frame timing values such as delta time
@@ -159,4 +160,27 @@ fn ui_system(scene: &mut crate::Scene) {
     let output = ui.end_pass();
     let paint_jobs = ui.tessellate(output.shapes.clone(), output.pixels_per_point);
     *frame_output = Some((output, paint_jobs));
+}
+
+/// Renders graphics to the window
+fn render_system(scene: &mut crate::Scene) {
+    let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
+        scene.resources.user_interface.frame_output.take()
+    else {
+        return;
+    };
+    let Some(window_handle) = scene.resources.window.handle.as_ref() else {
+        return;
+    };
+    let screen_descriptor = {
+        let (width, height) = scene.resources.graphics.viewport_size;
+        egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [width, height],
+            pixels_per_point: window_handle.scale_factor() as f32,
+        }
+    };
+    let delta_time = scene.resources.frame_timing.delta_time;
+    if let Some(renderer) = scene.resources.graphics.renderer.as_mut() {
+        renderer.render_frame(screen_descriptor, paint_jobs, textures_delta, delta_time);
+    }
 }

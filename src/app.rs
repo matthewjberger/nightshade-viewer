@@ -6,17 +6,22 @@ impl winit::application::ApplicationHandler for crate::Scene {
         #[allow(unused_mut)]
         let mut attributes = winit::window::Window::default_attributes();
 
+        // On wasm, the window attributes have to include the canvas element
         #[cfg(target_arch = "wasm32")]
         {
             use winit::platform::web::WindowAttributesExtWebSys;
-            let canvas = wgpu::web_sys::window()
-                .unwrap()
-                .document()
-                .unwrap()
-                .get_element_by_id("canvas")
-                .unwrap()
-                .dyn_into::<wgpu::web_sys::HtmlCanvasElement>()
-                .unwrap();
+            let Some(window) = wgpu::web_sys::window() else {
+                return;
+            };
+            let Some(document) = window.document() else {
+                return;
+            };
+            let Some(element) = document.get_element_by_id("canvas") else {
+                return;
+            };
+            let Ok(canvas) = element.dyn_into::<wgpu::web_sys::HtmlCanvasElement>() else {
+                return;
+            };
             self.resources.graphics.viewport_size = (canvas.width(), canvas.height());
             attributes = attributes.with_canvas(Some(canvas));
         }
@@ -89,30 +94,6 @@ impl winit::application::ApplicationHandler for crate::Scene {
             }
             winit::event::WindowEvent::RedrawRequested => {
                 crate::run_systems(self);
-
-                if let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
-                    self.resources.user_interface.frame_output.take()
-                {
-                    if let Some(window_handle) = self.resources.window.handle.as_ref() {
-                        let screen_descriptor = {
-                            let (width, height) = self.resources.graphics.viewport_size;
-                            egui_wgpu::ScreenDescriptor {
-                                size_in_pixels: [width, height],
-                                pixels_per_point: window_handle.scale_factor() as f32,
-                            }
-                        };
-
-                        let delta_time = self.resources.frame_timing.delta_time;
-                        if let Some(renderer) = self.resources.graphics.renderer.as_mut() {
-                            renderer.render_frame(
-                                screen_descriptor,
-                                paint_jobs,
-                                textures_delta,
-                                delta_time,
-                            );
-                        }
-                    }
-                }
             }
             _ => (),
         }
