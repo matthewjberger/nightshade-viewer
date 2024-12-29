@@ -1,35 +1,44 @@
 /// This executes the systems that run in response to a window event
 pub fn run_event_systems(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
-    match event {
-        winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) => {
-            crate::commands::resize_viewport(scene, *width, *height);
-        }
-        winit::event::WindowEvent::RedrawRequested => {
-            crate::run_systems(scene);
-        }
-        winit::event::WindowEvent::KeyboardInput {
-            event:
-                winit::event::KeyEvent {
-                    physical_key: winit::keyboard::PhysicalKey::Code(key_code),
-                    state,
-                    ..
-                },
-            ..
-        } => {
-            *scene
-                .resources
-                .input
-                .keyboard
-                .keystates
-                .entry(*key_code)
-                .or_insert(*state) = *state;
-        }
-        _ => (),
-    }
+    receive_resize_event(scene, event);
+    receive_keyboard_event(scene, event);
+    run_engine_systems(scene, event);
 }
 
-/// This executes systems each cycle
-pub fn run_systems(scene: &mut crate::Scene) {
+fn receive_resize_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+    let winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) = event
+    else {
+        return;
+    };
+    crate::commands::resize_viewport(scene, *width, *height);
+}
+
+fn receive_keyboard_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+    let winit::event::WindowEvent::KeyboardInput {
+        event:
+            winit::event::KeyEvent {
+                physical_key: winit::keyboard::PhysicalKey::Code(key_code),
+                state,
+                ..
+            },
+        ..
+    } = event
+    else {
+        return;
+    };
+    *scene
+        .resources
+        .input
+        .keyboard
+        .keystates
+        .entry(*key_code)
+        .or_insert(*state) = *state;
+}
+
+fn run_engine_systems(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+    let winit::event::WindowEvent::RedrawRequested = event else {
+        return;
+    };
     use systems::*;
     update_frame_timing_system(scene);
     ensure_tile_tree_system(scene);
