@@ -122,30 +122,55 @@ fn ui_system(scene: &mut crate::Scene) {
             ui.separator();
         });
     });
-    let crate::UserInterface {
-        tile_tree: Some(tile_tree),
-        tile_tree_behavior: tile_tree_context,
-        state: Some(gui_state),
-        show_left_panel,
-        show_right_panel,
-        frame_output,
-    } = &mut scene.resources.user_interface
-    else {
-        return;
-    };
-    if *show_left_panel {
-        egui::SidePanel::left("left").show(gui_state.egui_ctx(), |ui| {
-            ui.collapsing("Scene", |_ui| {});
+
+    if scene.resources.user_interface.show_left_panel {
+        egui::SidePanel::left("left").show(&ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt(ui.next_auto_id())
+                .show(ui, |ui| {
+                    ui.collapsing("Scene", |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt(ui.next_auto_id())
+                            .show(ui, |ui| {
+                                ui.group(|ui| {
+                                    if ui.button("Create Entity").clicked() {
+                                        let entity =
+                                            crate::spawn_entities(scene, crate::VISIBLE, 1)[0];
+                                        scene.resources.user_interface.selected_entity =
+                                            Some(entity);
+                                    }
+                                    crate::query_root_nodes(scene)
+                                        .into_iter()
+                                        .for_each(|entity| {
+                                            entity_tree_ui(scene, ui, entity);
+                                        });
+                                });
+                            });
+                    });
+                    ui.separator();
+                });
         });
     }
-    if *show_right_panel {
-        egui::SidePanel::right("right").show(gui_state.egui_ctx(), |ui| {
-            ui.heading("Inspector");
+
+    if scene.resources.user_interface.show_right_panel {
+        egui::SidePanel::right("right").show(&ui, |ui| {
+            ui.collapsing("Properties", |_ui| {
+                //
+            });
         });
     }
+
     egui::CentralPanel::default()
         .frame(egui::Frame::none())
         .show(&ui, |ui| {
+            let crate::UserInterface {
+                tile_tree: Some(tile_tree),
+                tile_tree_behavior: tile_tree_context,
+                ..
+            } = &mut scene.resources.user_interface
+            else {
+                return;
+            };
             tile_tree.ui(tile_tree_context, ui);
             if let Some(parent) = tile_tree_context.add_child_to.take() {
                 let new_child = tile_tree.tiles.insert_pane(crate::Pane {});
@@ -157,9 +182,61 @@ fn ui_system(scene: &mut crate::Scene) {
                 }
             }
         });
+
     let output = ui.end_pass();
     let paint_jobs = ui.tessellate(output.shapes.clone(), output.pixels_per_point);
-    *frame_output = Some((output, paint_jobs));
+    scene.resources.user_interface.frame_output = Some((output, paint_jobs));
+}
+
+// Recursively renders the entity tree in the ui system
+fn entity_tree_ui(scene: &mut crate::Scene, ui: &mut egui::Ui, entity: crate::EntityId) {
+    let name = match crate::get_component::<crate::Name>(scene, entity, crate::NAME) {
+        Some(crate::Name(name)) if !name.is_empty() => name.to_string(),
+        _ => "Entity".to_string(),
+    };
+
+    let selected = scene.resources.user_interface.selected_entity == Some(entity);
+
+    let id = ui.make_persistent_id(ui.next_auto_id());
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+        .show_header(ui, |ui| {
+            ui.horizontal(|ui| {
+                let prefix = "🔵".to_string();
+                let response = ui.selectable_label(selected, format!("{prefix}{name}"));
+
+                if response.clicked() {
+                    scene.resources.user_interface.selected_entity = Some(entity);
+                }
+
+                response.context_menu(|ui| {
+                    if ui.button("Add Child").clicked() {
+                        let child =
+                            crate::spawn_entities(scene, crate::PARENT | crate::VISIBLE, 1)[0];
+                        if let Some(parent) =
+                            crate::get_component_mut::<crate::Parent>(scene, child, crate::PARENT)
+                        {
+                            *parent = crate::Parent(entity);
+                        }
+                        ui.close_menu();
+                    }
+                    if ui.button("Remove").clicked() {
+                        crate::despawn_entities(scene, &[entity]);
+                        let descendents = crate::query_descendents(scene, entity);
+                        for entity in descendents {
+                            crate::despawn_entities(scene, &[entity]);
+                        }
+                        ui.close_menu();
+                    }
+                });
+            });
+        })
+        .body(|ui| {
+            crate::query_children(scene, entity)
+                .into_iter()
+                .for_each(|child| {
+                    entity_tree_ui(scene, ui, child);
+                });
+        });
 }
 
 /// Renders graphics to the window
@@ -185,6 +262,7 @@ fn render_system(scene: &mut crate::Scene) {
     }
 }
 
+/// Initializes scene resources on startup
 pub fn initialize(scene: &mut crate::Scene) {
     let window_handle = {
         let Some(window_handle) = scene.resources.window.handle.as_mut() else {
@@ -248,7 +326,7 @@ pub fn initialize(scene: &mut crate::Scene) {
     scene.resources.frame_timing.last_frame_start_instant = Some(web_time::Instant::now());
 }
 
-/// Handles viewport resizing
+/// Handles viewport resizing, such as when the window is resized by the user
 pub fn resize(scene: &mut crate::Scene, width: u32, height: u32) {
     log::info!("Resizing renderer surface to: ({width}, {height})");
     if let Some(renderer) = scene.resources.graphics.renderer.as_mut() {
@@ -257,16 +335,67 @@ pub fn resize(scene: &mut crate::Scene, width: u32, height: u32) {
     scene.resources.graphics.viewport_size = (width, height);
 
     // Update the egui context with the new scale factor
-    if let Some(window_handle) = scene.resources.window.handle.as_ref() {
-        scene
-            .resources
-            .user_interface
-            .state
-            .as_mut()
-            .map(|gui_state| {
-                gui_state
-                    .egui_ctx()
-                    .set_pixels_per_point(window_handle.scale_factor() as f32);
-            });
+    if let (Some(window_handle), Some(gui_state)) = (
+        scene.resources.window.handle.as_ref(),
+        scene.resources.user_interface.state.as_mut(),
+    ) {
+        gui_state
+            .egui_ctx()
+            .set_pixels_per_point(window_handle.scale_factor() as f32);
     }
+}
+
+/// Queries for the root nodes of the scene
+/// by looking for entities that do not have a Parent component
+pub fn query_root_nodes(scene: &crate::Scene) -> Vec<crate::EntityId> {
+    let mut root_entities: Vec<crate::EntityId> = scene
+        .tables
+        .iter()
+        .filter_map(|table| {
+            if crate::has_components!(table, crate::PARENT) {
+                return None;
+            }
+            Some(table.entity_indices.to_vec())
+        })
+        .flatten()
+        .collect();
+    root_entities.dedup();
+    root_entities
+}
+
+// Query for the child entities of an entity
+pub fn query_children(
+    scene: &crate::Scene,
+    target_entity: crate::EntityId,
+) -> Vec<crate::EntityId> {
+    let mut child_entities = Vec::new();
+    crate::query_entities(scene, crate::PARENT)
+        .into_iter()
+        .for_each(|entity| {
+            if let Some(crate::Parent(parent_entity)) =
+                crate::get_component(scene, entity, crate::PARENT)
+            {
+                if *parent_entity != target_entity {
+                    return;
+                }
+                child_entities.push(entity);
+            }
+        });
+    child_entities
+}
+
+/// Query for all the descendent entities of a target entity
+pub fn query_descendents(
+    scene: &crate::Scene,
+    target_entity: crate::EntityId,
+) -> Vec<crate::EntityId> {
+    let mut descendents = Vec::new();
+    let mut stack = vec![target_entity];
+    while let Some(entity) = stack.pop() {
+        descendents.push(entity);
+        query_children(scene, entity).into_iter().for_each(|child| {
+            stack.push(child);
+        });
+    }
+    descendents
 }

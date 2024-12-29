@@ -2,7 +2,7 @@ pub struct Renderer {
     gpu: Gpu,
     depth_texture_view: wgpu::TextureView,
     egui_renderer: egui_wgpu::Renderer,
-    scene: Scene,
+    triangle: Triangle,
 }
 
 impl Renderer {
@@ -24,13 +24,13 @@ impl Renderer {
             false,
         );
 
-        let scene = Scene::new(&gpu.device, gpu.surface_format);
+        let scene = Triangle::new(&gpu.device, gpu.surface_format);
 
         Self {
             gpu,
             depth_texture_view,
             egui_renderer,
-            scene,
+            triangle: scene,
         }
     }
 
@@ -46,7 +46,7 @@ impl Renderer {
         textures_delta: egui::TexturesDelta,
         delta_time: f32,
     ) {
-        self.scene
+        self.triangle
             .update(&self.gpu.queue, self.gpu.aspect_ratio(), delta_time);
 
         for (id, image_delta) in &textures_delta.set {
@@ -126,7 +126,7 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            self.scene.render(&mut render_pass);
+            self.triangle.render(&mut render_pass);
 
             self.egui_renderer.render(
                 &mut render_pass.forget_lifetime(),
@@ -263,7 +263,7 @@ impl Gpu {
     }
 }
 
-struct Scene {
+struct Triangle {
     pub model: nalgebra_glm::Mat4,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
@@ -271,7 +271,7 @@ struct Scene {
     pub pipeline: wgpu::RenderPipeline,
 }
 
-impl Scene {
+impl Triangle {
     pub fn new(device: &wgpu::Device, surface_format: wgpu::TextureFormat) -> Self {
         let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
             device,

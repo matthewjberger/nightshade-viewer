@@ -2,7 +2,9 @@ crate::ecs! {
     Scene {
         local_transform: LocalTransform => LOCAL_TRANSFORM,
         global_transform: GlobalTransform => GLOBAL_TRANSFORM,
+        name: GlobalTransform => NAME,
         parent: Parent => PARENT,
+        visible: Visible => VISIBLE,
     }
     Resources {
         #[serde(skip)] window: Window,
@@ -49,8 +51,14 @@ pub mod components {
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
     pub struct GlobalTransform(pub nalgebra_glm::Mat4);
 
+    #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+    pub struct Name(pub String);
+
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
     pub struct Parent(pub EntityId);
+
+    #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+    pub struct Visible;
 }
 
 pub use resources::*;
@@ -80,6 +88,7 @@ pub mod resources {
         pub frame_output: Option<(egui::FullOutput, Vec<egui::ClippedPrimitive>)>,
         pub show_left_panel: bool,
         pub show_right_panel: bool,
+        pub selected_entity: Option<crate::EntityId>,
     }
 
     #[derive(Default, Debug, Copy, Clone, PartialEq)]
