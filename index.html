@@ -1,51 +1,53 @@
 <!doctype html>
 <html>
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Rust/Wgpu</title>
-        <base data-trunk-public-url />
-        <style type="text/css">
-            :focus {
-                outline: none;
-            }
 
-            body,
-            html {
-                margin: 0;
-                padding: 0;
-                width: 100%;
-                height: 100%;
-                overflow: hidden;
-            }
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hemlock</title>
+    <base data-trunk-public-url />
+    <style type="text/css">
+        :focus {
+            outline: none;
+        }
 
-            .root {
-                width: 100%;
-                height: 100%;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-            }
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
 
-            .main-canvas {
-                display: block;
-            }
-        </style>
-    </head>
+        .root {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
 
-    <body>
-        <link data-trunk rel="rust" href="Cargo.toml" data-target-name="app" />
-        <div class="root">
-            <canvas class="main-canvas" id="canvas"></canvas>
-        </div>
-        <script>
-            function resizeCanvas() {
-                const canvas = document.getElementById("canvas");
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
-            }
-            window.addEventListener("resize", resizeCanvas);
-            window.addEventListener("load", resizeCanvas);
-        </script>
-    </body>
+        .main-canvas {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <link data-trunk rel="rust" href="Cargo.toml" data-target-name="app" />
+    <div class="root">
+        <canvas class="main-canvas" id="canvas"></canvas>
+    </div>
+    <script>
+        function resizeCanvas() {
+            const canvas = document.getElementById("canvas");
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener("resize", resizeCanvas);
+        window.addEventListener("load", resizeCanvas);
+    </script>
+</body>
+
 </html>

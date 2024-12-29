@@ -71,15 +71,7 @@ impl winit::application::ApplicationHandler for crate::Scene {
             }
         }
 
-        match event {
-            winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) => {
-                crate::commands::resize(self, width, height);
-            }
-            winit::event::WindowEvent::RedrawRequested => {
-                crate::run_systems(self);
-            }
-            _ => (),
-        }
+        crate::run_event_systems(self, &event);
 
         if let Some(window_handle) = self.resources.window.handle.as_mut() {
             window_handle.request_redraw();

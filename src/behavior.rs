@@ -1,4 +1,34 @@
-/// This runs the systems that update the scene
+/// This executes the systems that run in response to a window event
+pub fn run_event_systems(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+    match event {
+        winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) => {
+            crate::commands::resize_viewport(scene, *width, *height);
+        }
+        winit::event::WindowEvent::RedrawRequested => {
+            crate::run_systems(scene);
+        }
+        winit::event::WindowEvent::KeyboardInput {
+            event:
+                winit::event::KeyEvent {
+                    physical_key: winit::keyboard::PhysicalKey::Code(key_code),
+                    state,
+                    ..
+                },
+            ..
+        } => {
+            *scene
+                .resources
+                .input
+                .keyboard
+                .keystates
+                .entry(*key_code)
+                .or_insert(*state) = *state;
+        }
+        _ => (),
+    }
+}
+
+/// This executes systems each cycle
 pub fn run_systems(scene: &mut crate::Scene) {
     update_frame_timing_system(scene);
     ensure_tile_tree_system(scene);
@@ -336,7 +366,7 @@ pub mod commands {
     }
 
     /// Handles viewport resizing, such as when the window is resized by the user
-    pub fn resize(scene: &mut crate::Scene, width: u32, height: u32) {
+    pub fn resize_viewport(scene: &mut crate::Scene, width: u32, height: u32) {
         log::info!("Resizing renderer surface to: ({width}, {height})");
         if let Some(renderer) = scene.resources.graphics.renderer.as_mut() {
             renderer.resize(width, height);

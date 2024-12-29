@@ -9,6 +9,7 @@ crate::ecs! {
     Resources {
         #[serde(skip)] window: Window,
         #[serde(skip)] graphics: Graphics,
+        #[serde(skip)] input: Input,
         #[serde(skip)] frame_timing: FrameTiming,
         #[serde(skip)] user_interface: UserInterface,
     }
@@ -72,6 +73,11 @@ pub mod resources {
     }
 
     #[derive(Default)]
+    pub struct Input {
+        pub keyboard: Keyboard,
+    }
+
+    #[derive(Default)]
     pub struct Graphics {
         pub renderer: Option<crate::graphics::Renderer>,
         #[cfg(target_arch = "wasm32")]
@@ -113,6 +119,19 @@ pub mod resources {
 
         /// Milliseconds that the process has been running continuously
         pub uptime_milliseconds: u64,
+    }
+
+    #[derive(Default)]
+    pub struct Keyboard {
+        pub keystates:
+            std::collections::HashMap<winit::keyboard::KeyCode, winit::event::ElementState>,
+    }
+
+    impl Keyboard {
+        pub fn is_key_pressed(&self, keycode: winit::keyboard::KeyCode) -> bool {
+            self.keystates.contains_key(&keycode)
+                && self.keystates[&keycode] == winit::event::ElementState::Pressed
+        }
     }
 
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
