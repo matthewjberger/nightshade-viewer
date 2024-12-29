@@ -1,3 +1,5 @@
+//! This module declares a macro that generates
+//! an archetypal ecs data structure and free functions for data access.
 #[macro_export]
 macro_rules! ecs {
     (

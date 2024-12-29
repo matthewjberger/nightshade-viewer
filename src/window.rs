@@ -33,7 +33,7 @@ impl winit::application::ApplicationHandler for crate::Scene {
         let window_handle = std::sync::Arc::new(window);
         self.resources.window.handle = Some(window_handle.clone());
 
-        crate::initialize(self);
+        crate::commands::initialize(self);
     }
 
     fn window_event(
@@ -73,7 +73,7 @@ impl winit::application::ApplicationHandler for crate::Scene {
 
         match event {
             winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) => {
-                crate::resize(self, width, height);
+                crate::commands::resize(self, width, height);
             }
             winit::event::WindowEvent::RedrawRequested => {
                 crate::run_systems(self);
