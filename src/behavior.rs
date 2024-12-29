@@ -1,5 +1,10 @@
+/// This is the main loop, driven by winit window events.
+/// Resources are updated and then systems are triggered continuously.
 pub fn step(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
-    receive_events(scene, event);
+    receive_resize_event(scene, event);
+    receive_keyboard_event(scene, event);
+    receive_mouse_event(scene, event);
+
     let winit::event::WindowEvent::RedrawRequested = event else {
         return;
     };
@@ -7,111 +12,106 @@ pub fn step(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
     reset_systems(scene);
 }
 
-fn receive_events(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
-    receive_resize_event(scene, event);
-    receive_keyboard_event(scene, event);
-    receive_mouse_event(scene, event);
-}
-
-fn receive_resize_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
-    let winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) = event
-    else {
-        return;
-    };
-    crate::commands::resize_viewport(scene, *width, *height);
-}
-
-fn receive_keyboard_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
-    let winit::event::WindowEvent::KeyboardInput {
-        event:
-            winit::event::KeyEvent {
-                physical_key: winit::keyboard::PhysicalKey::Code(key_code),
-                state,
-                ..
-            },
-        ..
-    } = event
-    else {
-        return;
-    };
-    *scene
-        .resources
-        .input
-        .keyboard
-        .keystates
-        .entry(*key_code)
-        .or_insert(*state) = *state;
-}
-
-fn receive_mouse_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
-    let mouse = &mut scene.resources.input.mouse;
-    match event {
-        winit::event::WindowEvent::MouseInput { button, state, .. } => {
-            let clicked = *state == winit::event::ElementState::Pressed;
-            match button {
-                winit::event::MouseButton::Left => {
-                    mouse
-                        .buttons
-                        .set(crate::MouseButtons::LEFT_CLICKED, clicked);
-                    println!("Left Clicked!");
-                }
-                winit::event::MouseButton::Middle => {
-                    mouse
-                        .buttons
-                        .set(crate::MouseButtons::MIDDLE_CLICKED, clicked);
-                    println!("Middle Clicked!");
-                }
-                winit::event::MouseButton::Right => {
-                    mouse
-                        .buttons
-                        .set(crate::MouseButtons::RIGHT_CLICKED, clicked);
-                    println!("Right Clicked!");
-                }
-                _ => {}
-            }
-        }
-        winit::event::WindowEvent::CursorMoved { position, .. } => {
-            let last_position = mouse.position;
-            let current_position = nalgebra_glm::vec2(position.x as _, position.y as _);
-            mouse.position = current_position;
-            mouse.position_delta = current_position - last_position;
-            mouse.buttons.set(crate::MouseButtons::MOVED, true);
-        }
-        winit::event::WindowEvent::MouseWheel {
-            delta: winit::event::MouseScrollDelta::LineDelta(h_lines, v_lines),
-            ..
-        } => {
-            mouse.wheel_delta = nalgebra_glm::vec2(*h_lines, *v_lines);
-            mouse.buttons.set(crate::MouseButtons::SCROLLED, true);
-        }
-        _ => {}
-    }
-}
-
-pub fn reset_mouse_system(scene: &mut crate::Scene) {
-    let mouse = &mut scene.resources.input.mouse;
-    if mouse.buttons.contains(crate::MouseButtons::SCROLLED) {
-        mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
-    }
-    mouse.buttons.set(crate::MouseButtons::MOVED, false);
-    if !mouse.buttons.contains(crate::MouseButtons::MOVED) {
-        mouse.position_delta = nalgebra_glm::vec2(0.0, 0.0);
-    }
-    mouse.buttons.set(crate::MouseButtons::MOVED, false);
-}
-
+/// Run systems meant to update each cycle of the main loop
 fn run_systems(scene: &mut crate::Scene) {
-    use systems::*;
     update_frame_timing_system(scene);
     ensure_tile_tree_system(scene);
     ui_system(scene);
     render_system(scene);
 }
 
+/// Reset systems in preparation the next frame
 fn reset_systems(scene: &mut crate::Scene) {
     reset_mouse_system(scene);
 }
 
+/// Winit window events drive the main loop,
+/// and this module contains stateless free functions that run
+/// systems in response to those events
+use events::*;
+pub mod events {
+    pub fn receive_resize_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+        let winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) = event
+        else {
+            return;
+        };
+        super::resize_viewport(scene, *width, *height);
+    }
+
+    pub fn receive_keyboard_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+        let winit::event::WindowEvent::KeyboardInput {
+            event:
+                winit::event::KeyEvent {
+                    physical_key: winit::keyboard::PhysicalKey::Code(key_code),
+                    state,
+                    ..
+                },
+            ..
+        } = event
+        else {
+            return;
+        };
+        *scene
+            .resources
+            .input
+            .keyboard
+            .keystates
+            .entry(*key_code)
+            .or_insert(*state) = *state;
+    }
+
+    pub fn receive_mouse_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+        let mouse = &mut scene.resources.input.mouse;
+        match event {
+            winit::event::WindowEvent::MouseInput { button, state, .. } => {
+                let clicked = *state == winit::event::ElementState::Pressed;
+                match button {
+                    winit::event::MouseButton::Left => {
+                        mouse
+                            .buttons
+                            .set(crate::MouseButtons::LEFT_CLICKED, clicked);
+                        println!("Left Clicked!");
+                    }
+                    winit::event::MouseButton::Middle => {
+                        mouse
+                            .buttons
+                            .set(crate::MouseButtons::MIDDLE_CLICKED, clicked);
+                        println!("Middle Clicked!");
+                    }
+                    winit::event::MouseButton::Right => {
+                        mouse
+                            .buttons
+                            .set(crate::MouseButtons::RIGHT_CLICKED, clicked);
+                        println!("Right Clicked!");
+                    }
+                    _ => {}
+                }
+            }
+            winit::event::WindowEvent::CursorMoved { position, .. } => {
+                let last_position = mouse.position;
+                let current_position = nalgebra_glm::vec2(position.x as _, position.y as _);
+                mouse.position = current_position;
+                mouse.position_delta = current_position - last_position;
+                mouse.buttons.set(crate::MouseButtons::MOVED, true);
+            }
+            winit::event::WindowEvent::MouseWheel {
+                delta: winit::event::MouseScrollDelta::LineDelta(h_lines, v_lines),
+                ..
+            } => {
+                mouse.wheel_delta = nalgebra_glm::vec2(*h_lines, *v_lines);
+                mouse.buttons.set(crate::MouseButtons::SCROLLED, true);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// This module contains a majority of the business logic of the application.
+///
+/// Systems are stateless free functions that operate on the scene data.
+/// State associated with them goes into the world resources.
+/// They may also queries and commands to interact with the scene data.
+use systems::*;
 pub mod systems {
     /// Calculates and refreshes frame timing values such as delta time
     pub fn update_frame_timing_system(scene: &mut crate::Scene) {
@@ -295,6 +295,19 @@ pub mod systems {
         scene.resources.user_interface.frame_output = Some((output, paint_jobs));
     }
 
+    /// Resets the mouse state for the next frame
+    pub fn reset_mouse_system(scene: &mut crate::Scene) {
+        let mouse = &mut scene.resources.input.mouse;
+        if mouse.buttons.contains(crate::MouseButtons::SCROLLED) {
+            mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
+        }
+        mouse.buttons.set(crate::MouseButtons::MOVED, false);
+        if !mouse.buttons.contains(crate::MouseButtons::MOVED) {
+            mouse.position_delta = nalgebra_glm::vec2(0.0, 0.0);
+        }
+        mouse.buttons.set(crate::MouseButtons::MOVED, false);
+    }
+
     // Recursively renders the entity tree in the ui system
     pub fn entity_tree_ui(scene: &mut crate::Scene, ui: &mut egui::Ui, entity: crate::EntityId) {
         let name = match crate::get_component::<crate::Name>(scene, entity, crate::NAME) {
@@ -386,6 +399,9 @@ pub mod systems {
     }
 }
 
+/// Commands are operations that mutate the scene data.
+/// They may require arguments and are intended to be used by systems to reuse mutation logic.
+use commands::*;
 pub mod commands {
     /// Initializes scene resources on startup
     pub fn initialize(scene: &mut crate::Scene) {
@@ -474,6 +490,11 @@ pub mod commands {
     }
 }
 
+/// Queries are read-only operations
+/// that use the scene data to extract information.
+/// They are useful for finding entities and components,
+/// like the first available camera in a scene.
+/// They intentionally do not mutate the scene.
 pub use queries::*;
 pub mod queries {
     /// Queries for the root nodes of the scene
