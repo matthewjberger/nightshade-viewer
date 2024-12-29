@@ -75,6 +75,7 @@ pub mod resources {
     #[derive(Default)]
     pub struct Input {
         pub keyboard: Keyboard,
+        pub mouse: Mouse,
     }
 
     #[derive(Default)]
@@ -132,6 +133,25 @@ pub mod resources {
             self.keystates.contains_key(&keycode)
                 && self.keystates[&keycode] == winit::event::ElementState::Pressed
         }
+    }
+
+    bitflags::bitflags! {
+        #[derive(Default, Debug, Clone, Copy)]
+        pub struct MouseButtons: u8 {
+            const LEFT_CLICKED = 0b0000_0001;
+            const MIDDLE_CLICKED = 0b0000_0010;
+            const RIGHT_CLICKED = 0b0000_0100;
+            const MOVED = 0b0000_1000;
+            const SCROLLED = 0b0001_0000;
+        }
+    }
+
+    #[derive(Default, Debug, Clone, Copy)]
+    pub struct Mouse {
+        pub buttons: MouseButtons,
+        pub position: nalgebra_glm::Vec2,
+        pub position_delta: nalgebra_glm::Vec2,
+        pub wheel_delta: nalgebra_glm::Vec2,
     }
 
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]

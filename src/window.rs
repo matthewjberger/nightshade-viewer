@@ -64,7 +64,7 @@ impl winit::application::ApplicationHandler for crate::Scene {
             }
         }
 
-        crate::run_event_systems(self, &event);
+        crate::step(self, &event);
 
         if let Some(window_handle) = self.resources.window.handle.as_mut() {
             window_handle.request_redraw();

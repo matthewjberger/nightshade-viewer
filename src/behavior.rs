@@ -1,8 +1,16 @@
-/// This executes the systems that run in response to a window event
-pub fn run_event_systems(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+pub fn step(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+    receive_events(scene, event);
+    let winit::event::WindowEvent::RedrawRequested = event else {
+        return;
+    };
+    run_systems(scene);
+    reset_systems(scene);
+}
+
+fn receive_events(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
     receive_resize_event(scene, event);
     receive_keyboard_event(scene, event);
-    run_engine_systems(scene, event);
+    receive_mouse_event(scene, event);
 }
 
 fn receive_resize_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
@@ -35,15 +43,73 @@ fn receive_keyboard_event(scene: &mut crate::Scene, event: &winit::event::Window
         .or_insert(*state) = *state;
 }
 
-fn run_engine_systems(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
-    let winit::event::WindowEvent::RedrawRequested = event else {
-        return;
-    };
+fn receive_mouse_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+    let mouse = &mut scene.resources.input.mouse;
+    match event {
+        winit::event::WindowEvent::MouseInput { button, state, .. } => {
+            let clicked = *state == winit::event::ElementState::Pressed;
+            match button {
+                winit::event::MouseButton::Left => {
+                    mouse
+                        .buttons
+                        .set(crate::MouseButtons::LEFT_CLICKED, clicked);
+                    println!("Left Clicked!");
+                }
+                winit::event::MouseButton::Middle => {
+                    mouse
+                        .buttons
+                        .set(crate::MouseButtons::MIDDLE_CLICKED, clicked);
+                    println!("Middle Clicked!");
+                }
+                winit::event::MouseButton::Right => {
+                    mouse
+                        .buttons
+                        .set(crate::MouseButtons::RIGHT_CLICKED, clicked);
+                    println!("Right Clicked!");
+                }
+                _ => {}
+            }
+        }
+        winit::event::WindowEvent::CursorMoved { position, .. } => {
+            let last_position = mouse.position;
+            let current_position = nalgebra_glm::vec2(position.x as _, position.y as _);
+            mouse.position = current_position;
+            mouse.position_delta = current_position - last_position;
+            mouse.buttons.set(crate::MouseButtons::MOVED, true);
+        }
+        winit::event::WindowEvent::MouseWheel {
+            delta: winit::event::MouseScrollDelta::LineDelta(h_lines, v_lines),
+            ..
+        } => {
+            mouse.wheel_delta = nalgebra_glm::vec2(*h_lines, *v_lines);
+            mouse.buttons.set(crate::MouseButtons::SCROLLED, true);
+        }
+        _ => {}
+    }
+}
+
+pub fn reset_mouse_system(scene: &mut crate::Scene) {
+    let mouse = &mut scene.resources.input.mouse;
+    if mouse.buttons.contains(crate::MouseButtons::SCROLLED) {
+        mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
+    }
+    mouse.buttons.set(crate::MouseButtons::MOVED, false);
+    if !mouse.buttons.contains(crate::MouseButtons::MOVED) {
+        mouse.position_delta = nalgebra_glm::vec2(0.0, 0.0);
+    }
+    mouse.buttons.set(crate::MouseButtons::MOVED, false);
+}
+
+fn run_systems(scene: &mut crate::Scene) {
     use systems::*;
     update_frame_timing_system(scene);
     ensure_tile_tree_system(scene);
     ui_system(scene);
     render_system(scene);
+}
+
+fn reset_systems(scene: &mut crate::Scene) {
+    reset_mouse_system(scene);
 }
 
 pub mod systems {
