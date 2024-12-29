@@ -3,7 +3,29 @@ use wasm_bindgen::prelude::*;
 
 impl winit::application::ApplicationHandler for crate::Scene {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        resume_window_system(self, event_loop);
+        #[allow(unused_mut)]
+        let mut attributes = winit::window::Window::default_attributes();
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            use winit::platform::web::WindowAttributesExtWebSys;
+            let canvas = wgpu::web_sys::window()
+                .unwrap()
+                .document()
+                .unwrap()
+                .get_element_by_id("canvas")
+                .unwrap()
+                .dyn_into::<wgpu::web_sys::HtmlCanvasElement>()
+                .unwrap();
+            self.resources.graphics.viewport_size = (canvas.width(), canvas.height());
+            attributes = attributes.with_canvas(Some(canvas));
+        }
+
+        if let Ok(window) = event_loop.create_window(attributes) {
+            let window_handle = std::sync::Arc::new(window);
+            self.resources.window.handle = Some(window_handle.clone());
+            run_initialization_systems(self);
+        }
     }
 
     fn window_event(
@@ -59,7 +81,7 @@ impl winit::application::ApplicationHandler for crate::Scene {
                 if let Some(renderer) = self.resources.graphics.renderer.as_mut() {
                     renderer.resize(width, height);
                 }
-                self.resources.graphics.last_size = (width, height);
+                self.resources.graphics.viewport_size = (width, height);
             }
             winit::event::WindowEvent::CloseRequested => {
                 log::info!("Close requested. Exiting...");
@@ -73,7 +95,7 @@ impl winit::application::ApplicationHandler for crate::Scene {
                 {
                     if let Some(window_handle) = self.resources.window.handle.as_ref() {
                         let screen_descriptor = {
-                            let (width, height) = self.resources.graphics.last_size;
+                            let (width, height) = self.resources.graphics.viewport_size;
                             egui_wgpu::ScreenDescriptor {
                                 size_in_pixels: [width, height],
                                 pixels_per_point: window_handle.scale_factor() as f32,
@@ -101,100 +123,70 @@ impl winit::application::ApplicationHandler for crate::Scene {
     }
 }
 
-fn resume_window_system(scene: &mut crate::Scene, event_loop: &winit::event_loop::ActiveEventLoop) {
-    let mut attributes = winit::window::Window::default_attributes();
+fn run_initialization_systems(scene: &mut crate::Scene) {
+    let window_handle = {
+        let Some(window_handle) = scene.resources.window.handle.as_mut() else {
+            return;
+        };
+        window_handle.clone()
+    };
+
+    let gui_context = egui::Context::default();
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        attributes = attributes.with_title("Hemlock");
+        let inner_size = window_handle.inner_size();
+        scene.resources.graphics.viewport_size = (inner_size.width, inner_size.height);
     }
-
-    #[allow(unused_assignments)]
-    #[cfg(target_arch = "wasm32")]
-    let (mut canvas_width, mut canvas_height) = (0, 0);
 
     #[cfg(target_arch = "wasm32")]
     {
-        use winit::platform::web::WindowAttributesExtWebSys;
-        let canvas = wgpu::web_sys::window()
-            .unwrap()
-            .document()
-            .unwrap()
-            .get_element_by_id("canvas")
-            .unwrap()
-            .dyn_into::<wgpu::web_sys::HtmlCanvasElement>()
-            .unwrap();
-        canvas_width = canvas.width();
-        canvas_height = canvas.height();
-        scene.resources.graphics.last_size = (canvas_width, canvas_height);
-        attributes = attributes.with_canvas(Some(canvas));
+        gui_context.set_pixels_per_point(window_handle.scale_factor() as f32);
     }
 
-    if let Ok(window) = event_loop.create_window(attributes) {
-        let first_window_handle = scene.resources.window.handle.is_none();
-        let window_handle = std::sync::Arc::new(window);
-        scene.resources.window.handle = Some(window_handle.clone());
-        if first_window_handle {
-            let gui_context = egui::Context::default();
+    let viewport_id = gui_context.viewport_id();
+    let gui_state = egui_winit::State::new(
+        gui_context,
+        viewport_id,
+        &window_handle,
+        Some(window_handle.scale_factor() as _),
+        Some(winit::window::Theme::Dark),
+        None,
+    );
 
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let inner_size = window_handle.inner_size();
-                scene.resources.graphics.last_size = (inner_size.width, inner_size.height);
-            }
+    #[cfg(not(target_arch = "wasm32"))]
+    let (width, height) = (
+        window_handle.inner_size().width,
+        window_handle.inner_size().height,
+    );
 
-            #[cfg(target_arch = "wasm32")]
-            {
-                gui_context.set_pixels_per_point(window_handle.scale_factor() as f32);
-            }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        env_logger::init();
+        let renderer = pollster::block_on(async move {
+            crate::graphics::Renderer::new(window_handle.clone(), width, height).await
+        });
+        scene.resources.graphics.renderer = Some(renderer);
+    }
 
-            let viewport_id = gui_context.viewport_id();
-            let gui_state = egui_winit::State::new(
-                gui_context,
-                viewport_id,
-                &window_handle,
-                Some(window_handle.scale_factor() as _),
-                Some(winit::window::Theme::Dark),
-                None,
-            );
-
-            #[cfg(not(target_arch = "wasm32"))]
-            let (width, height) = (
-                window_handle.inner_size().width,
-                window_handle.inner_size().height,
-            );
-
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                env_logger::init();
-                let renderer = pollster::block_on(async move {
-                    crate::graphics::Renderer::new(window_handle.clone(), width, height).await
-                });
-                scene.resources.graphics.renderer = Some(renderer);
-            }
-
-            #[cfg(target_arch = "wasm32")]
-            {
-                let (sender, receiver) = futures::channel::oneshot::channel();
-                scene.resources.graphics.renderer_receiver = Some(receiver);
-                std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-                console_log::init().expect("Failed to initialize logger!");
-                log::info!("Canvas dimensions: ({canvas_width} x {canvas_height})");
-                wasm_bindgen_futures::spawn_local(async move {
-                    let renderer = crate::graphics::Renderer::new(
-                        window_handle.clone(),
-                        canvas_width,
-                        canvas_height,
-                    )
+    #[cfg(target_arch = "wasm32")]
+    {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        scene.resources.graphics.renderer_receiver = Some(receiver);
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        console_log::init().expect("Failed to initialize logger!");
+        let (canvas_width, canvas_height) = scene.resources.graphics.viewport_size;
+        log::info!("Canvas dimensions: ({canvas_width} x {canvas_height})");
+        wasm_bindgen_futures::spawn_local(async move {
+            let renderer =
+                crate::graphics::Renderer::new(window_handle.clone(), canvas_width, canvas_height)
                     .await;
-                    if sender.send(renderer).is_err() {
-                        log::error!("Failed to create and send renderer!");
-                    }
-                });
+            if sender.send(renderer).is_err() {
+                log::error!("Failed to create and send renderer!");
             }
-
-            scene.resources.user_interface.state = Some(gui_state);
-            scene.resources.frame_timing.last_frame_start_instant = Some(web_time::Instant::now());
-        }
+        });
     }
+
+    scene.resources.user_interface.state = Some(gui_state);
+    scene.resources.frame_timing.last_frame_start_instant = Some(web_time::Instant::now());
 }

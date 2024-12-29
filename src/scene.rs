@@ -68,7 +68,7 @@ pub mod resources {
         #[cfg(target_arch = "wasm32")]
         pub renderer_receiver:
             Option<futures::channel::oneshot::Receiver<crate::graphics::Renderer>>,
-        pub last_size: (u32, u32),
+        pub viewport_size: (u32, u32),
     }
 
     #[derive(Default)]
