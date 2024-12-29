@@ -6,6 +6,8 @@ impl winit::application::ApplicationHandler for crate::Scene {
         #[allow(unused_mut)]
         let mut attributes = winit::window::Window::default_attributes();
 
+        attributes.title = "Hemlock".to_string();
+
         // On wasm, the window attributes have to include the canvas element
         #[cfg(target_arch = "wasm32")]
         {

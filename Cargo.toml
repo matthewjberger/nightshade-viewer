@@ -1,12 +1,12 @@
 [package]
-name = "app"
+name = "hemlock"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
-name = "hemlock"
+name = "hemlock_core"
 
 [dependencies]
 bitflags = "2.6.0"

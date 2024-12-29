@@ -49,3 +49,17 @@ just build-compact
 The final executable is at `target/release-compact/app` on unix and `target/release-compact/app.exe` on windows.
 
 > The binary size should be significantly smaller than the normal release build executable
+
+## Python Bindings
+
+If you have [maturin]() installed:
+
+```
+just build-python
+```
+
+Then you can install the generated python wheel with:
+
+```
+pip install python_api/target/wheels/hemlock-*.whl --force-reinstall
+```

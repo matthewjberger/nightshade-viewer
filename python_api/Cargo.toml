@@ -1,0 +1,12 @@
+[package]
+name = "python_api"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hemlock"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "0.23.3"
+hemlock = { path = "../" }
