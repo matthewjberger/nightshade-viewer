@@ -9,6 +9,7 @@ path = "src/lib.rs"
 name = "hemlock"
 
 [dependencies]
+bitflags = "2.6.0"
 bytemuck = { version = "1.21.0", features = ["derive"] }
 egui = "0.30.0"
 egui_tiles = "0.11.0"
@@ -23,7 +24,6 @@ serde = { version = "1.0.216", features = ["derive"] }
 web-time = "1.1.0"
 wgpu = { version = "23.0.1", default-features = false }
 winit = "0.30.7"
-bitflags = "2.6.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11.6"
@@ -39,7 +39,6 @@ wasm-bindgen-futures = "0.4.49"
 
 [features]
 default = ["wgpu/default"]
-webgl = ["wgpu/webgl"]
 webgpu = ["wgpu/webgpu"]
 
 # After building with --profile=release-small

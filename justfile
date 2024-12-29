@@ -23,12 +23,8 @@ build-compact:
     cargo build --profile=release-compact
     just compress-app
 
-# Build the app with wgpu + WebGL
-build-webgl:
-    trunk build --features webgl
-
 # Build the app with wgpu + WebGPU
-build-webgpu:
+build-web:
     trunk build --features webgpu
 
 # Compress the final executable with upx
@@ -71,12 +67,8 @@ lint:
 run:
     cargo run -r
 
-# Serve the app with wgpu + WebGL
-run-webgl:
-    trunk serve --features webgl
-
 # Serve the app with wgpu + WebGPU
-run-webgpu:
+run-web:
     trunk serve --features webgpu --open
 
 # Run the test suite

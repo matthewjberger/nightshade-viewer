@@ -221,9 +221,6 @@ impl Gpu {
                         required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                         #[cfg(all(target_arch = "wasm32", feature = "webgpu"))]
                         required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-                        #[cfg(all(target_arch = "wasm32", feature = "webgl"))]
-                        required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                            .using_resolution(adapter.limits()),
                     },
                     None,
                 )
