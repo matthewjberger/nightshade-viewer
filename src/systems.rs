@@ -184,3 +184,89 @@ fn render_system(scene: &mut crate::Scene) {
         renderer.render_frame(screen_descriptor, paint_jobs, textures_delta, delta_time);
     }
 }
+
+pub fn initialize(scene: &mut crate::Scene) {
+    let window_handle = {
+        let Some(window_handle) = scene.resources.window.handle.as_mut() else {
+            return;
+        };
+        window_handle.clone()
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let inner_size = window_handle.inner_size();
+        scene.resources.graphics.viewport_size = (inner_size.width, inner_size.height);
+    }
+
+    let gui_context = egui::Context::default();
+
+    let viewport_id = gui_context.viewport_id();
+    let gui_state = egui_winit::State::new(
+        gui_context,
+        viewport_id,
+        &window_handle,
+        Some(window_handle.scale_factor() as _),
+        Some(winit::window::Theme::Dark),
+        None,
+    );
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let (width, height) = (
+        window_handle.inner_size().width,
+        window_handle.inner_size().height,
+    );
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        env_logger::init();
+        let renderer = pollster::block_on(async move {
+            crate::graphics::Renderer::new(window_handle.clone(), width, height).await
+        });
+        scene.resources.graphics.renderer = Some(renderer);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        scene.resources.graphics.renderer_receiver = Some(receiver);
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        console_log::init().expect("Failed to initialize logger!");
+        let (canvas_width, canvas_height) = scene.resources.graphics.viewport_size;
+        log::info!("Canvas dimensions: ({canvas_width} x {canvas_height})");
+        wasm_bindgen_futures::spawn_local(async move {
+            let renderer =
+                crate::graphics::Renderer::new(window_handle.clone(), canvas_width, canvas_height)
+                    .await;
+            if sender.send(renderer).is_err() {
+                log::error!("Failed to create and send renderer!");
+            }
+        });
+    }
+
+    scene.resources.user_interface.state = Some(gui_state);
+    scene.resources.frame_timing.last_frame_start_instant = Some(web_time::Instant::now());
+}
+
+/// Handles viewport resizing
+pub fn resize(scene: &mut crate::Scene, width: u32, height: u32) {
+    log::info!("Resizing renderer surface to: ({width}, {height})");
+    if let Some(renderer) = scene.resources.graphics.renderer.as_mut() {
+        renderer.resize(width, height);
+    }
+    scene.resources.graphics.viewport_size = (width, height);
+
+    // Update the egui context with the new scale factor
+    if let Some(window_handle) = scene.resources.window.handle.as_ref() {
+        scene
+            .resources
+            .user_interface
+            .state
+            .as_mut()
+            .map(|gui_state| {
+                gui_state
+                    .egui_ctx()
+                    .set_pixels_per_point(window_handle.scale_factor() as f32);
+            });
+    }
+}

@@ -60,6 +60,7 @@ pub mod resources {
     #[derive(Default)]
     pub struct Window {
         pub handle: Option<std::sync::Arc<winit::window::Window>>,
+        pub should_exit: bool,
     }
 
     #[derive(Default)]
