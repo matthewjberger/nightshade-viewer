@@ -30,14 +30,14 @@ pub fn run_event_systems(scene: &mut crate::Scene, event: &winit::event::WindowE
 
 /// This executes systems each cycle
 pub fn run_systems(scene: &mut crate::Scene) {
+    use systems::*;
     update_frame_timing_system(scene);
     ensure_tile_tree_system(scene);
     ui_system(scene);
     render_system(scene);
 }
 
-use systems::*;
-mod systems {
+pub mod systems {
     /// Calculates and refreshes frame timing values such as delta time
     pub fn update_frame_timing_system(scene: &mut crate::Scene) {
         let now = web_time::Instant::now();
@@ -293,6 +293,20 @@ mod systems {
         let delta_time = scene.resources.frame_timing.delta_time;
         if let Some(renderer) = scene.resources.graphics.renderer.as_mut() {
             renderer.render_frame(screen_descriptor, paint_jobs, textures_delta, delta_time);
+        }
+    }
+
+    /// Receives the renderer from the async task that creates it on wasm, injecting it as a resource
+    #[cfg(target_arch = "wasm32")]
+    pub fn receive_renderer_system(scene: &mut crate::Scene) {
+        if let Some(receiver) = scene.resources.graphics.renderer_receiver.as_mut() {
+            if let Ok(Some(renderer)) = receiver.try_recv() {
+                scene.resources.graphics.renderer = Some(renderer);
+                scene.resources.graphics.renderer_receiver = None;
+            }
+        }
+        if scene.resources.graphics.renderer.is_none() {
+            return;
         }
     }
 }

@@ -43,14 +43,7 @@ impl winit::application::ApplicationHandler for crate::Scene {
         event: winit::event::WindowEvent,
     ) {
         #[cfg(target_arch = "wasm32")]
-        {
-            if let Some(receiver) = self.resources.graphics.renderer_receiver.as_mut() {
-                if let Ok(Some(renderer)) = receiver.try_recv() {
-                    self.resources.graphics.renderer = Some(renderer);
-                    self.resources.graphics.renderer_receiver = None;
-                }
-            }
-        }
+        crate::systems::receive_renderer_system(self);
 
         if self.resources.graphics.renderer.is_none() {
             return;
