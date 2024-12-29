@@ -11,6 +11,36 @@ default:
 build:
     cargo build -r
 
+# Build the smallest possible version of the binary. (Requires `upx` to be installed)
+[windows]
+build-compact:
+    cargo build --profile=release-compact
+    just compress-exe
+
+# Build the smallest possible version of the binary. (Requires `upx` to be installed)
+[unix]
+build-compact:
+    cargo build --profile=release-compact
+    just compress-app
+
+# Build the app with wgpu + WebGL
+build-webgl:
+    trunk build --features webgl
+
+# Build the app with wgpu + WebGPU
+build-webgpu:
+    trunk build --features webgpu
+
+# Compress the final executable with upx
+[windows]
+compress-exe:
+    upx --best --lzma ./target/release-compact/app.exe
+
+# Compress the final executable with upx
+[unix]
+compress-app:
+    upx --best --lzma ./target/release-compact/app
+
 # Check the workspace
 check:
     cargo check --all --tests
@@ -40,14 +70,6 @@ lint:
 # Run the desktop app in release mode
 run:
     cargo run -r
-
-# Build the app with wgpu + WebGL
-build-webgl:
-    trunk build --features webgl
-
-# Build the app with wgpu + WebGPU
-build-webgpu:
-    trunk build --features webgpu
 
 # Serve the app with wgpu + WebGL
 run-webgl:
