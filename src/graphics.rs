@@ -6,8 +6,7 @@ pub struct Graphics {
 
     /// The renderer context
     #[cfg(target_arch = "wasm32")]
-    pub renderer_receiver:
-        Option<futures::channel::oneshot::Receiver<crate::graphics::Renderer>>,
+    pub renderer_receiver: Option<futures::channel::oneshot::Receiver<crate::graphics::Renderer>>,
 
     /// The size of the display viewport
     pub viewport_size: (u32, u32),
@@ -70,9 +69,7 @@ pub mod triangle {
             device,
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(
-                    &crate::graphics::triangle::TRIANGLE_VERTICES,
-                ),
+                contents: bytemuck::cast_slice(&crate::graphics::triangle::TRIANGLE_VERTICES),
                 usage: wgpu::BufferUsages::VERTEX,
             },
         );
@@ -80,9 +77,7 @@ pub mod triangle {
             device,
             &wgpu::util::BufferInitDescriptor {
                 label: Some("index Buffer"),
-                contents: bytemuck::cast_slice(
-                    &crate::graphics::triangle::TRIANGLE_INDICES,
-                ),
+                contents: bytemuck::cast_slice(&crate::graphics::triangle::TRIANGLE_INDICES),
                 usage: wgpu::BufferUsages::INDEX,
             },
         );
@@ -560,8 +555,7 @@ pub async fn create_renderer_async(
         false,
     );
     let grid = create_grid(&gpu.device, gpu.surface_config.format, depth_format);
-    let triangle =
-        crate::graphics::create_triangle(&gpu.device, depth_format, gpu.surface_format);
+    let triangle = crate::graphics::create_triangle(&gpu.device, depth_format, gpu.surface_format);
     crate::graphics::Renderer {
         gpu,
         depth_texture_view,

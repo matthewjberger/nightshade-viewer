@@ -97,18 +97,14 @@ pub mod events {
                 let current_position = nalgebra_glm::vec2(position.x as _, position.y as _);
                 mouse.position = current_position;
                 mouse.position_delta = current_position - last_position;
-                mouse
-                    .state
-                    .set(crate::input::MouseState::MOVED, true);
+                mouse.state.set(crate::input::MouseState::MOVED, true);
             }
             winit::event::WindowEvent::MouseWheel {
                 delta: winit::event::MouseScrollDelta::LineDelta(h_lines, v_lines),
                 ..
             } => {
                 mouse.wheel_delta = nalgebra_glm::vec2(*h_lines, *v_lines);
-                mouse
-                    .state
-                    .set(crate::input::MouseState::SCROLLED, true);
+                mouse.state.set(crate::input::MouseState::SCROLLED, true);
             }
             _ => {}
         }
@@ -126,23 +122,13 @@ pub mod systems {
     /// Resets the input state for the next frame
     pub fn reset_input(context: &mut crate::scene::Context) {
         let mouse = &mut context.resources.input.mouse;
-        if mouse
-            .state
-            .contains(crate::input::MouseState::SCROLLED)
-        {
+        if mouse.state.contains(crate::input::MouseState::SCROLLED) {
             mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
         }
-        mouse
-            .state
-            .set(crate::input::MouseState::MOVED, false);
-        if !mouse
-            .state
-            .contains(crate::input::MouseState::MOVED)
-        {
+        mouse.state.set(crate::input::MouseState::MOVED, false);
+        if !mouse.state.contains(crate::input::MouseState::MOVED) {
             mouse.position_delta = nalgebra_glm::vec2(0.0, 0.0);
         }
-        mouse
-            .state
-            .set(crate::input::MouseState::MOVED, false);
+        mouse.state.set(crate::input::MouseState::MOVED, false);
     }
 }
