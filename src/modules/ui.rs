@@ -116,8 +116,6 @@ pub mod events {
 }
 
 pub mod systems {
-    use crate::modules::scene::EntityId;
-
     /// Ensures a default layout when the tile tree is emptied
     pub fn ensure_tile_tree(context: &mut crate::modules::scene::Context) {
         if let Some(tile_tree) = &context.resources.user_interface.tile_tree {
@@ -208,9 +206,67 @@ pub mod systems {
         }
 
         if context.resources.user_interface.show_right_panel {
+            use crate::modules::scene::*;
             egui::SidePanel::right("right").show(&ui, |ui| {
-                ui.collapsing("Properties", |_ui| {
-                    //
+                ui.collapsing("Properties", |ui| {
+                    ui.group(|ui| {
+                        ui.label("Camera");
+                        if let Some(selected_entity) =
+                            context.resources.user_interface.selected_entity
+                        {
+                            if let Some(camera) =
+                                get_component_mut::<Camera>(context, selected_entity, CAMERA)
+                            {
+                                ui.group(|ui| {
+                                    ui.label("Viewport");
+                                    ui.horizontal(|ui| {
+                                        ui.label("x");
+                                        ui.add(
+                                            egui::DragValue::new(&mut camera.viewport.x).speed(0.1),
+                                        );
+                                        ui.label("y");
+                                        ui.add(
+                                            egui::DragValue::new(&mut camera.viewport.y).speed(0.1),
+                                        );
+                                        ui.label("width");
+                                        ui.add(
+                                            egui::DragValue::new(&mut camera.viewport.width)
+                                                .speed(0.1),
+                                        );
+                                        ui.label("height");
+                                        ui.add(
+                                            egui::DragValue::new(&mut camera.viewport.height)
+                                                .speed(0.1),
+                                        );
+                                    });
+                                });
+
+                                if let Some(tile_id) = camera.tile_id.as_mut() {
+                                    ui.group(|ui| {
+                                        ui.label("Tile ID");
+                                        ui.add(egui::DragValue::new(&mut tile_id.0).speed(0.1));
+                                    });
+                                } else if ui.button("Add Tile ID").clicked() {
+                                    camera.tile_id = Some(egui_tiles::TileId(0));
+                                }
+
+                                match &camera.projection {
+                                    Projection::Perspective(_perspective_camera) => {
+                                        ui.label("Projection is `Perspective`");
+                                    }
+                                    Projection::Orthographic(_orthographic_camera) => {
+                                        ui.label("Projection is `Orhographic`");
+                                    }
+                                }
+
+                                if ui.button("Remove").clicked() {
+                                    remove_components(context, selected_entity, CAMERA);
+                                }
+                            } else if ui.button("Add Camera").clicked() {
+                                add_components(context, selected_entity, CAMERA);
+                            }
+                        }
+                    });
                 });
             });
         }
@@ -247,7 +303,7 @@ pub mod systems {
     fn entity_tree_ui(
         context: &mut crate::modules::scene::Context,
         ui: &mut egui::Ui,
-        entity: EntityId,
+        entity: crate::modules::scene::EntityId,
     ) {
         use crate::modules::scene::*;
 

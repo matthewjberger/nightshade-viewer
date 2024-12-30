@@ -47,7 +47,7 @@ pub mod components {
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
     pub struct Visible;
 
-    #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+    #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
     pub struct Camera {
         pub projection: Projection,
         pub viewport: Viewport,
@@ -59,16 +59,6 @@ pub mod components {
             match &self.projection {
                 Projection::Perspective(camera) => camera.matrix(aspect_ratio),
                 Projection::Orthographic(camera) => camera.matrix(),
-            }
-        }
-    }
-
-    impl Default for Camera {
-        fn default() -> Self {
-            Self {
-                projection: Projection::default(),
-                viewport: Viewport::default(),
-                tile_id: None,
             }
         }
     }
