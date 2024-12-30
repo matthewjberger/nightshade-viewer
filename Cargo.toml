@@ -2,6 +2,14 @@
 name = "hemlock"
 version = "0.1.0"
 edition = "2021"
+authors = ["Matthew J. Berger <matthewjordanberger@gmail.com>"]
+description = """
+Hemlock is a portable graphics engine written in rust, capable of rendering complex interactive visualization of arbitrary data streams 🔎
+"""
+homepage = "https://github.com/matthewjberger/hemlock"
+repository = "https://github.com/matthewjberger/hemlock"
+keywords = ["macro"]
+license = "MIT"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
