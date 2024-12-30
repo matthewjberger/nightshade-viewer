@@ -1,6 +1,5 @@
 mod behavior;
 mod ecs;
-mod graphics;
 mod scene;
 mod window;
 

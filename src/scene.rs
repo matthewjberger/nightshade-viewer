@@ -78,13 +78,89 @@ pub mod resources {
         pub mouse: Mouse,
     }
 
-    #[derive(Default)]
-    pub struct Graphics {
-        pub renderer: Option<crate::graphics::Renderer>,
-        #[cfg(target_arch = "wasm32")]
-        pub renderer_receiver:
-            Option<futures::channel::oneshot::Receiver<crate::graphics::Renderer>>,
-        pub viewport_size: (u32, u32),
+    pub use renderer::*;
+    pub mod renderer {
+        #[derive(Default)]
+        pub struct Graphics {
+            pub renderer: Option<Renderer>,
+            #[cfg(target_arch = "wasm32")]
+            pub renderer_receiver: Option<futures::channel::oneshot::Receiver<crate::Renderer>>,
+            pub viewport_size: (u32, u32),
+        }
+
+        pub struct Renderer {
+            pub gpu: Gpu,
+            pub depth_texture_view: wgpu::TextureView,
+            pub egui_renderer: egui_wgpu::Renderer,
+            pub depth_format: wgpu::TextureFormat,
+            pub triangle: TriangleRender,
+        }
+
+        pub struct Gpu {
+            pub surface: wgpu::Surface<'static>,
+            pub device: wgpu::Device,
+            pub queue: wgpu::Queue,
+            pub surface_config: wgpu::SurfaceConfiguration,
+            pub surface_format: wgpu::TextureFormat,
+        }
+
+        pub struct TriangleRender {
+            pub model: nalgebra_glm::Mat4,
+            pub vertex_buffer: wgpu::Buffer,
+            pub index_buffer: wgpu::Buffer,
+            pub uniform: UniformBinding,
+            pub pipeline: wgpu::RenderPipeline,
+        }
+
+        pub struct UniformBinding {
+            pub buffer: wgpu::Buffer,
+            pub bind_group: wgpu::BindGroup,
+            pub bind_group_layout: wgpu::BindGroupLayout,
+        }
+
+        #[repr(C)]
+        #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+        pub struct UniformBuffer {
+            pub mvp: nalgebra_glm::Mat4,
+        }
+
+        #[repr(C)]
+        #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+        pub struct Vertex {
+            pub position: [f32; 4],
+            pub color: [f32; 4],
+        }
+
+        impl Vertex {
+            pub fn vertex_attributes() -> Vec<wgpu::VertexAttribute> {
+                wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4].to_vec()
+            }
+
+            pub fn description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout {
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes,
+                }
+            }
+        }
+
+        pub const VERTICES: [crate::Vertex; 3] = [
+            Vertex {
+                position: [1.0, -1.0, 0.0, 1.0],
+                color: [1.0, 0.0, 0.0, 1.0],
+            },
+            Vertex {
+                position: [-1.0, -1.0, 0.0, 1.0],
+                color: [0.0, 1.0, 0.0, 1.0],
+            },
+            Vertex {
+                position: [0.0, 1.0, 0.0, 1.0],
+                color: [0.0, 0.0, 1.0, 1.0],
+            },
+        ];
+
+        pub const INDICES: [u32; 3] = [0, 1, 2]; // Clockwise winding order
     }
 
     #[derive(Default)]
