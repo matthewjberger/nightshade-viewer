@@ -28,7 +28,7 @@ build-compact:
     maturin build -m python_api/Cargo.toml
     echo '{{ style("warning") }}Install the python bindings wheel with:{{ NORMAL }}'
     echo ''
-    echo '{{ style("warning") }}pip install python_api/target/wheels/hemlock-*.whl --force-reinstall{{ NORMAL }}'
+    echo '{{ style("warning") }}pip install python_api/target/wheels/nightshade-*.whl --force-reinstall{{ NORMAL }}'
     echo ''
     echo '{{ style("warning") }}Remember to expand the `*` to use the full path to the wheel!{{ NORMAL }}'
 
@@ -39,12 +39,12 @@ build-web:
 # Compress the final executable with upx
 [windows]
 compress-exe:
-    upx --best --lzma ./target/release-compact/hemlock.exe
+    upx --best --lzma ./target/release-compact/nightshade.exe
 
 # Compress the final executable with upx
 [unix]
 compress-app:
-    upx --best --lzma ./target/release-compact/hemlock
+    upx --best --lzma ./target/release-compact/nightshade
 
 # Check the workspace
 check:
@@ -53,7 +53,7 @@ check:
 
 # Show the workspace documentation
 docs:
-    cargo doc --open -p hemlock
+    cargo doc --open -p nightshade
 
 # Fix all automatically resolvable lints with clippy
 fix:

@@ -1,20 +1,20 @@
 [package]
-name = "hemlock"
+name = "nightshade"
 version = "0.1.0"
 edition = "2021"
 authors = ["Matthew J. Berger <matthewjordanberger@gmail.com>"]
 description = """
-Hemlock is a portable graphics engine written in rust, capable of rendering complex interactive visualization of arbitrary data streams 🔎
+nightshade is a portable graphics engine written in rust, capable of rendering complex interactive visualization of arbitrary data streams 🔎
 """
-homepage = "https://github.com/matthewjberger/hemlock"
-repository = "https://github.com/matthewjberger/hemlock"
+homepage = "https://github.com/matthewjberger/nightshade"
+repository = "https://github.com/matthewjberger/nightshade"
 keywords = ["macro"]
 license = "MIT"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
-name = "hemlock_core"
+name = "nightshade_core"
 
 [dependencies]
 bitflags = "2.6.0"

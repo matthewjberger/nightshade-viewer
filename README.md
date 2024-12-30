@@ -1,6 +1,6 @@
-#  Hemlock 🌹
+#  nightshade 🌹
 
-Hemlock is a portable graphics engine written in rust, capable of rendering complex interactive visualization of arbitrary data streams 🌃🔭
+nightshade is a portable graphics engine written in rust, capable of rendering complex interactive visualization of arbitrary data streams 🌃🔭
 
 ## Quickstart
 
@@ -61,5 +61,5 @@ just build-python
 Then you can install the generated python wheel with:
 
 ```
-pip install python_api/target/wheels/hemlock-*.whl --force-reinstall
+pip install python_api/target/wheels/nightshade-*.whl --force-reinstall
 ```

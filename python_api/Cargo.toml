@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "hemlock"
+name = "nightshade"
 crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.23.3"
-hemlock = { path = "../" }
+nightshade = { path = "../" }
