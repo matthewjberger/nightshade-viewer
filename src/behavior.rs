@@ -1,6 +1,17 @@
 /// This is the main loop, driven by winit window events.
 /// Resources are updated and then systems are triggered continuously.
 pub fn step(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+    // On wasm, the renderer is received from an async task
+    // and will not be available in the cycles prior to that
+    #[cfg(target_arch = "wasm32")]
+    crate::systems::receive_renderer_system(scene);
+
+    // The renderer should be available before running any systems
+    if scene.resources.graphics.renderer.is_none() {
+        return;
+    }
+
+    receive_ui_events(scene, event);
     receive_resize_event(scene, event);
     receive_keyboard_event(scene, event);
     receive_mouse_event(scene, event);
@@ -30,6 +41,17 @@ fn reset_systems(scene: &mut crate::Scene) {
 /// systems in response to those events
 use events::*;
 pub mod events {
+    pub fn receive_ui_events(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+        let Some(gui_state) = &mut scene.resources.user_interface.state else {
+            return;
+        };
+        let Some(window_handle) = scene.resources.window.handle.as_ref() else {
+            return;
+        };
+        scene.resources.user_interface.consumed_event =
+            gui_state.on_window_event(window_handle, event).consumed;
+    }
+
     pub fn receive_resize_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
         let winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) = event
         else {
@@ -70,19 +92,16 @@ pub mod events {
                         mouse
                             .buttons
                             .set(crate::MouseButtons::LEFT_CLICKED, clicked);
-                        println!("Left Clicked!");
                     }
                     winit::event::MouseButton::Middle => {
                         mouse
                             .buttons
                             .set(crate::MouseButtons::MIDDLE_CLICKED, clicked);
-                        println!("Middle Clicked!");
                     }
                     winit::event::MouseButton::Right => {
                         mouse
                             .buttons
                             .set(crate::MouseButtons::RIGHT_CLICKED, clicked);
-                        println!("Right Clicked!");
                     }
                     _ => {}
                 }

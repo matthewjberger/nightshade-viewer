@@ -95,6 +95,7 @@ pub mod resources {
         pub frame_output: Option<(egui::FullOutput, Vec<egui::ClippedPrimitive>)>,
         pub show_left_panel: bool,
         pub show_right_panel: bool,
+        pub consumed_event: bool,
         pub selected_entity: Option<crate::EntityId>,
     }
 

@@ -44,13 +44,6 @@ impl winit::application::ApplicationHandler for crate::Scene {
         _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
-        #[cfg(target_arch = "wasm32")]
-        crate::systems::receive_renderer_system(self);
-
-        if self.resources.graphics.renderer.is_none() {
-            return;
-        }
-
         if self.resources.window.should_exit
             || matches!(event, winit::event::WindowEvent::CloseRequested)
         {
@@ -58,16 +51,9 @@ impl winit::application::ApplicationHandler for crate::Scene {
             return;
         }
 
-        if let Some(gui_state) = &mut self.resources.user_interface.state {
-            if let Some(window_handle) = self.resources.window.handle.as_ref() {
-                if gui_state.on_window_event(window_handle, &event).consumed {
-                    return;
-                }
-            }
-        }
-
         crate::step(self, &event);
 
+        // Ensure we cycle frames continuously by requesting a redraw at the end of each frame
         if let Some(window_handle) = self.resources.window.handle.as_mut() {
             window_handle.request_redraw();
         }
