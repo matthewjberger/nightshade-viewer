@@ -1,6 +1,6 @@
-#  nightshade 🌹
+#  Nightshade 🥀
 
-nightshade is a portable graphics engine written in rust, capable of rendering complex interactive visualization of arbitrary data streams 🌃🔭
+`Nightshade` is a portable graphics engine written in rust, capable of rendering complex interactive visualizations of arbitrary data streams
 
 ## Quickstart
 
@@ -46,7 +46,7 @@ If you have [upx](https://upx.github.io) installed, this can be done with:
 just build-compact
 ```
 
-The final executable is at `target/release-compact/app` on unix and `target/release-compact/app.exe` on windows.
+The final executable is at `target/release-compact/nightshade` on unix and `target/release-compact/nightshade.exe` on windows.
 
 > The binary size should be significantly smaller than the normal release build executable
 
