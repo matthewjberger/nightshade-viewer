@@ -61,7 +61,7 @@ pub mod events {
         else {
             return;
         };
-        super::resize_viewport(context, *width, *height);
+        crate::commands::window::resize_viewport(context, *width, *height);
     }
 
     pub fn receive_keyboard_event(context: &mut crate::Context, event: &winit::event::WindowEvent) {
@@ -93,19 +93,13 @@ pub mod events {
                 let clicked = *state == winit::event::ElementState::Pressed;
                 match button {
                     winit::event::MouseButton::Left => {
-                        mouse
-                            .buttons
-                            .set(crate::MouseButtons::LEFT_CLICKED, clicked);
+                        mouse.state.set(crate::MouseState::LEFT_CLICKED, clicked);
                     }
                     winit::event::MouseButton::Middle => {
-                        mouse
-                            .buttons
-                            .set(crate::MouseButtons::MIDDLE_CLICKED, clicked);
+                        mouse.state.set(crate::MouseState::MIDDLE_CLICKED, clicked);
                     }
                     winit::event::MouseButton::Right => {
-                        mouse
-                            .buttons
-                            .set(crate::MouseButtons::RIGHT_CLICKED, clicked);
+                        mouse.state.set(crate::MouseState::RIGHT_CLICKED, clicked);
                     }
                     _ => {}
                 }
@@ -115,14 +109,14 @@ pub mod events {
                 let current_position = nalgebra_glm::vec2(position.x as _, position.y as _);
                 mouse.position = current_position;
                 mouse.position_delta = current_position - last_position;
-                mouse.buttons.set(crate::MouseButtons::MOVED, true);
+                mouse.state.set(crate::MouseState::MOVED, true);
             }
             winit::event::WindowEvent::MouseWheel {
                 delta: winit::event::MouseScrollDelta::LineDelta(h_lines, v_lines),
                 ..
             } => {
                 mouse.wheel_delta = nalgebra_glm::vec2(*h_lines, *v_lines);
-                mouse.buttons.set(crate::MouseButtons::SCROLLED, true);
+                mouse.state.set(crate::MouseState::SCROLLED, true);
             }
             _ => {}
         }
@@ -319,25 +313,8 @@ pub mod systems {
         context.resources.user_interface.frame_output = Some((output, paint_jobs));
     }
 
-    /// Resets the mouse state for the next frame
-    pub fn reset_mouse_system(context: &mut crate::Context) {
-        let mouse = &mut context.resources.input.mouse;
-        if mouse.buttons.contains(crate::MouseButtons::SCROLLED) {
-            mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
-        }
-        mouse.buttons.set(crate::MouseButtons::MOVED, false);
-        if !mouse.buttons.contains(crate::MouseButtons::MOVED) {
-            mouse.position_delta = nalgebra_glm::vec2(0.0, 0.0);
-        }
-        mouse.buttons.set(crate::MouseButtons::MOVED, false);
-    }
-
     // Recursively renders the entity tree in the ui system
-    pub fn entity_tree_ui(
-        context: &mut crate::Context,
-        ui: &mut egui::Ui,
-        entity: crate::EntityId,
-    ) {
+    fn entity_tree_ui(context: &mut crate::Context, ui: &mut egui::Ui, entity: crate::EntityId) {
         let name = match crate::get_component::<crate::Name>(context, entity, crate::NAME) {
             Some(crate::Name(name)) if !name.is_empty() => name.to_string(),
             _ => "Entity".to_string(),
@@ -388,6 +365,33 @@ pub mod systems {
                         entity_tree_ui(context, ui, child);
                     });
             });
+    }
+
+    /// Resets the mouse state for the next frame
+    pub fn reset_mouse_system(context: &mut crate::Context) {
+        let mouse = &mut context.resources.input.mouse;
+        if mouse.state.contains(crate::MouseState::SCROLLED) {
+            mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
+        }
+        mouse.state.set(crate::MouseState::MOVED, false);
+        if !mouse.state.contains(crate::MouseState::MOVED) {
+            mouse.position_delta = nalgebra_glm::vec2(0.0, 0.0);
+        }
+        mouse.state.set(crate::MouseState::MOVED, false);
+    }
+
+    /// Receives the renderer from the async task that creates it on wasm, injecting it as a resource
+    #[cfg(target_arch = "wasm32")]
+    pub fn receive_renderer_system(context: &mut crate::Context) {
+        if let Some(receiver) = context.resources.graphics.renderer_receiver.as_mut() {
+            if let Ok(Some(renderer)) = receiver.try_recv() {
+                context.resources.graphics.renderer = Some(renderer);
+                context.resources.graphics.renderer_receiver = None;
+            }
+        }
+        if context.resources.graphics.renderer.is_none() {
+            return;
+        }
     }
 
     /// Renders graphics to the window
@@ -516,127 +520,11 @@ pub mod systems {
         renderer.gpu.queue.submit(std::iter::once(encoder.finish()));
         surface_texture.present();
     }
-
-    /// Receives the renderer from the async task that creates it on wasm, injecting it as a resource
-    #[cfg(target_arch = "wasm32")]
-    pub fn receive_renderer_system(context: &mut crate::Context) {
-        if let Some(receiver) = context.resources.graphics.renderer_receiver.as_mut() {
-            if let Ok(Some(renderer)) = receiver.try_recv() {
-                context.resources.graphics.renderer = Some(renderer);
-                context.resources.graphics.renderer_receiver = None;
-            }
-        }
-        if context.resources.graphics.renderer.is_none() {
-            return;
-        }
-    }
 }
 
 /// Commands are operations that mutate the engine context.
 /// They may require arguments and are intended to be used by systems to reuse mutation logic.
-use commands::*;
 pub mod commands {
-    /// Initializes context resources on startup
-    pub fn initialize(context: &mut crate::Context) {
-        let window_handle = {
-            let Some(window_handle) = context.resources.window.handle.as_mut() else {
-                return;
-            };
-            window_handle.clone()
-        };
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let inner_size = window_handle.inner_size();
-            context.resources.graphics.viewport_size = (inner_size.width, inner_size.height);
-        }
-
-        let gui_context = egui::Context::default();
-
-        let viewport_id = gui_context.viewport_id();
-        let gui_state = egui_winit::State::new(
-            gui_context,
-            viewport_id,
-            &window_handle,
-            Some(window_handle.scale_factor() as _),
-            Some(winit::window::Theme::Dark),
-            None,
-        );
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let (width, height) = (
-            window_handle.inner_size().width,
-            window_handle.inner_size().height,
-        );
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            env_logger::init();
-            let renderer = pollster::block_on(async move {
-                crate::commands::renderer::create_renderer_async(
-                    window_handle.clone(),
-                    width,
-                    height,
-                )
-                .await
-            });
-            context.resources.graphics.renderer = Some(renderer);
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            let (sender, receiver) = futures::channel::oneshot::channel();
-            context.resources.graphics.renderer_receiver = Some(receiver);
-            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init().expect("Failed to initialize logger!");
-            let (canvas_width, canvas_height) = context.resources.graphics.viewport_size;
-            log::info!("Canvas dimensions: ({canvas_width} x {canvas_height})");
-            wasm_bindgen_futures::spawn_local(async move {
-                let renderer = crate::commands::renderer::create_renderer_async(
-                    window_handle.clone(),
-                    canvas_width,
-                    canvas_height,
-                )
-                .await;
-                if sender.send(renderer).is_err() {
-                    log::error!("Failed to create and send renderer!");
-                }
-            });
-        }
-
-        context.resources.user_interface.state = Some(gui_state);
-        context.resources.frame_timing.last_frame_start_instant = Some(web_time::Instant::now());
-    }
-
-    /// Handles viewport resizing, such as when the window is resized by the user
-    pub fn resize_viewport(context: &mut crate::Context, width: u32, height: u32) {
-        log::info!("Resizing renderer surface to: ({width}, {height})");
-        if let Some(renderer) = context.resources.graphics.renderer.as_mut() {
-            renderer.gpu.surface_config.width = width;
-            renderer.gpu.surface_config.height = height;
-            renderer
-                .gpu
-                .surface
-                .configure(&renderer.gpu.device, &renderer.gpu.surface_config);
-            renderer.depth_texture_view = crate::commands::renderer::create_depth_texture(
-                &renderer.gpu.device,
-                width,
-                height,
-            );
-        }
-        context.resources.graphics.viewport_size = (width, height);
-
-        // Update the egui context with the new scale factor
-        if let (Some(window_handle), Some(gui_state)) = (
-            context.resources.window.handle.as_ref(),
-            context.resources.user_interface.state.as_mut(),
-        ) {
-            gui_state
-                .egui_ctx()
-                .set_pixels_per_point(window_handle.scale_factor() as f32);
-        }
-    }
-
     pub mod window {
         #[cfg(target_arch = "wasm32")]
         use wasm_bindgen::prelude::*;
@@ -675,7 +563,7 @@ pub mod commands {
                 let window_handle = std::sync::Arc::new(window);
                 self.resources.window.handle = Some(window_handle.clone());
 
-                crate::commands::initialize(self);
+                initialize(self);
             }
 
             fn window_event(
@@ -697,6 +585,108 @@ pub mod commands {
                 if let Some(window_handle) = self.resources.window.handle.as_mut() {
                     window_handle.request_redraw();
                 }
+            }
+        }
+
+        /// Initializes context resources on startup
+        pub fn initialize(context: &mut crate::Context) {
+            let window_handle = {
+                let Some(window_handle) = context.resources.window.handle.as_mut() else {
+                    return;
+                };
+                window_handle.clone()
+            };
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let inner_size = window_handle.inner_size();
+                context.resources.graphics.viewport_size = (inner_size.width, inner_size.height);
+            }
+
+            let gui_context = egui::Context::default();
+
+            let viewport_id = gui_context.viewport_id();
+            let gui_state = egui_winit::State::new(
+                gui_context,
+                viewport_id,
+                &window_handle,
+                Some(window_handle.scale_factor() as _),
+                Some(winit::window::Theme::Dark),
+                None,
+            );
+
+            #[cfg(not(target_arch = "wasm32"))]
+            let (width, height) = (
+                window_handle.inner_size().width,
+                window_handle.inner_size().height,
+            );
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                env_logger::init();
+                let renderer = pollster::block_on(async move {
+                    crate::commands::renderer::create_renderer_async(
+                        window_handle.clone(),
+                        width,
+                        height,
+                    )
+                    .await
+                });
+                context.resources.graphics.renderer = Some(renderer);
+            }
+
+            #[cfg(target_arch = "wasm32")]
+            {
+                let (sender, receiver) = futures::channel::oneshot::channel();
+                context.resources.graphics.renderer_receiver = Some(receiver);
+                std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+                console_log::init().expect("Failed to initialize logger!");
+                let (canvas_width, canvas_height) = context.resources.graphics.viewport_size;
+                log::info!("Canvas dimensions: ({canvas_width} x {canvas_height})");
+                wasm_bindgen_futures::spawn_local(async move {
+                    let renderer = crate::commands::renderer::create_renderer_async(
+                        window_handle.clone(),
+                        canvas_width,
+                        canvas_height,
+                    )
+                    .await;
+                    if sender.send(renderer).is_err() {
+                        log::error!("Failed to create and send renderer!");
+                    }
+                });
+            }
+
+            context.resources.user_interface.state = Some(gui_state);
+            context.resources.frame_timing.last_frame_start_instant =
+                Some(web_time::Instant::now());
+        }
+
+        /// Handles viewport resizing, such as when the window is resized by the user
+        pub fn resize_viewport(context: &mut crate::Context, width: u32, height: u32) {
+            log::info!("Resizing renderer surface to: ({width}, {height})");
+            if let Some(renderer) = context.resources.graphics.renderer.as_mut() {
+                renderer.gpu.surface_config.width = width;
+                renderer.gpu.surface_config.height = height;
+                renderer
+                    .gpu
+                    .surface
+                    .configure(&renderer.gpu.device, &renderer.gpu.surface_config);
+                renderer.depth_texture_view = crate::commands::renderer::create_depth_texture(
+                    &renderer.gpu.device,
+                    width,
+                    height,
+                );
+            }
+            context.resources.graphics.viewport_size = (width, height);
+
+            // Update the egui context with the new scale factor
+            if let (Some(window_handle), Some(gui_state)) = (
+                context.resources.window.handle.as_ref(),
+                context.resources.user_interface.state.as_mut(),
+            ) {
+                gui_state
+                    .egui_ctx()
+                    .set_pixels_per_point(window_handle.scale_factor() as f32);
             }
         }
     }
@@ -835,12 +825,32 @@ pub mod commands {
             })
         }
 
-        pub fn create_uniform_binding(device: &wgpu::Device) -> crate::UniformBinding {
+        pub fn create_triangle(
+            device: &wgpu::Device,
+            depth_format: wgpu::TextureFormat,
+            surface_format: wgpu::TextureFormat,
+        ) -> crate::triangle::TriangleRender {
+            let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
+                device,
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&crate::triangle::TRIANGLE_VERTICES),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            );
+            let index_buffer = wgpu::util::DeviceExt::create_buffer_init(
+                device,
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("index Buffer"),
+                    contents: bytemuck::cast_slice(&crate::triangle::TRIANGLE_INDICES),
+                    usage: wgpu::BufferUsages::INDEX,
+                },
+            );
             let buffer = wgpu::util::DeviceExt::create_buffer_init(
                 device,
                 &wgpu::util::BufferInitDescriptor {
                     label: Some("Uniform Buffer"),
-                    contents: bytemuck::cast_slice(&[crate::UniformBuffer::default()]),
+                    contents: bytemuck::cast_slice(&[crate::triangle::UniformBuffer::default()]),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 },
             );
@@ -869,108 +879,29 @@ pub mod commands {
                 label: Some("uniform_bind_group"),
             });
 
-            crate::UniformBinding {
-                buffer,
-                bind_group,
-                bind_group_layout,
-            }
-        }
-
-        pub fn create_triangle(
-            device: &wgpu::Device,
-            depth_format: wgpu::TextureFormat,
-            surface_format: wgpu::TextureFormat,
-        ) -> crate::TriangleRender {
-            let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
-                device,
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("Vertex Buffer"),
-                    contents: bytemuck::cast_slice(&crate::VERTICES),
-                    usage: wgpu::BufferUsages::VERTEX,
-                },
-            );
-            let index_buffer = wgpu::util::DeviceExt::create_buffer_init(
-                device,
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("index Buffer"),
-                    contents: bytemuck::cast_slice(&crate::INDICES),
-                    usage: wgpu::BufferUsages::INDEX,
-                },
-            );
-            let uniform = create_uniform_binding(device);
-            let pipeline = create_pipeline(device, depth_format, surface_format, &uniform);
-            crate::TriangleRender {
-                model: nalgebra_glm::Mat4::identity(),
-                uniform,
-                pipeline,
-                vertex_buffer,
-                index_buffer,
-            }
-        }
-
-        pub fn render_triangle(
-            triangle: &mut crate::TriangleRender,
-            render_pass: &mut wgpu::RenderPass<'_>,
-        ) {
-            render_pass.set_pipeline(&triangle.pipeline);
-            render_pass.set_bind_group(0, &triangle.uniform.bind_group, &[]);
-
-            render_pass.set_vertex_buffer(0, triangle.vertex_buffer.slice(..));
-            render_pass
-                .set_index_buffer(triangle.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-            render_pass.draw_indexed(0..(crate::INDICES.len() as _), 0, 0..1);
-        }
-
-        pub fn update_triangle_render(
-            triangle: &mut crate::TriangleRender,
-            queue: &wgpu::Queue,
-            aspect_ratio: f32,
-            delta_time: f32,
-        ) {
-            let projection =
-                nalgebra_glm::perspective_lh_zo(aspect_ratio, 80_f32.to_radians(), 0.1, 1000.0);
-            let view = nalgebra_glm::look_at_lh(
-                &nalgebra_glm::vec3(0.0, 0.0, 3.0),
-                &nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                &nalgebra_glm::Vec3::y(),
-            );
-            triangle.model = nalgebra_glm::rotate(
-                &triangle.model,
-                30_f32.to_radians() * delta_time,
-                &nalgebra_glm::Vec3::y(),
-            );
-            queue.write_buffer(
-                &triangle.uniform.buffer,
-                0,
-                bytemuck::cast_slice(&[crate::UniformBuffer {
-                    mvp: projection * view * triangle.model,
-                }]),
-            );
-        }
-
-        fn create_pipeline(
-            device: &wgpu::Device,
-            depth_format: wgpu::TextureFormat,
-            surface_format: wgpu::TextureFormat,
-            uniform: &crate::UniformBinding,
-        ) -> wgpu::RenderPipeline {
             let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/triangle.wgsl"));
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
-                bind_group_layouts: &[&uniform.bind_group_layout],
+                bind_group_layouts: &[&bind_group_layout],
                 push_constant_ranges: &[],
             });
 
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            let attributes: &[wgpu::VertexAttribute] =
+                &wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
+            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: None,
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vertex_main"),
-                    buffers: &[crate::Vertex::description(
-                        &crate::Vertex::vertex_attributes(),
-                    )],
+                    buffers: &[{
+                        wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<crate::Vertex>()
+                                as wgpu::BufferAddress,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes,
+                        }
+                    }],
                     compilation_options: Default::default(),
                 },
                 primitive: wgpu::PrimitiveState {
@@ -1006,7 +937,138 @@ pub mod commands {
                 }),
                 multiview: None,
                 cache: None,
-            })
+            });
+
+            crate::triangle::TriangleRender {
+                model: nalgebra_glm::Mat4::identity(),
+                pipeline,
+                vertex_buffer,
+                index_buffer,
+                buffer,
+                bind_group,
+                bind_group_layout,
+            }
+        }
+
+        pub fn render_triangle(
+            triangle: &mut crate::triangle::TriangleRender,
+            render_pass: &mut wgpu::RenderPass<'_>,
+        ) {
+            render_pass.set_pipeline(&triangle.pipeline);
+            render_pass.set_bind_group(0, &triangle.bind_group, &[]);
+
+            render_pass.set_vertex_buffer(0, triangle.vertex_buffer.slice(..));
+            render_pass
+                .set_index_buffer(triangle.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+
+            render_pass.draw_indexed(0..(crate::triangle::TRIANGLE_INDICES.len() as _), 0, 0..1);
+        }
+
+        pub fn update_triangle_render(
+            triangle: &mut crate::triangle::TriangleRender,
+            queue: &wgpu::Queue,
+            aspect_ratio: f32,
+            delta_time: f32,
+        ) {
+            let projection =
+                nalgebra_glm::perspective_lh_zo(aspect_ratio, 80_f32.to_radians(), 0.1, 1000.0);
+            let view = nalgebra_glm::look_at_lh(
+                &nalgebra_glm::vec3(0.0, 0.0, 3.0),
+                &nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                &nalgebra_glm::Vec3::y(),
+            );
+            triangle.model = nalgebra_glm::rotate(
+                &triangle.model,
+                30_f32.to_radians() * delta_time,
+                &nalgebra_glm::Vec3::y(),
+            );
+            queue.write_buffer(
+                &triangle.buffer,
+                0,
+                bytemuck::cast_slice(&[crate::triangle::UniformBuffer {
+                    mvp: projection * view * triangle.model,
+                }]),
+            );
+        }
+    }
+
+    pub mod user_interface {
+        impl egui_tiles::Behavior<crate::Pane> for crate::TileTreeContext {
+            fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
+                24.0
+            }
+
+            fn gap_width(&self, _style: &egui::Style) -> f32 {
+                2.0
+            }
+
+            fn is_tab_closable(
+                &self,
+                _tiles: &egui_tiles::Tiles<crate::Pane>,
+                _tile_id: egui_tiles::TileId,
+            ) -> bool {
+                true
+            }
+
+            fn simplification_options(&self) -> egui_tiles::SimplificationOptions {
+                egui_tiles::SimplificationOptions {
+                    all_panes_must_have_tabs: true,
+                    ..Default::default()
+                }
+            }
+
+            fn tab_title_for_pane(&mut self, _pane: &crate::Pane) -> egui::WidgetText {
+                "Pane".into()
+            }
+
+            fn top_bar_right_ui(
+                &mut self,
+                _tiles: &egui_tiles::Tiles<crate::Pane>,
+                _ui: &mut egui::Ui,
+                _tile_id: egui_tiles::TileId,
+                _tabs: &egui_tiles::Tabs,
+                _scroll_offset: &mut f32,
+            ) {
+            }
+
+            fn pane_ui(
+                &mut self,
+                ui: &mut egui::Ui,
+                tile_id: egui_tiles::TileId,
+                _pane: &mut crate::Pane,
+            ) -> egui_tiles::UiResponse {
+                let rect = ui.max_rect();
+
+                // Store this tile's rect for overlap checking
+                self.tile_rects.insert(tile_id, rect);
+
+                // Display tile ID in the center of each pane
+                ui.centered_and_justified(|ui| {
+                    ui.label(format!("Tile {}", tile_id.0));
+                });
+
+                if ui.button("Click Me").clicked() {
+                    println!("Button clicked in Pane");
+                }
+
+                // Only enable dragging when shift is pressed
+                let shift_pressed = ui.input(|i| i.modifiers.shift);
+                let cursor = if shift_pressed {
+                    egui::CursorIcon::Grab
+                } else {
+                    egui::CursorIcon::Default
+                };
+
+                let response = ui
+                    .allocate_rect(ui.max_rect(), egui::Sense::click_and_drag())
+                    .on_hover_cursor(cursor);
+
+                if shift_pressed && response.dragged() {
+                    egui_tiles::UiResponse::DragStarted
+                } else {
+                    egui_tiles::UiResponse::None
+                }
+            }
         }
     }
 }
@@ -1017,6 +1079,12 @@ pub mod commands {
 /// They intentionally do not mutate the context.
 pub use queries::*;
 pub mod queries {
+    pub fn query_key_pressed(context: &crate::Context, keycode: winit::keyboard::KeyCode) -> bool {
+        let keystates = &context.resources.input.keyboard.keystates;
+        keystates.contains_key(&keycode)
+            && keystates[&keycode] == winit::event::ElementState::Pressed
+    }
+
     /// Queries for the display viewport's aspect ratio
     pub fn query_viewport_aspect_ratio(context: &crate::Context) -> Option<f32> {
         let Some(renderer) = &context.resources.graphics.renderer else {
