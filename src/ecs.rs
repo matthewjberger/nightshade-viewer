@@ -3,7 +3,7 @@
 #[macro_export]
 macro_rules! ecs {
     (
-        $scene:ident {
+        $context:ident {
             $($name:ident: $type:ty => $mask:ident),* $(,)?
         }
         $resources:ident {
@@ -61,7 +61,7 @@ macro_rules! ecs {
 
         /// A collection of component tables and resources
         #[derive(Default, serde::Serialize, serde::Deserialize)]
-        pub struct $scene {
+        pub struct $context {
             pub entity_locations: EntityLocations,
             pub tables: Vec<ComponentArrays>,
             pub allocator: EntityAllocator,
@@ -98,23 +98,23 @@ macro_rules! ecs {
         }
 
         /// Spawn a batch of new entities with the same component mask
-        pub fn spawn_entities(scene: &mut $scene, mask: u32, count: usize) -> Vec<EntityId> {
+        pub fn spawn_entities(context: &mut $context, mask: u32, count: usize) -> Vec<EntityId> {
             let mut entities = Vec::with_capacity(count);
-            let table_index = get_or_create_table(scene, mask);
+            let table_index = get_or_create_table(context, mask);
 
-            scene.tables[table_index].entity_indices.reserve(count);
+            context.tables[table_index].entity_indices.reserve(count);
 
             // Reserve space in components
             $(
                 if mask & $mask != 0 {
-                    scene.tables[table_index].$name.reserve(count);
+                    context.tables[table_index].$name.reserve(count);
                 }
             )*
 
             for _ in 0..count {
-                let entity = create_entity(scene);
+                let entity = create_entity(context);
                 add_to_table(
-                    &mut scene.tables[table_index],
+                    &mut context.tables[table_index],
                     entity,
                     (
                         $(
@@ -128,9 +128,9 @@ macro_rules! ecs {
                 );
                 entities.push(entity);
                 insert_location(
-                    &mut scene.entity_locations,
+                    &mut context.entity_locations,
                     entity,
-                    (table_index, scene.tables[table_index].entity_indices.len() - 1),
+                    (table_index, context.tables[table_index].entity_indices.len() - 1),
                 );
             }
 
@@ -138,8 +138,8 @@ macro_rules! ecs {
         }
 
         /// Query for all entities that match the component mask
-        pub fn query_entities(scene: &$scene, mask: u32) -> Vec<EntityId> {
-            let total_capacity = scene
+        pub fn query_entities(context: &$context, mask: u32) -> Vec<EntityId> {
+            let total_capacity = context
                 .tables
                 .iter()
                 .filter(|table| table.mask & mask == mask)
@@ -147,7 +147,7 @@ macro_rules! ecs {
                 .sum();
 
             let mut result = Vec::with_capacity(total_capacity);
-            for table in &scene.tables {
+            for table in &context.tables {
                 if table.mask & mask == mask {
                     // Only include allocated entities
                     result.extend(
@@ -155,7 +155,7 @@ macro_rules! ecs {
                             .entity_indices
                             .iter()
                             .copied()
-                            .filter(|&e| scene.entity_locations.locations[e.id as usize].allocated),
+                            .filter(|&e| context.entity_locations.locations[e.id as usize].allocated),
                     );
                 }
             }
@@ -164,8 +164,8 @@ macro_rules! ecs {
 
         /// Query for the first entity that matches the component mask
         /// Returns as soon as a match is found, instead of running for all entities
-        pub fn query_first_entity(scene: &$scene, mask: u32) -> Option<EntityId> {
-            for table in &scene.tables {
+        pub fn query_first_entity(context: &$context, mask: u32) -> Option<EntityId> {
+            for table in &context.tables {
                 if !$crate::has_components!(table, mask) {
                     continue;
                 }
@@ -173,7 +173,7 @@ macro_rules! ecs {
                     .entity_indices
                     .iter()
                     .copied()
-                    .filter(|&e| scene.entity_locations.locations[e.id as usize].allocated)
+                    .filter(|&e| context.entity_locations.locations[e.id as usize].allocated)
                     .collect::<Vec<_>>();
                 if let Some(entity) = indices.first() {
                     return Some(*entity);
@@ -183,15 +183,15 @@ macro_rules! ecs {
         }
 
         /// Get a specific component for an entity
-        pub fn get_component<T: 'static>(scene: &$scene, entity: EntityId, mask: u32) -> Option<&T> {
-           let (table_index, array_index) = get_location(&scene.entity_locations, entity)?;
+        pub fn get_component<T: 'static>(context: &$context, entity: EntityId, mask: u32) -> Option<&T> {
+           let (table_index, array_index) = get_location(&context.entity_locations, entity)?;
 
            // Early return if entity is despawned
-           if !scene.entity_locations.locations[entity.id as usize].allocated {
+           if !context.entity_locations.locations[entity.id as usize].allocated {
                return None;
            }
 
-           let table = &scene.tables[table_index];
+           let table = &context.tables[table_index];
 
            if table.mask & mask == 0 {
                return None;
@@ -215,9 +215,9 @@ macro_rules! ecs {
         }
 
         /// Get a mutable reference to a specific component for an entity
-        pub fn get_component_mut<T: 'static>(scene: &mut $scene, entity: EntityId, mask: u32) -> Option<&mut T> {
-            let (table_index, array_index) = get_location(&scene.entity_locations, entity)?;
-            let table = &mut scene.tables[table_index];
+        pub fn get_component_mut<T: 'static>(context: &mut $context, entity: EntityId, mask: u32) -> Option<&mut T> {
+            let (table_index, array_index) = get_location(&context.entity_locations, entity)?;
+            let table = &mut context.tables[table_index];
             if table.mask & mask == 0 {
                 return None;
             }
@@ -240,15 +240,15 @@ macro_rules! ecs {
         }
 
         /// Despawn a batch of entities
-        pub fn despawn_entities(scene: &mut $scene, entities: &[EntityId]) -> Vec<EntityId> {
+        pub fn despawn_entities(context: &mut $context, entities: &[EntityId]) -> Vec<EntityId> {
             let mut despawned = Vec::with_capacity(entities.len());
             let mut tables_to_update = Vec::new();
 
             // First pass: mark entities as despawned and collect their table locations
             for &entity in entities {
                 let id = entity.id as usize;
-                if id < scene.entity_locations.locations.len() {
-                    let loc = &mut scene.entity_locations.locations[id];
+                if id < context.entity_locations.locations.len() {
+                    let loc = &mut context.entity_locations.locations[id];
                     if loc.allocated && loc.generation == entity.generation {
                         // Get table info before marking as despawned
                         let table_idx = loc.table_index as usize;
@@ -257,7 +257,7 @@ macro_rules! ecs {
                         // Mark as despawned
                         loc.allocated = false;
                         loc.generation = loc.generation.wrapping_add(1);
-                        scene.allocator.free_ids.push((entity.id, loc.generation));
+                        context.allocator.free_ids.push((entity.id, loc.generation));
 
                         // Collect table info for updates
                         tables_to_update.push((table_idx, array_idx));
@@ -268,17 +268,17 @@ macro_rules! ecs {
 
             // Second pass: remove entities from tables in reverse order to maintain indices
             for (table_idx, array_idx) in tables_to_update.into_iter().rev() {
-                if table_idx >= scene.tables.len() {
+                if table_idx >= context.tables.len() {
                     continue;
                 }
 
-                let table = &mut scene.tables[table_idx];
+                let table = &mut context.tables[table_idx];
                 let last_idx = table.entity_indices.len() - 1;
 
                 // If we're not removing the last element, update the moved entity's location
                 if array_idx < last_idx {
                     let moved_entity = table.entity_indices[last_idx];
-                    if let Some(loc) = scene.entity_locations.locations.get_mut(moved_entity.id as usize) {
+                    if let Some(loc) = context.entity_locations.locations.get_mut(moved_entity.id as usize) {
                         if loc.allocated {
                             loc.array_index = array_idx as u16;
                         }
@@ -298,23 +298,23 @@ macro_rules! ecs {
         }
 
         /// Add components to an entity
-        pub fn add_components(scene: &mut $scene, entity: EntityId, mask: u32) -> bool {
-            if let Some((table_index, array_index)) = get_location(&scene.entity_locations, entity) {
-                let current_mask = scene.tables[table_index].mask;
+        pub fn add_components(context: &mut $context, entity: EntityId, mask: u32) -> bool {
+            if let Some((table_index, array_index)) = get_location(&context.entity_locations, entity) {
+                let current_mask = context.tables[table_index].mask;
                 if current_mask & mask == mask {
                     return true;
                 }
 
                 let target_table = if mask.count_ones() == 1 {
-                    get_component_index(mask).and_then(|idx| scene.table_edges[table_index].add_edges[idx])
+                    get_component_index(mask).and_then(|idx| context.table_edges[table_index].add_edges[idx])
                 } else {
                     None
                 };
 
                 let new_table_index =
-                    target_table.unwrap_or_else(|| get_or_create_table(scene, current_mask | mask));
+                    target_table.unwrap_or_else(|| get_or_create_table(context, current_mask | mask));
 
-                move_entity(scene, entity, table_index, array_index, new_table_index);
+                move_entity(context, entity, table_index, array_index, new_table_index);
                 true
             } else {
                 false
@@ -322,24 +322,24 @@ macro_rules! ecs {
         }
 
         /// Remove components from an entity
-        pub fn remove_components(scene: &mut $scene, entity: EntityId, mask: u32) -> bool {
-            if let Some((table_index, array_index)) = get_location(&scene.entity_locations, entity) {
-                let current_mask = scene.tables[table_index].mask;
+        pub fn remove_components(context: &mut $context, entity: EntityId, mask: u32) -> bool {
+            if let Some((table_index, array_index)) = get_location(&context.entity_locations, entity) {
+                let current_mask = context.tables[table_index].mask;
                 if current_mask & mask == 0 {
                     return true;
                 }
 
                 let target_table = if mask.count_ones() == 1 {
                     get_component_index(mask)
-                        .and_then(|idx| scene.table_edges[table_index].remove_edges[idx])
+                        .and_then(|idx| context.table_edges[table_index].remove_edges[idx])
                 } else {
                     None
                 };
 
                 let new_table_index =
-                    target_table.unwrap_or_else(|| get_or_create_table(scene, current_mask & !mask));
+                    target_table.unwrap_or_else(|| get_or_create_table(context, current_mask & !mask));
 
-                move_entity(scene, entity, table_index, array_index, new_table_index);
+                move_entity(context, entity, table_index, array_index, new_table_index);
                 true
             } else {
                 false
@@ -347,9 +347,9 @@ macro_rules! ecs {
         }
 
         /// Get the current component mask for an entity
-        pub fn component_mask(scene: &$scene, entity: EntityId) -> Option<u32> {
-            get_location(&scene.entity_locations, entity)
-                .map(|(table_index, _)| scene.tables[table_index].mask)
+        pub fn component_mask(context: &$context, entity: EntityId) -> Option<u32> {
+            get_location(&context.entity_locations, entity)
+                .map(|(table_index, _)| context.tables[table_index].mask)
         }
 
         fn remove_from_table(arrays: &mut ComponentArrays, index: usize) -> Option<EntityId> {
@@ -371,20 +371,20 @@ macro_rules! ecs {
         }
 
         fn move_entity(
-            scene: &mut $scene,
+            context: &mut $context,
             entity: EntityId,
             from_table: usize,
             from_index: usize,
             to_table: usize,
         ) {
-            let components = get_components(&scene.tables[from_table], from_index);
-            add_to_table(&mut scene.tables[to_table], entity, components);
-            let new_index = scene.tables[to_table].entity_indices.len() - 1;
-            insert_location(&mut scene.entity_locations, entity, (to_table, new_index));
+            let components = get_components(&context.tables[from_table], from_index);
+            add_to_table(&mut context.tables[to_table], entity, components);
+            let new_index = context.tables[to_table].entity_indices.len() - 1;
+            insert_location(&mut context.entity_locations, entity, (to_table, new_index));
 
-            if let Some(swapped) = remove_from_table(&mut scene.tables[from_table], from_index) {
+            if let Some(swapped) = remove_from_table(&mut context.tables[from_table], from_index) {
                 insert_location(
-                    &mut scene.entity_locations,
+                    &mut context.entity_locations,
                     swapped,
                     (from_table, from_index),
                 );
@@ -440,27 +440,27 @@ macro_rules! ecs {
             };
         }
 
-        fn create_entity(scene: &mut $scene) -> EntityId {
-            if let Some((id, next_gen)) = scene.allocator.free_ids.pop() {
+        fn create_entity(context: &mut $context) -> EntityId {
+            if let Some((id, next_gen)) = context.allocator.free_ids.pop() {
                 let id_usize = id as usize;
-                if id_usize >= scene.entity_locations.locations.len() {
-                    scene.entity_locations.locations.resize(
-                        (scene.entity_locations.locations.len() * 2).max(64),
+                if id_usize >= context.entity_locations.locations.len() {
+                    context.entity_locations.locations.resize(
+                        (context.entity_locations.locations.len() * 2).max(64),
                         EntityLocation::default(),
                     );
                 }
-                scene.entity_locations.locations[id_usize].generation = next_gen;
+                context.entity_locations.locations[id_usize].generation = next_gen;
                 EntityId {
                     id,
                     generation: next_gen,
                 }
             } else {
-                let id = scene.allocator.next_id;
-                scene.allocator.next_id += 1;
+                let id = context.allocator.next_id;
+                context.allocator.next_id += 1;
                 let id_usize = id as usize;
-                if id_usize >= scene.entity_locations.locations.len() {
-                    scene.entity_locations.locations.resize(
-                        (scene.entity_locations.locations.len() * 2).max(64),
+                if id_usize >= context.entity_locations.locations.len() {
+                    context.entity_locations.locations.resize(
+                        (context.entity_locations.locations.len() * 2).max(64),
                         EntityLocation::default(),
                     );
                 }
@@ -484,8 +484,8 @@ macro_rules! ecs {
             arrays.entity_indices.push(entity);
         }
 
-        fn get_or_create_table(scene: &mut $scene, mask: u32) -> usize {
-            if let Some((index, _)) = scene
+        fn get_or_create_table(context: &mut $context, mask: u32) -> usize {
+            if let Some((index, _)) = context
                 .tables
                 .iter()
                 .enumerate()
@@ -494,24 +494,24 @@ macro_rules! ecs {
                 return index;
             }
 
-            let table_index = scene.tables.len();
-            scene.tables.push(ComponentArrays {
+            let table_index = context.tables.len();
+            context.tables.push(ComponentArrays {
                 mask,
                 ..Default::default()
             });
-            scene.table_edges.push(TableEdges::default());
+            context.table_edges.push(TableEdges::default());
 
             // Remove table registry updates and only update edges
             for comp_mask in [
                 $($mask,)*
             ] {
                 if let Some(comp_idx) = get_component_index(comp_mask) {
-                    for (idx, table) in scene.tables.iter().enumerate() {
+                    for (idx, table) in context.tables.iter().enumerate() {
                         if table.mask | comp_mask == mask {
-                            scene.table_edges[idx].add_edges[comp_idx] = Some(table_index);
+                            context.table_edges[idx].add_edges[comp_idx] = Some(table_index);
                         }
                         if table.mask & !comp_mask == mask {
-                            scene.table_edges[idx].remove_edges[comp_idx] = Some(table_index);
+                            context.table_edges[idx].remove_edges[comp_idx] = Some(table_index);
                         }
                     }
                 }

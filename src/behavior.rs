@@ -1,39 +1,49 @@
+//! This module contains the engine's business logic
+
+/// This is the entry point for the engine
+pub fn start() -> Result<(), Box<dyn std::error::Error>> {
+    let event_loop = winit::event_loop::EventLoop::builder().build()?;
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    event_loop.run_app(&mut crate::Context::default())?;
+    Ok(())
+}
+
 /// This is the main loop, driven by winit window events.
 /// Resources are updated and then systems are triggered continuously.
-pub fn step(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+pub fn step(context: &mut crate::Context, event: &winit::event::WindowEvent) {
     // On wasm, the renderer is received from an async task
     // and will not be available in the cycles prior to that
     #[cfg(target_arch = "wasm32")]
-    crate::systems::receive_renderer_system(scene);
+    crate::systems::receive_renderer_system(context);
 
     // The renderer should be available before running any systems
-    if scene.resources.graphics.renderer.is_none() {
+    if context.resources.graphics.renderer.is_none() {
         return;
     }
 
-    receive_ui_events(scene, event);
-    receive_resize_event(scene, event);
-    receive_keyboard_event(scene, event);
-    receive_mouse_event(scene, event);
+    receive_ui_events(context, event);
+    receive_resize_event(context, event);
+    receive_keyboard_event(context, event);
+    receive_mouse_event(context, event);
 
     let winit::event::WindowEvent::RedrawRequested = event else {
         return;
     };
-    run_systems(scene);
-    reset_systems(scene);
+    run_systems(context);
+    reset_systems(context);
 }
 
 /// Run systems meant to update each cycle of the main loop
-fn run_systems(scene: &mut crate::Scene) {
-    update_frame_timing_system(scene);
-    ensure_tile_tree_system(scene);
-    ui_system(scene);
-    render_system(scene);
+fn run_systems(context: &mut crate::Context) {
+    update_frame_timing_system(context);
+    ensure_tile_tree_system(context);
+    ui_system(context);
+    render_system(context);
 }
 
 /// Reset systems in preparation the next frame
-fn reset_systems(scene: &mut crate::Scene) {
-    reset_mouse_system(scene);
+fn reset_systems(context: &mut crate::Context) {
+    reset_mouse_system(context);
 }
 
 /// Winit window events drive the main loop,
@@ -41,26 +51,26 @@ fn reset_systems(scene: &mut crate::Scene) {
 /// systems in response to those events
 use events::*;
 pub mod events {
-    pub fn receive_ui_events(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
-        let Some(gui_state) = &mut scene.resources.user_interface.state else {
+    pub fn receive_ui_events(context: &mut crate::Context, event: &winit::event::WindowEvent) {
+        let Some(gui_state) = &mut context.resources.user_interface.state else {
             return;
         };
-        let Some(window_handle) = scene.resources.window.handle.as_ref() else {
+        let Some(window_handle) = context.resources.window.handle.as_ref() else {
             return;
         };
-        scene.resources.user_interface.consumed_event =
+        context.resources.user_interface.consumed_event =
             gui_state.on_window_event(window_handle, event).consumed;
     }
 
-    pub fn receive_resize_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+    pub fn receive_resize_event(context: &mut crate::Context, event: &winit::event::WindowEvent) {
         let winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) = event
         else {
             return;
         };
-        super::resize_viewport(scene, *width, *height);
+        super::resize_viewport(context, *width, *height);
     }
 
-    pub fn receive_keyboard_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
+    pub fn receive_keyboard_event(context: &mut crate::Context, event: &winit::event::WindowEvent) {
         let winit::event::WindowEvent::KeyboardInput {
             event:
                 winit::event::KeyEvent {
@@ -73,7 +83,7 @@ pub mod events {
         else {
             return;
         };
-        *scene
+        *context
             .resources
             .input
             .keyboard
@@ -82,8 +92,8 @@ pub mod events {
             .or_insert(*state) = *state;
     }
 
-    pub fn receive_mouse_event(scene: &mut crate::Scene, event: &winit::event::WindowEvent) {
-        let mouse = &mut scene.resources.input.mouse;
+    pub fn receive_mouse_event(context: &mut crate::Context, event: &winit::event::WindowEvent) {
+        let mouse = &mut context.resources.input.mouse;
         match event {
             winit::event::WindowEvent::MouseInput { button, state, .. } => {
                 let clicked = *state == winit::event::ElementState::Pressed;
@@ -127,16 +137,16 @@ pub mod events {
 
 /// This module contains a majority of the business logic of the application.
 ///
-/// Systems are stateless free functions that operate on the scene data.
+/// Systems are stateless free functions that operate on the engine context data.
 /// State associated with them goes into the world resources.
-/// They may also queries and commands to interact with the scene data.
+/// They may also queries and commands to interact with the engine context data.
 use systems::*;
 pub mod systems {
     /// Calculates and refreshes frame timing values such as delta time
-    pub fn update_frame_timing_system(scene: &mut crate::Scene) {
+    pub fn update_frame_timing_system(context: &mut crate::Context) {
         let now = web_time::Instant::now();
 
-        let crate::Scene {
+        let crate::Context {
             resources:
                 crate::Resources {
                     frame_timing:
@@ -152,7 +162,7 @@ pub mod systems {
                     ..
                 },
             ..
-        } = scene;
+        } = context;
 
         // Capture first instant
         if initial_frame_start_instant.is_none() {
@@ -193,8 +203,8 @@ pub mod systems {
     }
 
     /// Ensures a default layout when the tile tree is emptied
-    pub fn ensure_tile_tree_system(scene: &mut crate::Scene) {
-        if let Some(tile_tree) = &scene.resources.user_interface.tile_tree {
+    pub fn ensure_tile_tree_system(context: &mut crate::Context) {
+        if let Some(tile_tree) = &context.resources.user_interface.tile_tree {
             if !tile_tree.tiles.is_empty() {
                 return;
             }
@@ -206,17 +216,17 @@ pub mod systems {
         tab_tiles.push(tab_tile);
         let root = tiles.insert_tab_tile(tab_tiles);
         let tiles = egui_tiles::Tree::new("tree", root, tiles);
-        scene.resources.user_interface.tile_tree = Some(tiles);
+        context.resources.user_interface.tile_tree = Some(tiles);
     }
 
     /// Creates the UI for the frame and
     /// emits the resources needed for rendering
-    pub fn ui_system(scene: &mut crate::Scene) {
+    pub fn ui_system(context: &mut crate::Context) {
         let ui = {
-            let Some(gui_state) = scene.resources.user_interface.state.as_mut() else {
+            let Some(gui_state) = context.resources.user_interface.state.as_mut() else {
                 return;
             };
-            let Some(window_handle) = scene.resources.window.handle.as_ref() else {
+            let Some(window_handle) = context.resources.window.handle.as_ref() else {
                 return;
             };
             let gui_input = gui_state.take_egui_input(window_handle);
@@ -234,22 +244,22 @@ pub mod systems {
                 ui.separator();
                 ui.label(format!(
                     "FPS: {}",
-                    scene.resources.frame_timing.frames_per_second
+                    context.resources.frame_timing.frames_per_second
                 ));
                 ui.separator();
                 ui.checkbox(
-                    &mut scene.resources.user_interface.show_left_panel,
+                    &mut context.resources.user_interface.show_left_panel,
                     "Show Left Panel",
                 );
                 ui.checkbox(
-                    &mut scene.resources.user_interface.show_right_panel,
+                    &mut context.resources.user_interface.show_right_panel,
                     "Show Right Panel",
                 );
                 ui.separator();
             });
         });
 
-        if scene.resources.user_interface.show_left_panel {
+        if context.resources.user_interface.show_left_panel {
             egui::SidePanel::left("left").show(&ui, |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt(ui.next_auto_id())
@@ -261,13 +271,14 @@ pub mod systems {
                                     ui.group(|ui| {
                                         if ui.button("Create Entity").clicked() {
                                             let entity =
-                                                crate::spawn_entities(scene, crate::VISIBLE, 1)[0];
-                                            scene.resources.user_interface.selected_entity =
+                                                crate::spawn_entities(context, crate::VISIBLE, 1)
+                                                    [0];
+                                            context.resources.user_interface.selected_entity =
                                                 Some(entity);
                                         }
-                                        crate::query_root_nodes(scene).into_iter().for_each(
+                                        crate::query_root_nodes(context).into_iter().for_each(
                                             |entity| {
-                                                entity_tree_ui(scene, ui, entity);
+                                                entity_tree_ui(context, ui, entity);
                                             },
                                         );
                                     });
@@ -278,7 +289,7 @@ pub mod systems {
             });
         }
 
-        if scene.resources.user_interface.show_right_panel {
+        if context.resources.user_interface.show_right_panel {
             egui::SidePanel::right("right").show(&ui, |ui| {
                 ui.collapsing("Properties", |_ui| {
                     //
@@ -293,7 +304,7 @@ pub mod systems {
                     tile_tree: Some(tile_tree),
                     tile_tree_behavior: tile_tree_context,
                     ..
-                } = &mut scene.resources.user_interface
+                } = &mut context.resources.user_interface
                 else {
                     return;
                 };
@@ -311,12 +322,12 @@ pub mod systems {
 
         let output = ui.end_pass();
         let paint_jobs = ui.tessellate(output.shapes.clone(), output.pixels_per_point);
-        scene.resources.user_interface.frame_output = Some((output, paint_jobs));
+        context.resources.user_interface.frame_output = Some((output, paint_jobs));
     }
 
     /// Resets the mouse state for the next frame
-    pub fn reset_mouse_system(scene: &mut crate::Scene) {
-        let mouse = &mut scene.resources.input.mouse;
+    pub fn reset_mouse_system(context: &mut crate::Context) {
+        let mouse = &mut context.resources.input.mouse;
         if mouse.buttons.contains(crate::MouseButtons::SCROLLED) {
             mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
         }
@@ -328,13 +339,17 @@ pub mod systems {
     }
 
     // Recursively renders the entity tree in the ui system
-    pub fn entity_tree_ui(scene: &mut crate::Scene, ui: &mut egui::Ui, entity: crate::EntityId) {
-        let name = match crate::get_component::<crate::Name>(scene, entity, crate::NAME) {
+    pub fn entity_tree_ui(
+        context: &mut crate::Context,
+        ui: &mut egui::Ui,
+        entity: crate::EntityId,
+    ) {
+        let name = match crate::get_component::<crate::Name>(context, entity, crate::NAME) {
             Some(crate::Name(name)) if !name.is_empty() => name.to_string(),
             _ => "Entity".to_string(),
         };
 
-        let selected = scene.resources.user_interface.selected_entity == Some(entity);
+        let selected = context.resources.user_interface.selected_entity == Some(entity);
 
         let id = ui.make_persistent_id(ui.next_auto_id());
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
@@ -344,15 +359,16 @@ pub mod systems {
                     let response = ui.selectable_label(selected, format!("{prefix}{name}"));
 
                     if response.clicked() {
-                        scene.resources.user_interface.selected_entity = Some(entity);
+                        context.resources.user_interface.selected_entity = Some(entity);
                     }
 
                     response.context_menu(|ui| {
                         if ui.button("Add Child").clicked() {
                             let child =
-                                crate::spawn_entities(scene, crate::PARENT | crate::VISIBLE, 1)[0];
+                                crate::spawn_entities(context, crate::PARENT | crate::VISIBLE, 1)
+                                    [0];
                             if let Some(parent) = crate::get_component_mut::<crate::Parent>(
-                                scene,
+                                context,
                                 child,
                                 crate::PARENT,
                             ) {
@@ -361,10 +377,10 @@ pub mod systems {
                             ui.close_menu();
                         }
                         if ui.button("Remove").clicked() {
-                            crate::despawn_entities(scene, &[entity]);
-                            let descendents = crate::query_descendents(scene, entity);
+                            crate::despawn_entities(context, &[entity]);
+                            let descendents = crate::query_descendents(context, entity);
                             for entity in descendents {
-                                crate::despawn_entities(scene, &[entity]);
+                                crate::despawn_entities(context, &[entity]);
                             }
                             ui.close_menu();
                         }
@@ -372,36 +388,36 @@ pub mod systems {
                 });
             })
             .body(|ui| {
-                crate::query_children(scene, entity)
+                crate::query_children(context, entity)
                     .into_iter()
                     .for_each(|child| {
-                        entity_tree_ui(scene, ui, child);
+                        entity_tree_ui(context, ui, child);
                     });
             });
     }
 
     /// Renders graphics to the window
-    pub fn render_system(scene: &mut crate::Scene) {
-        let aspect_ratio = crate::queries::query_viewport_aspect_ratio(scene).unwrap_or(1.0);
+    pub fn render_system(context: &mut crate::Context) {
+        let aspect_ratio = crate::queries::query_viewport_aspect_ratio(context).unwrap_or(1.0);
 
         let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
-            scene.resources.user_interface.frame_output.take()
+            context.resources.user_interface.frame_output.take()
         else {
             return;
         };
-        let Some(window_handle) = scene.resources.window.handle.as_ref() else {
+        let Some(window_handle) = context.resources.window.handle.as_ref() else {
             return;
         };
         let screen_descriptor = {
-            let (width, height) = scene.resources.graphics.viewport_size;
+            let (width, height) = context.resources.graphics.viewport_size;
             egui_wgpu::ScreenDescriptor {
                 size_in_pixels: [width, height],
                 pixels_per_point: window_handle.scale_factor() as f32,
             }
         };
-        let delta_time = scene.resources.frame_timing.delta_time;
+        let delta_time = context.resources.frame_timing.delta_time;
 
-        let Some(renderer) = scene.resources.graphics.renderer.as_mut() else {
+        let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
             return;
         };
 
@@ -461,7 +477,7 @@ pub mod systems {
                     array_layer_count: None,
                 });
 
-        encoder.insert_debug_marker("Render scene");
+        encoder.insert_debug_marker("Main Render Pass");
 
         // This scope around the crate::render_pass prevents the
         // crate::render_pass from holding a borrow to the encoder,
@@ -509,27 +525,27 @@ pub mod systems {
 
     /// Receives the renderer from the async task that creates it on wasm, injecting it as a resource
     #[cfg(target_arch = "wasm32")]
-    pub fn receive_renderer_system(scene: &mut crate::Scene) {
-        if let Some(receiver) = scene.resources.graphics.renderer_receiver.as_mut() {
+    pub fn receive_renderer_system(context: &mut crate::Context) {
+        if let Some(receiver) = context.resources.graphics.renderer_receiver.as_mut() {
             if let Ok(Some(renderer)) = receiver.try_recv() {
-                scene.resources.graphics.renderer = Some(renderer);
-                scene.resources.graphics.renderer_receiver = None;
+                context.resources.graphics.renderer = Some(renderer);
+                context.resources.graphics.renderer_receiver = None;
             }
         }
-        if scene.resources.graphics.renderer.is_none() {
+        if context.resources.graphics.renderer.is_none() {
             return;
         }
     }
 }
 
-/// Commands are operations that mutate the scene data.
+/// Commands are operations that mutate the engine context.
 /// They may require arguments and are intended to be used by systems to reuse mutation logic.
 use commands::*;
 pub mod commands {
-    /// Initializes scene resources on startup
-    pub fn initialize(scene: &mut crate::Scene) {
+    /// Initializes context resources on startup
+    pub fn initialize(context: &mut crate::Context) {
         let window_handle = {
-            let Some(window_handle) = scene.resources.window.handle.as_mut() else {
+            let Some(window_handle) = context.resources.window.handle.as_mut() else {
                 return;
             };
             window_handle.clone()
@@ -538,7 +554,7 @@ pub mod commands {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let inner_size = window_handle.inner_size();
-            scene.resources.graphics.viewport_size = (inner_size.width, inner_size.height);
+            context.resources.graphics.viewport_size = (inner_size.width, inner_size.height);
         }
 
         let gui_context = egui::Context::default();
@@ -570,16 +586,16 @@ pub mod commands {
                 )
                 .await
             });
-            scene.resources.graphics.renderer = Some(renderer);
+            context.resources.graphics.renderer = Some(renderer);
         }
 
         #[cfg(target_arch = "wasm32")]
         {
             let (sender, receiver) = futures::channel::oneshot::channel();
-            scene.resources.graphics.renderer_receiver = Some(receiver);
+            context.resources.graphics.renderer_receiver = Some(receiver);
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
             console_log::init().expect("Failed to initialize logger!");
-            let (canvas_width, canvas_height) = scene.resources.graphics.viewport_size;
+            let (canvas_width, canvas_height) = context.resources.graphics.viewport_size;
             log::info!("Canvas dimensions: ({canvas_width} x {canvas_height})");
             wasm_bindgen_futures::spawn_local(async move {
                 let renderer = crate::commands::renderer::create_renderer_async(
@@ -594,14 +610,14 @@ pub mod commands {
             });
         }
 
-        scene.resources.user_interface.state = Some(gui_state);
-        scene.resources.frame_timing.last_frame_start_instant = Some(web_time::Instant::now());
+        context.resources.user_interface.state = Some(gui_state);
+        context.resources.frame_timing.last_frame_start_instant = Some(web_time::Instant::now());
     }
 
     /// Handles viewport resizing, such as when the window is resized by the user
-    pub fn resize_viewport(scene: &mut crate::Scene, width: u32, height: u32) {
+    pub fn resize_viewport(context: &mut crate::Context, width: u32, height: u32) {
         log::info!("Resizing renderer surface to: ({width}, {height})");
-        if let Some(renderer) = scene.resources.graphics.renderer.as_mut() {
+        if let Some(renderer) = context.resources.graphics.renderer.as_mut() {
             renderer.gpu.surface_config.width = width;
             renderer.gpu.surface_config.height = height;
             renderer
@@ -614,12 +630,12 @@ pub mod commands {
                 height,
             );
         }
-        scene.resources.graphics.viewport_size = (width, height);
+        context.resources.graphics.viewport_size = (width, height);
 
         // Update the egui context with the new scale factor
         if let (Some(window_handle), Some(gui_state)) = (
-            scene.resources.window.handle.as_ref(),
-            scene.resources.user_interface.state.as_mut(),
+            context.resources.window.handle.as_ref(),
+            context.resources.user_interface.state.as_mut(),
         ) {
             gui_state
                 .egui_ctx()
@@ -643,12 +659,12 @@ pub mod commands {
                 1,
                 false,
             );
-            let scene = create_triangle(&gpu.device, depth_format, gpu.surface_format);
+            let triangle = create_triangle(&gpu.device, depth_format, gpu.surface_format);
             crate::Renderer {
                 gpu,
                 depth_texture_view,
                 egui_renderer,
-                triangle: scene,
+                triangle,
                 depth_format,
             }
         }
@@ -937,16 +953,15 @@ pub mod commands {
     }
 }
 
-/// Queries are read-only operations
-/// that use the scene data to extract information.
-/// They are useful for finding entities and components,
-/// like the first available camera in a scene.
-/// They intentionally do not mutate the scene.
+/// Queries are read-only operations that return results
+/// based on input and the engine context.
+///
+/// They intentionally do not mutate the context.
 pub use queries::*;
 pub mod queries {
     /// Queries for the display viewport's aspect ratio
-    pub fn query_viewport_aspect_ratio(scene: &crate::Scene) -> Option<f32> {
-        let Some(renderer) = &scene.resources.graphics.renderer else {
+    pub fn query_viewport_aspect_ratio(context: &crate::Context) -> Option<f32> {
+        let Some(renderer) = &context.resources.graphics.renderer else {
             return None;
         };
         let surface_config = &renderer.gpu.surface_config;
@@ -954,10 +969,9 @@ pub mod queries {
         Some(aspect_ratio)
     }
 
-    /// Queries for the root nodes of the scene
-    /// by looking for entities that do not have a Parent component
-    pub fn query_root_nodes(scene: &crate::Scene) -> Vec<crate::EntityId> {
-        let mut root_entities: Vec<crate::EntityId> = scene
+    /// Queries for root nodes by looking for entities that do not have a Parent component
+    pub fn query_root_nodes(context: &crate::Context) -> Vec<crate::EntityId> {
+        let mut root_entities: Vec<crate::EntityId> = context
             .tables
             .iter()
             .filter_map(|table| {
@@ -974,15 +988,15 @@ pub mod queries {
 
     // Query for the child entities of an entity
     pub fn query_children(
-        scene: &crate::Scene,
+        context: &crate::Context,
         target_entity: crate::EntityId,
     ) -> Vec<crate::EntityId> {
         let mut child_entities = Vec::new();
-        crate::query_entities(scene, crate::PARENT)
+        crate::query_entities(context, crate::PARENT)
             .into_iter()
             .for_each(|entity| {
                 if let Some(crate::Parent(parent_entity)) =
-                    crate::get_component(scene, entity, crate::PARENT)
+                    crate::get_component(context, entity, crate::PARENT)
                 {
                     if *parent_entity != target_entity {
                         return;
@@ -995,16 +1009,18 @@ pub mod queries {
 
     /// Query for all the descendent entities of a target entity
     pub fn query_descendents(
-        scene: &crate::Scene,
+        context: &crate::Context,
         target_entity: crate::EntityId,
     ) -> Vec<crate::EntityId> {
         let mut descendents = Vec::new();
         let mut stack = vec![target_entity];
         while let Some(entity) = stack.pop() {
             descendents.push(entity);
-            query_children(scene, entity).into_iter().for_each(|child| {
-                stack.push(child);
-            });
+            query_children(context, entity)
+                .into_iter()
+                .for_each(|child| {
+                    stack.push(child);
+                });
         }
         descendents
     }
