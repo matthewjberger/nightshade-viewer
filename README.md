@@ -1,6 +1,6 @@
 #  Hemlock 🌹
 
-Hemlock is a portable graphics engine written in rust, capable of complex interactive visualization of arbitrary data streams 🌃🔭
+Hemlock is a portable graphics engine written in rust, capable of rendering complex interactive visualization of arbitrary data streams 🌃🔭
 
 ## Quickstart
 
