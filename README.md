@@ -21,7 +21,7 @@ cargo install --locked trunk
 trunk serve --features web --open
 ```
 
-## Justfile
+### Justfile
 
 If you have [just](https://github.com/casey/just) installed:
 
@@ -54,12 +54,31 @@ The final executable is at `target/release-compact/nightshade` on unix and `targ
 
 If you have [maturin]() installed:
 
-```
+```bash
 just build-python
 ```
 
 Then you can install the generated python wheel with:
 
-```
+```bash
 pip install python_api/target/wheels/nightshade-*.whl --force-reinstall
+```
+
+## Note for Windows Users
+
+If `trunk` fails to install because of `openssl`,
+you can use [vcpkg](https://vcpkg.io/en/) to install it.
+
+In `Powershell`, install `vcpkg`:
+
+```bash
+# Install vcpkg (optional if you use scoop or chocolatey instead)
+iex (iwr -useb https://aka.ms/vcpkg-init.ps1)
+```
+
+Then install `openssl` with:
+
+```bash
+vcpkg integrate install
+vcpkg.exe install openssl:x64-windows-static-md
 ```
