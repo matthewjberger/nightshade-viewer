@@ -1,1 +1,3 @@
-from nightshade import *
+import nightshade
+
+nightshade.run()
