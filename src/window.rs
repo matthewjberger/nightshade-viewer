@@ -33,7 +33,7 @@ pub struct FrameTiming {
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-impl winit::application::ApplicationHandler for crate::modules::scene::Context {
+impl winit::application::ApplicationHandler for crate::scene::Context {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         #[allow(unused_mut)]
         let mut attributes = winit::window::Window::default_attributes();
@@ -93,7 +93,7 @@ impl winit::application::ApplicationHandler for crate::modules::scene::Context {
 }
 
 /// Initializes context resources on startup
-pub fn initialize(context: &mut crate::modules::scene::Context) {
+pub fn initialize(context: &mut crate::scene::Context) {
     let window_handle = {
         let Some(window_handle) = context.resources.window.handle.as_mut() else {
             return;
@@ -129,8 +129,7 @@ pub fn initialize(context: &mut crate::modules::scene::Context) {
     {
         env_logger::init();
         let renderer = pollster::block_on(async move {
-            crate::modules::graphics::create_renderer_async(window_handle.clone(), width, height)
-                .await
+            crate::graphics::create_renderer_async(window_handle.clone(), width, height).await
         });
         context.resources.graphics.renderer = Some(renderer);
     }
@@ -144,7 +143,7 @@ pub fn initialize(context: &mut crate::modules::scene::Context) {
         let (canvas_width, canvas_height) = context.resources.graphics.viewport_size;
         log::info!("Canvas dimensions: ({canvas_width} x {canvas_height})");
         wasm_bindgen_futures::spawn_local(async move {
-            let renderer = crate::modules::graphics::create_renderer_async(
+            let renderer = crate::graphics::create_renderer_async(
                 window_handle.clone(),
                 canvas_width,
                 canvas_height,
@@ -161,7 +160,7 @@ pub fn initialize(context: &mut crate::modules::scene::Context) {
 }
 
 /// Handles viewport resizing, such as when the window is resized by the user
-pub fn resize_viewport(context: &mut crate::modules::scene::Context, width: u32, height: u32) {
+pub fn resize_viewport(context: &mut crate::scene::Context, width: u32, height: u32) {
     log::info!("Resizing renderer surface to: ({width}, {height})");
     if let Some(renderer) = context.resources.graphics.renderer.as_mut() {
         renderer.gpu.surface_config.width = width;
@@ -171,7 +170,7 @@ pub fn resize_viewport(context: &mut crate::modules::scene::Context, width: u32,
             .surface
             .configure(&renderer.gpu.device, &renderer.gpu.surface_config);
         renderer.depth_texture_view =
-            crate::modules::graphics::create_depth_texture(&renderer.gpu.device, width, height);
+            crate::graphics::create_depth_texture(&renderer.gpu.device, width, height);
     }
     context.resources.graphics.viewport_size = (width, height);
 
@@ -188,20 +187,20 @@ pub fn resize_viewport(context: &mut crate::modules::scene::Context, width: u32,
 
 pub mod events {
     pub fn receive_resize_event(
-        context: &mut crate::modules::scene::Context,
+        context: &mut crate::scene::Context,
         event: &winit::event::WindowEvent,
     ) {
         let winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) = event
         else {
             return;
         };
-        crate::modules::window::resize_viewport(context, *width, *height);
+        crate::window::resize_viewport(context, *width, *height);
     }
 }
 
 pub mod queries {
     /// Queries for the display viewport's aspect ratio
-    pub fn query_viewport_aspect_ratio(context: &crate::modules::scene::Context) -> Option<f32> {
+    pub fn query_viewport_aspect_ratio(context: &crate::scene::Context) -> Option<f32> {
         let Some(renderer) = &context.resources.graphics.renderer else {
             return None;
         };
@@ -213,14 +212,14 @@ pub mod queries {
 
 pub mod systems {
     /// Calculates and refreshes frame timing values such as delta time
-    pub fn update_frame_timing(context: &mut crate::modules::scene::Context) {
+    pub fn update_frame_timing(context: &mut crate::scene::Context) {
         let now = web_time::Instant::now();
 
-        let crate::modules::scene::Context {
+        let crate::scene::Context {
             resources:
-                crate::modules::scene::Resources {
+                crate::scene::Resources {
                     frame_timing:
-                        crate::modules::window::FrameTiming {
+                        crate::window::FrameTiming {
                             frames_per_second,
                             delta_time,
                             last_frame_start_instant,

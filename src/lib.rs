@@ -1,13 +1,9 @@
 mod ecs;
+mod graphics;
+mod input;
 mod run;
-
-pub mod modules {
-    pub mod graphics;
-    pub mod input;
-    pub mod scene;
-    pub mod ui;
-    pub mod window;
-}
-pub use self::modules::*;
+mod scene;
+mod ui;
+mod window;
 
 pub use run::start;

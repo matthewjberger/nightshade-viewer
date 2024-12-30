@@ -1,4 +1,4 @@
-use crate::modules::*;
+use crate::*;
 
 crate::ecs! {
     Context {
@@ -52,7 +52,7 @@ pub mod components {
     pub struct Name(pub String);
 
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-    pub struct Parent(pub crate::modules::scene::EntityId);
+    pub struct Parent(pub crate::scene::EntityId);
 
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
     pub struct Active;
@@ -277,7 +277,6 @@ pub mod queries {
     }
 }
 
-pub use systems::*;
 pub mod systems {
     use super::*;
 

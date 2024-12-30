@@ -12,7 +12,7 @@ pub(crate) fn step(context: &mut crate::scene::Context, event: &winit::event::Wi
     // On wasm, the renderer is received from an async task
     // and will not be available in the cycles prior to that
     #[cfg(target_arch = "wasm32")]
-    crate::modules::graphics::systems::receive_renderer(context);
+    crate::graphics::systems::receive_renderer(context);
 
     // The renderer should be available before running any systems
     if context.resources.graphics.renderer.is_none() {

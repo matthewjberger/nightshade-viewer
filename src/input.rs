@@ -41,7 +41,7 @@ pub struct Mouse {
 
 pub mod events {
     pub fn receive_keyboard_event(
-        context: &mut crate::modules::scene::Context,
+        context: &mut crate::scene::Context,
         event: &winit::event::WindowEvent,
     ) {
         let winit::event::WindowEvent::KeyboardInput {
@@ -66,7 +66,7 @@ pub mod events {
     }
 
     pub fn receive_mouse_event(
-        context: &mut crate::modules::scene::Context,
+        context: &mut crate::scene::Context,
         event: &winit::event::WindowEvent,
     ) {
         let mouse = &mut context.resources.input.mouse;
@@ -77,17 +77,17 @@ pub mod events {
                     winit::event::MouseButton::Left => {
                         mouse
                             .state
-                            .set(crate::modules::input::MouseState::LEFT_CLICKED, clicked);
+                            .set(crate::input::MouseState::LEFT_CLICKED, clicked);
                     }
                     winit::event::MouseButton::Middle => {
                         mouse
                             .state
-                            .set(crate::modules::input::MouseState::MIDDLE_CLICKED, clicked);
+                            .set(crate::input::MouseState::MIDDLE_CLICKED, clicked);
                     }
                     winit::event::MouseButton::Right => {
                         mouse
                             .state
-                            .set(crate::modules::input::MouseState::RIGHT_CLICKED, clicked);
+                            .set(crate::input::MouseState::RIGHT_CLICKED, clicked);
                     }
                     _ => {}
                 }
@@ -99,7 +99,7 @@ pub mod events {
                 mouse.position_delta = current_position - last_position;
                 mouse
                     .state
-                    .set(crate::modules::input::MouseState::MOVED, true);
+                    .set(crate::input::MouseState::MOVED, true);
             }
             winit::event::WindowEvent::MouseWheel {
                 delta: winit::event::MouseScrollDelta::LineDelta(h_lines, v_lines),
@@ -108,7 +108,7 @@ pub mod events {
                 mouse.wheel_delta = nalgebra_glm::vec2(*h_lines, *v_lines);
                 mouse
                     .state
-                    .set(crate::modules::input::MouseState::SCROLLED, true);
+                    .set(crate::input::MouseState::SCROLLED, true);
             }
             _ => {}
         }
@@ -116,7 +116,7 @@ pub mod events {
 }
 
 pub mod systems {
-    pub fn escape_key_exit(context: &mut crate::modules::scene::Context) {
+    pub fn escape_key_exit(context: &mut crate::scene::Context) {
         let keyboard = &context.resources.input.keyboard;
         if keyboard.is_key_pressed(winit::keyboard::KeyCode::Escape) {
             context.resources.window.should_exit = true;
@@ -124,25 +124,25 @@ pub mod systems {
     }
 
     /// Resets the input state for the next frame
-    pub fn reset_input(context: &mut crate::modules::scene::Context) {
+    pub fn reset_input(context: &mut crate::scene::Context) {
         let mouse = &mut context.resources.input.mouse;
         if mouse
             .state
-            .contains(crate::modules::input::MouseState::SCROLLED)
+            .contains(crate::input::MouseState::SCROLLED)
         {
             mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
         }
         mouse
             .state
-            .set(crate::modules::input::MouseState::MOVED, false);
+            .set(crate::input::MouseState::MOVED, false);
         if !mouse
             .state
-            .contains(crate::modules::input::MouseState::MOVED)
+            .contains(crate::input::MouseState::MOVED)
         {
             mouse.position_delta = nalgebra_glm::vec2(0.0, 0.0);
         }
         mouse
             .state
-            .set(crate::modules::input::MouseState::MOVED, false);
+            .set(crate::input::MouseState::MOVED, false);
     }
 }

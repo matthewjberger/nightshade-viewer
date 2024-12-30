@@ -7,7 +7,7 @@ pub struct Graphics {
     /// The renderer context
     #[cfg(target_arch = "wasm32")]
     pub renderer_receiver:
-        Option<futures::channel::oneshot::Receiver<crate::modules::graphics::Renderer>>,
+        Option<futures::channel::oneshot::Receiver<crate::graphics::Renderer>>,
 
     /// The size of the display viewport
     pub viewport_size: (u32, u32),
@@ -45,16 +45,16 @@ pub mod triangle {
     pub struct UniformBuffer {
         pub mvp: nalgebra_glm::Mat4,
     }
-    pub const TRIANGLE_VERTICES: [crate::modules::graphics::Vertex; 3] = [
-        crate::modules::graphics::Vertex {
+    pub const TRIANGLE_VERTICES: [crate::graphics::Vertex; 3] = [
+        crate::graphics::Vertex {
             position: [1.0, -1.0, 0.0, 1.0],
             color: [1.0, 0.0, 0.0, 1.0],
         },
-        crate::modules::graphics::Vertex {
+        crate::graphics::Vertex {
             position: [-1.0, -1.0, 0.0, 1.0],
             color: [0.0, 1.0, 0.0, 1.0],
         },
-        crate::modules::graphics::Vertex {
+        crate::graphics::Vertex {
             position: [0.0, 1.0, 0.0, 1.0],
             color: [0.0, 0.0, 1.0, 1.0],
         },
@@ -65,13 +65,13 @@ pub mod triangle {
         device: &wgpu::Device,
         depth_format: wgpu::TextureFormat,
         surface_format: wgpu::TextureFormat,
-    ) -> crate::modules::graphics::triangle::TriangleRender {
+    ) -> crate::graphics::triangle::TriangleRender {
         let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
             device,
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
                 contents: bytemuck::cast_slice(
-                    &crate::modules::graphics::triangle::TRIANGLE_VERTICES,
+                    &crate::graphics::triangle::TRIANGLE_VERTICES,
                 ),
                 usage: wgpu::BufferUsages::VERTEX,
             },
@@ -81,7 +81,7 @@ pub mod triangle {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("index Buffer"),
                 contents: bytemuck::cast_slice(
-                    &crate::modules::graphics::triangle::TRIANGLE_INDICES,
+                    &crate::graphics::triangle::TRIANGLE_INDICES,
                 ),
                 usage: wgpu::BufferUsages::INDEX,
             },
@@ -91,7 +91,7 @@ pub mod triangle {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
                 contents: bytemuck::cast_slice(&[
-                    crate::modules::graphics::triangle::UniformBuffer::default(),
+                    crate::graphics::triangle::UniformBuffer::default(),
                 ]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },
@@ -133,7 +133,7 @@ pub mod triangle {
                 entry_point: Some("vertex_main"),
                 buffers: &[{
                     wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<crate::modules::graphics::Vertex>()
+                        array_stride: std::mem::size_of::<crate::graphics::Vertex>()
                             as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes,
@@ -175,7 +175,7 @@ pub mod triangle {
             multiview: None,
             cache: None,
         });
-        crate::modules::graphics::triangle::TriangleRender {
+        crate::graphics::triangle::TriangleRender {
             model: nalgebra_glm::Mat4::identity(),
             pipeline,
             vertex_buffer,
@@ -186,7 +186,7 @@ pub mod triangle {
     }
 
     pub fn render_triangle(
-        triangle: &mut crate::modules::graphics::triangle::TriangleRender,
+        triangle: &mut crate::graphics::triangle::TriangleRender,
         render_pass: &mut wgpu::RenderPass<'_>,
     ) {
         render_pass.set_pipeline(&triangle.pipeline);
@@ -194,15 +194,15 @@ pub mod triangle {
         render_pass.set_vertex_buffer(0, triangle.vertex_buffer.slice(..));
         render_pass.set_index_buffer(triangle.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.draw_indexed(
-            0..(crate::modules::graphics::triangle::TRIANGLE_INDICES.len() as _),
+            0..(crate::graphics::triangle::TRIANGLE_INDICES.len() as _),
             0,
             0..1,
         );
     }
 
-    pub fn update_triangle(context: &mut crate::modules::scene::Context) {
+    pub fn update_triangle(context: &mut crate::scene::Context) {
         let delta_time = context.resources.frame_timing.delta_time;
-        use crate::modules::scene::queries::*;
+        use crate::scene::queries::*;
         let Some(camera_entity) = query_first_camera(context) else {
             return;
         };
@@ -223,7 +223,7 @@ pub mod triangle {
         renderer.gpu.queue.write_buffer(
             &renderer.triangle.buffer,
             0,
-            bytemuck::cast_slice(&[crate::modules::graphics::triangle::UniformBuffer {
+            bytemuck::cast_slice(&[crate::graphics::triangle::UniformBuffer {
                 mvp: projection * view * renderer.triangle.model,
             }]),
         );
@@ -367,8 +367,8 @@ pub mod grid {
         }
     }
 
-    pub fn update_grid_uniform(context: &mut crate::modules::scene::Context) {
-        use crate::modules::scene::queries::*;
+    pub fn update_grid_uniform(context: &mut crate::scene::Context) {
+        use crate::scene::queries::*;
         let Some(camera_entity) = query_first_camera(context) else {
             return;
         };
@@ -405,7 +405,7 @@ pub mod systems {
 
     /// Receives the renderer from the async task that creates it on wasm, injecting it as a resource
     #[cfg(target_arch = "wasm32")]
-    pub fn receive_renderer(context: &mut crate::modules::scene::Context) {
+    pub fn receive_renderer(context: &mut crate::scene::Context) {
         if let Some(receiver) = context.resources.graphics.renderer_receiver.as_mut() {
             if let Ok(Some(renderer)) = receiver.try_recv() {
                 context.resources.graphics.renderer = Some(renderer);
@@ -418,7 +418,7 @@ pub mod systems {
     }
 
     /// This system renders and presents the next frame
-    pub fn render_frame(context: &mut crate::modules::scene::Context) {
+    pub fn render_frame(context: &mut crate::scene::Context) {
         update_render_buffers(context);
 
         let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
@@ -538,7 +538,7 @@ pub mod systems {
         surface_texture.present();
     }
 
-    fn update_render_buffers(context: &mut crate::modules::scene::Context) {
+    fn update_render_buffers(context: &mut crate::scene::Context) {
         update_triangle(context);
         update_grid_uniform(context);
     }
@@ -548,7 +548,7 @@ pub async fn create_renderer_async(
     window: impl Into<wgpu::SurfaceTarget<'static>>,
     width: u32,
     height: u32,
-) -> crate::modules::graphics::Renderer {
+) -> crate::graphics::Renderer {
     let depth_format = wgpu::TextureFormat::Depth32Float;
     let gpu = create_gpu_async(window, width, height).await;
     let depth_texture_view = create_depth_texture(&gpu.device, width, height);
@@ -561,8 +561,8 @@ pub async fn create_renderer_async(
     );
     let grid = create_grid(&gpu.device, gpu.surface_config.format, depth_format);
     let triangle =
-        crate::modules::graphics::create_triangle(&gpu.device, depth_format, gpu.surface_format);
-    crate::modules::graphics::Renderer {
+        crate::graphics::create_triangle(&gpu.device, depth_format, gpu.surface_format);
+    crate::graphics::Renderer {
         gpu,
         depth_texture_view,
         egui_renderer,
@@ -576,7 +576,7 @@ pub async fn create_gpu_async(
     window: impl Into<wgpu::SurfaceTarget<'static>>,
     width: u32,
     height: u32,
-) -> crate::modules::graphics::Gpu {
+) -> crate::graphics::Gpu {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all),
         ..Default::default()
@@ -633,7 +633,7 @@ pub async fn create_gpu_async(
 
     surface.configure(&device, &surface_config);
 
-    crate::modules::graphics::Gpu {
+    crate::graphics::Gpu {
         surface,
         device,
         queue,

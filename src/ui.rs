@@ -8,7 +8,7 @@ pub struct UserInterface {
     pub show_right_panel: bool,
     pub uniform_scaling: bool,
     pub consumed_event: bool,
-    pub selected_entity: Option<crate::modules::scene::EntityId>,
+    pub selected_entity: Option<crate::scene::EntityId>,
 }
 
 /// Panes display in resizable tiles in the application
@@ -22,7 +22,7 @@ pub struct TileTreeContext {
     pub add_child_to: Option<egui_tiles::TileId>,
 }
 
-impl egui_tiles::Behavior<crate::modules::ui::Pane> for crate::modules::ui::TileTreeContext {
+impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
     fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
         24.0
     }
@@ -33,7 +33,7 @@ impl egui_tiles::Behavior<crate::modules::ui::Pane> for crate::modules::ui::Tile
 
     fn is_tab_closable(
         &self,
-        _tiles: &egui_tiles::Tiles<crate::modules::ui::Pane>,
+        _tiles: &egui_tiles::Tiles<crate::ui::Pane>,
         _tile_id: egui_tiles::TileId,
     ) -> bool {
         true
@@ -46,13 +46,13 @@ impl egui_tiles::Behavior<crate::modules::ui::Pane> for crate::modules::ui::Tile
         }
     }
 
-    fn tab_title_for_pane(&mut self, _pane: &crate::modules::ui::Pane) -> egui::WidgetText {
+    fn tab_title_for_pane(&mut self, _pane: &crate::ui::Pane) -> egui::WidgetText {
         "Pane".into()
     }
 
     fn top_bar_right_ui(
         &mut self,
-        _tiles: &egui_tiles::Tiles<crate::modules::ui::Pane>,
+        _tiles: &egui_tiles::Tiles<crate::ui::Pane>,
         _ui: &mut egui::Ui,
         _tile_id: egui_tiles::TileId,
         _tabs: &egui_tiles::Tabs,
@@ -64,7 +64,7 @@ impl egui_tiles::Behavior<crate::modules::ui::Pane> for crate::modules::ui::Tile
         &mut self,
         ui: &mut egui::Ui,
         tile_id: egui_tiles::TileId,
-        _pane: &mut crate::modules::ui::Pane,
+        _pane: &mut crate::ui::Pane,
     ) -> egui_tiles::UiResponse {
         let rect = ui.max_rect();
 
@@ -102,7 +102,7 @@ impl egui_tiles::Behavior<crate::modules::ui::Pane> for crate::modules::ui::Tile
 
 pub mod events {
     pub fn receive_ui_event(
-        context: &mut crate::modules::scene::Context,
+        context: &mut crate::scene::Context,
         event: &winit::event::WindowEvent,
     ) {
         let Some(gui_state) = &mut context.resources.user_interface.state else {
@@ -120,7 +120,7 @@ pub mod systems {
     use super::local_transform_inspector_ui;
 
     /// Ensures a default layout when the tile tree is emptied
-    pub fn ensure_tile_tree(context: &mut crate::modules::scene::Context) {
+    pub fn ensure_tile_tree(context: &mut crate::scene::Context) {
         if let Some(tile_tree) = &context.resources.user_interface.tile_tree {
             if !tile_tree.tiles.is_empty() {
                 return;
@@ -128,7 +128,7 @@ pub mod systems {
         }
         let mut tiles = egui_tiles::Tiles::default();
         let mut tab_tiles = vec![];
-        let tab_tile_child = tiles.insert_pane(crate::modules::ui::Pane::default());
+        let tab_tile_child = tiles.insert_pane(crate::ui::Pane::default());
         let tab_tile = tiles.insert_tab_tile(vec![tab_tile_child]);
         tab_tiles.push(tab_tile);
         let root = tiles.insert_tab_tile(tab_tiles);
@@ -138,7 +138,7 @@ pub mod systems {
 
     /// Creates the UI for the frame and
     /// emits the resources needed for rendering
-    pub fn render_ui(context: &mut crate::modules::scene::Context) {
+    pub fn render_ui(context: &mut crate::scene::Context) {
         let ui = {
             let Some(gui_state) = context.resources.user_interface.state.as_mut() else {
                 return;
@@ -158,18 +158,18 @@ pub mod systems {
         context.resources.user_interface.frame_output = Some((output, paint_jobs));
     }
 
-    fn create_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+    fn create_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
         top_panel_ui(context, ui);
         left_panel_ui(context, ui);
         right_panel_ui(context, ui);
         central_panel_ui(context, ui);
     }
 
-    fn central_panel_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+    fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
         egui::CentralPanel::default()
             .frame(egui::Frame::none())
             .show(ui, |ui| {
-                let crate::modules::ui::UserInterface {
+                let crate::ui::UserInterface {
                     tile_tree: Some(tile_tree),
                     tile_tree_context,
                     ..
@@ -179,7 +179,7 @@ pub mod systems {
                 };
                 tile_tree.ui(tile_tree_context, ui);
                 if let Some(parent) = tile_tree_context.add_child_to.take() {
-                    let new_child = tile_tree.tiles.insert_pane(crate::modules::ui::Pane {});
+                    let new_child = tile_tree.tiles.insert_pane(crate::ui::Pane {});
                     if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
                         tile_tree.tiles.get_mut(parent)
                     {
@@ -190,7 +190,7 @@ pub mod systems {
             });
     }
 
-    fn right_panel_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+    fn right_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
         if !context.resources.user_interface.show_right_panel {
             return;
         }
@@ -203,8 +203,8 @@ pub mod systems {
         });
     }
 
-    fn camera_inspector_ui(context: &mut crate::modules::scene::Context, ui: &mut egui::Ui) {
-        use crate::modules::scene::*;
+    fn camera_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
+        use crate::scene::*;
 
         let (viewport_width, viewport_height) = context.resources.graphics.viewport_size;
         let Some(selected_entity) = context.resources.user_interface.selected_entity else {
@@ -271,8 +271,8 @@ pub mod systems {
         });
     }
 
-    fn left_panel_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
-        use crate::modules::scene::{queries::*, *};
+    fn left_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
+        use crate::scene::{queries::*, *};
 
         if !context.resources.user_interface.show_left_panel {
             return;
@@ -307,7 +307,7 @@ pub mod systems {
         });
     }
 
-    fn top_panel_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+    fn top_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
         egui::TopBottomPanel::top("menu").show(ui, |ui| {
             egui::menu::bar(ui, |ui| {
                 egui::global_theme_preference_switch(ui);
@@ -337,13 +337,13 @@ pub mod systems {
 
     // Recursively renders the entity tree in the ui system
     fn entity_tree_ui(
-        context: &mut crate::modules::scene::Context,
+        context: &mut crate::scene::Context,
         ui: &mut egui::Ui,
-        entity: crate::modules::scene::EntityId,
+        entity: crate::scene::EntityId,
     ) {
-        use crate::modules::scene::*;
+        use crate::scene::*;
 
-        let name = match crate::modules::scene::get_component::<Name>(context, entity, NAME) {
+        let name = match crate::scene::get_component::<Name>(context, entity, NAME) {
             Some(Name(name)) if !name.is_empty() => name.to_string(),
             _ => "Entity".to_string(),
         };
@@ -378,7 +378,7 @@ pub mod systems {
                         if ui.button("Remove").clicked() {
                             despawn_entities(context, &[entity]);
                             let descendents =
-                                crate::modules::scene::queries::query_descendents(context, entity);
+                                crate::scene::queries::query_descendents(context, entity);
                             for entity in descendents {
                                 despawn_entities(context, &[entity]);
                             }
@@ -388,7 +388,7 @@ pub mod systems {
                 });
             })
             .body(|ui| {
-                crate::modules::scene::queries::query_children(context, entity)
+                crate::scene::queries::query_children(context, entity)
                     .into_iter()
                     .for_each(|child| {
                         entity_tree_ui(context, ui, child);
@@ -397,8 +397,8 @@ pub mod systems {
     }
 }
 
-fn local_transform_inspector_ui(context: &mut crate::modules::scene::Context, ui: &mut egui::Ui) {
-    use crate::modules::scene::*;
+fn local_transform_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
+    use crate::scene::*;
     let Some(selected_entity) = context.resources.user_interface.selected_entity else {
         return;
     };
