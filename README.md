@@ -12,6 +12,7 @@ cargo run -r
 
 ### Web
 
+
 If you have [trunk](https://trunkrs.dev/) installed,
 you can serve the app in a web browser:
 
@@ -20,6 +21,9 @@ rustup target add wasm32-unknown-unknown
 cargo install --locked trunk
 trunk serve --features web --open
 ```
+
+> Firefox [does not have sufficient wgpu support](https://news.ycombinator.com/item?id=41157383) and is considered incompatible.
+
 
 ### Justfile
 
