@@ -208,66 +208,62 @@ pub mod systems {
         if context.resources.user_interface.show_right_panel {
             use crate::modules::scene::*;
             egui::SidePanel::right("right").show(&ui, |ui| {
-                ui.collapsing("Properties", |ui| {
+                ui.label("Properties");
+                ui.separator();
+                ui.available_width();
+                if let Some(selected_entity) = context.resources.user_interface.selected_entity {
                     ui.group(|ui| {
                         ui.label("Camera");
-                        if let Some(selected_entity) =
-                            context.resources.user_interface.selected_entity
+                        if let Some(camera) =
+                            get_component_mut::<Camera>(context, selected_entity, CAMERA)
                         {
-                            if let Some(camera) =
-                                get_component_mut::<Camera>(context, selected_entity, CAMERA)
-                            {
+                            if let Some(viewport) = camera.viewport.as_mut() {
                                 ui.group(|ui| {
                                     ui.label("Viewport");
                                     ui.horizontal(|ui| {
                                         ui.label("x");
-                                        ui.add(
-                                            egui::DragValue::new(&mut camera.viewport.x).speed(0.1),
-                                        );
+                                        ui.add(egui::DragValue::new(&mut viewport.x).speed(0.1));
                                         ui.label("y");
-                                        ui.add(
-                                            egui::DragValue::new(&mut camera.viewport.y).speed(0.1),
-                                        );
+                                        ui.add(egui::DragValue::new(&mut viewport.y).speed(0.1));
                                         ui.label("width");
                                         ui.add(
-                                            egui::DragValue::new(&mut camera.viewport.width)
-                                                .speed(0.1),
+                                            egui::DragValue::new(&mut viewport.width).speed(0.1),
                                         );
                                         ui.label("height");
                                         ui.add(
-                                            egui::DragValue::new(&mut camera.viewport.height)
-                                                .speed(0.1),
+                                            egui::DragValue::new(&mut viewport.height).speed(0.1),
                                         );
                                     });
                                 });
-
-                                if let Some(tile_id) = camera.tile_id.as_mut() {
-                                    ui.group(|ui| {
-                                        ui.label("Tile ID");
-                                        ui.add(egui::DragValue::new(&mut tile_id.0).speed(0.1));
-                                    });
-                                } else if ui.button("Add Tile ID").clicked() {
-                                    camera.tile_id = Some(egui_tiles::TileId(0));
-                                }
-
-                                match &camera.projection {
-                                    Projection::Perspective(_perspective_camera) => {
-                                        ui.label("Projection is `Perspective`");
-                                    }
-                                    Projection::Orthographic(_orthographic_camera) => {
-                                        ui.label("Projection is `Orhographic`");
-                                    }
-                                }
-
-                                if ui.button("Remove").clicked() {
-                                    remove_components(context, selected_entity, CAMERA);
-                                }
-                            } else if ui.button("Add Camera").clicked() {
-                                add_components(context, selected_entity, CAMERA);
                             }
+
+                            if let Some(tile_id) = camera.tile_id.as_mut() {
+                                ui.group(|ui| {
+                                    ui.label("Tile ID");
+                                    ui.add(egui::DragValue::new(&mut tile_id.0).speed(0.1));
+                                });
+                            } else if ui.button("Add Tile ID").clicked() {
+                                camera.tile_id = Some(egui_tiles::TileId(0));
+                            }
+
+                            match &camera.projection {
+                                Projection::Perspective(_perspective_camera) => {
+                                    ui.label("Projection is `Perspective`");
+                                }
+                                Projection::Orthographic(_orthographic_camera) => {
+                                    ui.label("Projection is `Orhographic`");
+                                }
+                            }
+
+                            if ui.button("Remove").clicked() {
+                                remove_components(context, selected_entity, CAMERA);
+                                context.resources.user_interface.selected_entity = None;
+                            }
+                        } else if ui.button("Add").clicked() {
+                            add_components(context, selected_entity, CAMERA);
                         }
                     });
-                });
+                }
             });
         }
 

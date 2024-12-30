@@ -50,7 +50,7 @@ pub mod components {
     #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
     pub struct Camera {
         pub projection: Projection,
-        pub viewport: Viewport,
+        pub viewport: Option<Viewport>,
         pub tile_id: Option<egui_tiles::TileId>,
     }
 
