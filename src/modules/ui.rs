@@ -147,7 +147,158 @@ pub mod systems {
             gui_state.egui_ctx().begin_pass(gui_input);
             gui_state.egui_ctx().clone()
         };
-        egui::TopBottomPanel::top("menu").show(&ui, |ui| {
+
+        create_ui(context, &ui);
+
+        let output = ui.end_pass();
+        let paint_jobs = ui.tessellate(output.shapes.clone(), output.pixels_per_point);
+        context.resources.user_interface.frame_output = Some((output, paint_jobs));
+    }
+
+    fn create_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+        top_panel_ui(context, ui);
+        left_panel_ui(context, ui);
+        right_panel_ui(context, ui);
+        central_panel_ui(context, ui);
+    }
+
+    fn central_panel_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none())
+            .show(ui, |ui| {
+                let crate::modules::ui::UserInterface {
+                    tile_tree: Some(tile_tree),
+                    tile_tree_context,
+                    ..
+                } = &mut context.resources.user_interface
+                else {
+                    return;
+                };
+                tile_tree.ui(tile_tree_context, ui);
+                if let Some(parent) = tile_tree_context.add_child_to.take() {
+                    let new_child = tile_tree.tiles.insert_pane(crate::modules::ui::Pane {});
+                    if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
+                        tile_tree.tiles.get_mut(parent)
+                    {
+                        tabs.add_child(new_child);
+                        tabs.set_active(new_child);
+                    }
+                }
+            });
+    }
+
+    fn right_panel_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+        if !context.resources.user_interface.show_right_panel {
+            return;
+        }
+        use crate::modules::scene::*;
+        egui::SidePanel::right("right").show(ui, |ui| {
+            ui.label("Properties");
+            ui.separator();
+            ui.available_width();
+            let (viewport_width, viewport_height) = context.resources.graphics.viewport_size;
+            if let Some(selected_entity) = context.resources.user_interface.selected_entity {
+                ui.group(|ui| {
+                    ui.label("Camera");
+                    if let Some(camera) =
+                        get_component_mut::<Camera>(context, selected_entity, CAMERA)
+                    {
+                        if let Some(viewport) = camera.viewport.as_mut() {
+                            ui.group(|ui| {
+                                ui.label("Viewport");
+                                ui.horizontal(|ui| {
+                                    ui.label("x");
+                                    ui.add(egui::DragValue::new(&mut viewport.x).speed(0.1));
+                                    ui.label("y");
+                                    ui.add(egui::DragValue::new(&mut viewport.y).speed(0.1));
+                                    ui.label("width");
+                                    ui.add(egui::DragValue::new(&mut viewport.width).speed(0.1));
+                                    ui.label("height");
+                                    ui.add(egui::DragValue::new(&mut viewport.height).speed(0.1));
+                                });
+                            });
+                            if ui.button("Remove Viewport").clicked() {
+                                camera.viewport = None;
+                            }
+                        } else if ui.button("Add Viewport").clicked() {
+                            camera.viewport = Some(Viewport {
+                                x: 0,
+                                y: 0,
+                                width: viewport_width,
+                                height: viewport_height,
+                            });
+                        }
+
+                        if let Some(tile_id) = camera.tile_id.as_mut() {
+                            ui.group(|ui| {
+                                ui.label("Tile ID");
+                                ui.add(egui::DragValue::new(&mut tile_id.0).speed(0.1));
+                            });
+                            if ui.button("Remove").clicked() {
+                                camera.tile_id = None;
+                            }
+                        } else if ui.button("Add Tile ID").clicked() {
+                            camera.tile_id = Some(egui_tiles::TileId(0));
+                        }
+
+                        match &camera.projection {
+                            Projection::Perspective(_perspective_camera) => {
+                                ui.label("Projection is `Perspective`");
+                            }
+                            Projection::Orthographic(_orthographic_camera) => {
+                                ui.label("Projection is `Orthographic`");
+                            }
+                        }
+
+                        if ui.button("Remove").clicked() {
+                            remove_components(context, selected_entity, CAMERA);
+                            context.resources.user_interface.selected_entity = None;
+                        }
+                    } else if ui.button("Add").clicked() {
+                        add_components(context, selected_entity, CAMERA);
+                    }
+                });
+            }
+        });
+    }
+
+    fn left_panel_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+        if !context.resources.user_interface.show_left_panel {
+            return;
+        }
+        egui::SidePanel::left("left").show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt(ui.next_auto_id())
+                .show(ui, |ui| {
+                    ui.collapsing("Scene", |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt(ui.next_auto_id())
+                            .show(ui, |ui| {
+                                ui.group(|ui| {
+                                    if ui.button("Create Entity").clicked() {
+                                        let entity = crate::modules::scene::spawn_entities(
+                                            context,
+                                            crate::modules::scene::VISIBLE,
+                                            1,
+                                        )[0];
+                                        context.resources.user_interface.selected_entity =
+                                            Some(entity);
+                                    }
+                                    crate::modules::scene::queries::query_root_nodes(context)
+                                        .into_iter()
+                                        .for_each(|entity| {
+                                            entity_tree_ui(context, ui, entity);
+                                        });
+                                });
+                            });
+                    });
+                    ui.separator();
+                });
+        });
+    }
+
+    fn top_panel_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+        egui::TopBottomPanel::top("menu").show(ui, |ui| {
             egui::menu::bar(ui, |ui| {
                 egui::global_theme_preference_switch(ui);
                 ui.separator();
@@ -172,127 +323,6 @@ pub mod systems {
                 ui.separator();
             });
         });
-
-        if context.resources.user_interface.show_left_panel {
-            egui::SidePanel::left("left").show(&ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt(ui.next_auto_id())
-                    .show(ui, |ui| {
-                        ui.collapsing("Scene", |ui| {
-                            egui::ScrollArea::vertical()
-                                .id_salt(ui.next_auto_id())
-                                .show(ui, |ui| {
-                                    ui.group(|ui| {
-                                        if ui.button("Create Entity").clicked() {
-                                            let entity = crate::modules::scene::spawn_entities(
-                                                context,
-                                                crate::modules::scene::VISIBLE,
-                                                1,
-                                            )[0];
-                                            context.resources.user_interface.selected_entity =
-                                                Some(entity);
-                                        }
-                                        crate::modules::scene::queries::query_root_nodes(context)
-                                            .into_iter()
-                                            .for_each(|entity| {
-                                                entity_tree_ui(context, ui, entity);
-                                            });
-                                    });
-                                });
-                        });
-                        ui.separator();
-                    });
-            });
-        }
-
-        if context.resources.user_interface.show_right_panel {
-            use crate::modules::scene::*;
-            egui::SidePanel::right("right").show(&ui, |ui| {
-                ui.label("Properties");
-                ui.separator();
-                ui.available_width();
-                if let Some(selected_entity) = context.resources.user_interface.selected_entity {
-                    ui.group(|ui| {
-                        ui.label("Camera");
-                        if let Some(camera) =
-                            get_component_mut::<Camera>(context, selected_entity, CAMERA)
-                        {
-                            if let Some(viewport) = camera.viewport.as_mut() {
-                                ui.group(|ui| {
-                                    ui.label("Viewport");
-                                    ui.horizontal(|ui| {
-                                        ui.label("x");
-                                        ui.add(egui::DragValue::new(&mut viewport.x).speed(0.1));
-                                        ui.label("y");
-                                        ui.add(egui::DragValue::new(&mut viewport.y).speed(0.1));
-                                        ui.label("width");
-                                        ui.add(
-                                            egui::DragValue::new(&mut viewport.width).speed(0.1),
-                                        );
-                                        ui.label("height");
-                                        ui.add(
-                                            egui::DragValue::new(&mut viewport.height).speed(0.1),
-                                        );
-                                    });
-                                });
-                            }
-
-                            if let Some(tile_id) = camera.tile_id.as_mut() {
-                                ui.group(|ui| {
-                                    ui.label("Tile ID");
-                                    ui.add(egui::DragValue::new(&mut tile_id.0).speed(0.1));
-                                });
-                            } else if ui.button("Add Tile ID").clicked() {
-                                camera.tile_id = Some(egui_tiles::TileId(0));
-                            }
-
-                            match &camera.projection {
-                                Projection::Perspective(_perspective_camera) => {
-                                    ui.label("Projection is `Perspective`");
-                                }
-                                Projection::Orthographic(_orthographic_camera) => {
-                                    ui.label("Projection is `Orhographic`");
-                                }
-                            }
-
-                            if ui.button("Remove").clicked() {
-                                remove_components(context, selected_entity, CAMERA);
-                                context.resources.user_interface.selected_entity = None;
-                            }
-                        } else if ui.button("Add").clicked() {
-                            add_components(context, selected_entity, CAMERA);
-                        }
-                    });
-                }
-            });
-        }
-
-        egui::CentralPanel::default()
-            .frame(egui::Frame::none())
-            .show(&ui, |ui| {
-                let crate::modules::ui::UserInterface {
-                    tile_tree: Some(tile_tree),
-                    tile_tree_context,
-                    ..
-                } = &mut context.resources.user_interface
-                else {
-                    return;
-                };
-                tile_tree.ui(tile_tree_context, ui);
-                if let Some(parent) = tile_tree_context.add_child_to.take() {
-                    let new_child = tile_tree.tiles.insert_pane(crate::modules::ui::Pane {});
-                    if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
-                        tile_tree.tiles.get_mut(parent)
-                    {
-                        tabs.add_child(new_child);
-                        tabs.set_active(new_child);
-                    }
-                }
-            });
-
-        let output = ui.end_pass();
-        let paint_jobs = ui.tessellate(output.shapes.clone(), output.pixels_per_point);
-        context.resources.user_interface.frame_output = Some((output, paint_jobs));
     }
 
     // Recursively renders the entity tree in the ui system

@@ -1,3 +1,5 @@
+use crate::modules::*;
+
 crate::ecs! {
     Context {
         camera: Camera => CAMERA,
@@ -8,16 +10,17 @@ crate::ecs! {
         visible: Visible => VISIBLE,
     }
     Resources {
-        #[serde(skip)] window: crate::modules::window::Window,
-        #[serde(skip)] graphics: crate::modules::graphics::Graphics,
-        #[serde(skip)] input: crate::modules::input::Input,
-        #[serde(skip)] frame_timing: crate::modules::window::FrameTiming,
-        #[serde(skip)] user_interface: crate::modules::ui::UserInterface,
+        #[serde(skip)] window: window::Window,
+        #[serde(skip)] graphics: graphics::Graphics,
+        #[serde(skip)] input: input::Input,
+        #[serde(skip)] frame_timing: window::FrameTiming,
+        #[serde(skip)] user_interface: ui::UserInterface,
     }
 }
 
 pub use components::*;
 pub mod components {
+
     #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
     pub struct LocalTransform {
         pub translation: nalgebra_glm::Vec3,
@@ -153,15 +156,15 @@ pub mod components {
 }
 
 pub mod queries {
+    use super::*;
+
     /// Queries for root nodes by looking for entities that do not have a Parent component
-    pub fn query_root_nodes(
-        context: &crate::modules::scene::Context,
-    ) -> Vec<crate::modules::scene::EntityId> {
-        let mut root_entities: Vec<crate::modules::scene::EntityId> = context
+    pub fn query_root_nodes(context: &Context) -> Vec<EntityId> {
+        let mut root_entities: Vec<EntityId> = context
             .tables
             .iter()
             .filter_map(|table| {
-                if crate::has_components!(table, crate::modules::scene::PARENT) {
+                if crate::has_components!(table, PARENT) {
                     return None;
                 }
                 Some(table.entity_indices.to_vec())
@@ -173,33 +176,24 @@ pub mod queries {
     }
 
     // Query for the child entities of an entity
-    pub fn query_children(
-        context: &crate::modules::scene::Context,
-        target_entity: crate::modules::scene::EntityId,
-    ) -> Vec<crate::modules::scene::EntityId> {
-        use crate::modules::scene::*;
-
+    pub fn query_children(context: &Context, target_entity: EntityId) -> Vec<EntityId> {
         let mut child_entities = Vec::new();
-        query_entities(context, crate::modules::scene::PARENT)
+        query_entities(context, PARENT)
             .into_iter()
             .for_each(|entity| {
-                if let Some(Parent(parent_entity)) =
-                    get_component(context, entity, crate::modules::scene::PARENT)
-                {
-                    if *parent_entity != target_entity {
-                        return;
-                    }
-                    child_entities.push(entity);
+                let Some(Parent(parent_entity)) = get_component(context, entity, PARENT) else {
+                    return;
+                };
+                if *parent_entity != target_entity {
+                    return;
                 }
+                child_entities.push(entity);
             });
         child_entities
     }
 
     /// Query for all the descendent entities of a target entity
-    pub fn query_descendents(
-        context: &crate::modules::scene::Context,
-        target_entity: crate::modules::scene::EntityId,
-    ) -> Vec<crate::modules::scene::EntityId> {
+    pub fn query_descendents(context: &Context, target_entity: EntityId) -> Vec<EntityId> {
         let mut descendents = Vec::new();
         let mut stack = vec![target_entity];
         while let Some(entity) = stack.pop() {
@@ -211,5 +205,57 @@ pub mod queries {
                 });
         }
         descendents
+    }
+
+    pub fn query_first_camera(context: &Context) -> Option<EntityId> {
+        query_entities(context, CAMERA).into_iter().next()
+    }
+
+    #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+    pub struct CameraMatrices {
+        pub camera_position: nalgebra_glm::Vec3,
+        pub projection: nalgebra_glm::Mat4,
+        pub view: nalgebra_glm::Mat4,
+    }
+
+    pub fn query_camera_matrices(
+        context: &Context,
+        camera_entity: EntityId,
+    ) -> Option<(EntityId, CameraMatrices)> {
+        let (Some(camera), Some(local_transform), Some(global_transform)) = (
+            get_component::<Camera>(context, camera_entity, CAMERA),
+            get_component::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM),
+            get_component::<GlobalTransform>(context, camera_entity, GLOBAL_TRANSFORM),
+        ) else {
+            return None;
+        };
+
+        let normalized_rotation = local_transform.rotation.normalize();
+        let camera_translation = global_transform.0.column(3).xyz();
+        let target = camera_translation
+            + nalgebra_glm::quat_rotate_vec3(&normalized_rotation, &(-nalgebra_glm::Vec3::z()));
+        let up = nalgebra_glm::quat_rotate_vec3(&normalized_rotation, &nalgebra_glm::Vec3::y());
+
+        // Ensure viewport is valid and get aspect ratio
+        let aspect_ratio = match camera.viewport {
+            Some(viewport) => {
+                let width = viewport.width as f32;
+                let height = viewport.height as f32;
+                if width == 0.0 || height == 0.0 {
+                    return None;
+                }
+                width / height
+            }
+            None => window::queries::query_viewport_aspect_ratio(context).unwrap_or(1.0),
+        };
+
+        Some((
+            camera_entity,
+            CameraMatrices {
+                camera_position: camera_translation,
+                projection: camera.projection_matrix(aspect_ratio),
+                view: nalgebra_glm::look_at(&camera_translation, &target, &up),
+            },
+        ))
     }
 }
