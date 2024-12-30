@@ -2,12 +2,12 @@ use crate::modules::*;
 
 crate::ecs! {
     Context {
+        active: Active => ACTIVE,
         camera: Camera => CAMERA,
         global_transform: GlobalTransform => GLOBAL_TRANSFORM,
         local_transform: LocalTransform => LOCAL_TRANSFORM,
-        name: GlobalTransform => NAME,
+        name: Name => NAME,
         parent: Parent => PARENT,
-        visible: Visible => VISIBLE,
     }
     Resources {
         #[serde(skip)] window: window::Window,
@@ -20,7 +20,6 @@ crate::ecs! {
 
 pub use components::*;
 pub mod components {
-
     #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
     pub struct LocalTransform {
         pub translation: nalgebra_glm::Vec3,
@@ -38,6 +37,14 @@ pub mod components {
         }
     }
 
+    impl LocalTransform {
+        pub fn as_matrix(&self) -> nalgebra_glm::Mat4 {
+            nalgebra_glm::translation(&self.translation)
+                * nalgebra_glm::quat_to_mat4(&self.rotation)
+                * nalgebra_glm::scaling(&self.scale)
+        }
+    }
+
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
     pub struct GlobalTransform(pub nalgebra_glm::Mat4);
 
@@ -48,7 +55,7 @@ pub mod components {
     pub struct Parent(pub crate::modules::scene::EntityId);
 
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-    pub struct Visible;
+    pub struct Active;
 
     #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
     pub struct Camera {
@@ -211,6 +218,19 @@ pub mod queries {
         query_entities(context, CAMERA).into_iter().next()
     }
 
+    pub fn query_global_transform(context: &Context, entity: EntityId) -> nalgebra_glm::Mat4 {
+        let Some(local_transform) =
+            get_component::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
+        else {
+            return nalgebra_glm::Mat4::identity();
+        };
+        if let Some(Parent(parent)) = get_component::<Parent>(context, entity, PARENT) {
+            query_global_transform(context, *parent) * local_transform.as_matrix()
+        } else {
+            local_transform.as_matrix()
+        }
+    }
+
     #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
     pub struct CameraMatrices {
         pub camera_position: nalgebra_glm::Vec3,
@@ -221,7 +241,7 @@ pub mod queries {
     pub fn query_camera_matrices(
         context: &Context,
         camera_entity: EntityId,
-    ) -> Option<(EntityId, CameraMatrices)> {
+    ) -> Option<CameraMatrices> {
         let (Some(camera), Some(local_transform), Some(global_transform)) = (
             get_component::<Camera>(context, camera_entity, CAMERA),
             get_component::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM),
@@ -249,13 +269,183 @@ pub mod queries {
             None => window::queries::query_viewport_aspect_ratio(context).unwrap_or(1.0),
         };
 
-        Some((
-            camera_entity,
-            CameraMatrices {
-                camera_position: camera_translation,
-                projection: camera.projection_matrix(aspect_ratio),
-                view: nalgebra_glm::look_at(&camera_translation, &target, &up),
-            },
-        ))
+        Some(CameraMatrices {
+            camera_position: camera_translation,
+            projection: camera.projection_matrix(aspect_ratio),
+            view: nalgebra_glm::look_at(&camera_translation, &target, &up),
+        })
+    }
+}
+
+pub use systems::*;
+pub mod systems {
+    use super::*;
+
+    pub fn ensure_main_camera(context: &mut Context) {
+        if queries::query_first_camera(context).is_none() {
+            {
+                let camera_mask = ACTIVE | CAMERA | LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME;
+                let camera_entity = spawn_entities(context, camera_mask, 1)[0];
+                if let Some(name) = get_component_mut::<Name>(context, camera_entity, NAME) {
+                    *name = Name("Main Camera".to_string());
+                }
+                camera_entity
+            };
+        }
+    }
+
+    pub fn wasd_keyboard_controls_system(context: &mut Context) {
+        let delta_time = context.resources.frame_timing.delta_time;
+        query_entities(context, ACTIVE | CAMERA | LOCAL_TRANSFORM)
+            .into_iter()
+            .for_each(|entity| {
+                let speed = 10.0 * delta_time;
+
+                let (
+                    left_key_pressed,
+                    right_key_pressed,
+                    forward_key_pressed,
+                    backward_key_pressed,
+                    up_key_pressed,
+                ) = {
+                    let keyboard = &context.resources.input.keyboard;
+                    (
+                        keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyA),
+                        keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyD),
+                        keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyW),
+                        keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyS),
+                        keyboard.is_key_pressed(winit::keyboard::KeyCode::Space),
+                    )
+                };
+
+                let Some(local_transform) =
+                    get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
+                else {
+                    return;
+                };
+                let local_transform_matrix = local_transform.as_matrix();
+                let forward = extract_forward_vector(&local_transform_matrix);
+                let right = extract_right_vector(&local_transform_matrix);
+                let up = extract_up_vector(&local_transform_matrix);
+
+                if forward_key_pressed {
+                    local_transform.translation += forward * speed;
+                }
+                if backward_key_pressed {
+                    local_transform.translation -= forward * speed;
+                }
+
+                if left_key_pressed {
+                    local_transform.translation -= right * speed;
+                }
+                if right_key_pressed {
+                    local_transform.translation += right * speed;
+                }
+                if up_key_pressed {
+                    local_transform.translation += up * speed;
+                }
+            });
+    }
+
+    pub fn orbital_camera(context: &mut Context) {
+        query_entities(context, ACTIVE | CAMERA | LOCAL_TRANSFORM)
+            .into_iter()
+            .for_each(|entity| {
+                let (local_transform_matrix, _, right, up) = {
+                    let Some(local_transform) =
+                        get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
+                    else {
+                        return;
+                    };
+                    let local_transform_matrix = local_transform.as_matrix();
+
+                    let forward = extract_forward_vector(&local_transform_matrix);
+                    let right = extract_right_vector(&local_transform_matrix);
+                    let up = extract_up_vector(&local_transform_matrix);
+                    (local_transform_matrix, forward, right, up)
+                };
+
+                if context
+                    .resources
+                    .input
+                    .mouse
+                    .state
+                    .contains(input::MouseState::RIGHT_CLICKED)
+                {
+                    let mut delta = context.resources.input.mouse.position_delta
+                        * context.resources.frame_timing.delta_time;
+                    delta.x *= -1.0;
+                    delta.y *= -1.0;
+
+                    let Some(local_transform) =
+                        get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
+                    else {
+                        return;
+                    };
+
+                    let yaw = nalgebra_glm::quat_angle_axis(delta.x, &nalgebra_glm::Vec3::y());
+                    local_transform.rotation = yaw * local_transform.rotation;
+
+                    let forward = extract_forward_vector(&local_transform_matrix);
+                    let current_pitch = forward.y.asin();
+
+                    let new_pitch = current_pitch + delta.y;
+                    if new_pitch.abs() <= 89_f32.to_radians() {
+                        let pitch =
+                            nalgebra_glm::quat_angle_axis(delta.y, &nalgebra_glm::Vec3::x());
+                        local_transform.rotation *= pitch;
+                    }
+                }
+
+                if context
+                    .resources
+                    .input
+                    .mouse
+                    .state
+                    .contains(input::MouseState::MIDDLE_CLICKED)
+                {
+                    let mut delta = context.resources.input.mouse.position_delta
+                        * context.resources.frame_timing.delta_time;
+                    delta.x *= -1.0;
+                    delta.y *= -1.0;
+
+                    let Some(local_transform) =
+                        get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
+                    else {
+                        return;
+                    };
+                    local_transform.translation += right * delta.x;
+                    local_transform.translation += up * delta.y;
+                }
+            });
+    }
+
+    pub fn calculate_global_transforms_system(context: &mut Context) {
+        query_entities(context, LOCAL_TRANSFORM | GLOBAL_TRANSFORM)
+            .into_iter()
+            .for_each(|entity| {
+                let new_global_transform = queries::query_global_transform(context, entity);
+                let Some(global_transform) =
+                    get_component_mut::<GlobalTransform>(context, entity, GLOBAL_TRANSFORM)
+                else {
+                    return;
+                };
+                *global_transform = GlobalTransform(new_global_transform);
+            });
+    }
+}
+
+pub use commands::*;
+pub mod commands {
+    pub fn extract_right_vector(transform: &nalgebra_glm::Mat4) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::vec3(transform[(0, 0)], transform[(1, 0)], transform[(2, 0)])
+    }
+
+    pub fn extract_up_vector(transform: &nalgebra_glm::Mat4) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::vec3(transform[(0, 1)], transform[(1, 1)], transform[(2, 1)])
+    }
+
+    pub fn extract_forward_vector(transform: &nalgebra_glm::Mat4) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::vec3(-transform[(0, 2)], -transform[(1, 2)], -transform[(2, 2)])
     }
 }

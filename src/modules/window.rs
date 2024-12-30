@@ -83,7 +83,7 @@ impl winit::application::ApplicationHandler for crate::modules::scene::Context {
             return;
         }
 
-        crate::modules::run::step(self, &event);
+        crate::run::step(self, &event);
 
         // Ensure we cycle frames continuously by requesting a redraw at the end of each frame
         if let Some(window_handle) = self.resources.window.handle.as_mut() {

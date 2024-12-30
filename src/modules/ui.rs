@@ -6,6 +6,7 @@ pub struct UserInterface {
     pub frame_output: Option<(egui::FullOutput, Vec<egui::ClippedPrimitive>)>,
     pub show_left_panel: bool,
     pub show_right_panel: bool,
+    pub uniform_scaling: bool,
     pub consumed_event: bool,
     pub selected_entity: Option<crate::modules::scene::EntityId>,
 }
@@ -116,6 +117,8 @@ pub mod events {
 }
 
 pub mod systems {
+    use super::local_transform_inspector_ui;
+
     /// Ensures a default layout when the tile tree is emptied
     pub fn ensure_tile_tree(context: &mut crate::modules::scene::Context) {
         if let Some(tile_tree) = &context.resources.user_interface.tile_tree {
@@ -191,107 +194,114 @@ pub mod systems {
         if !context.resources.user_interface.show_right_panel {
             return;
         }
-        use crate::modules::scene::*;
         egui::SidePanel::right("right").show(ui, |ui| {
             ui.label("Properties");
             ui.separator();
             ui.available_width();
-            let (viewport_width, viewport_height) = context.resources.graphics.viewport_size;
-            if let Some(selected_entity) = context.resources.user_interface.selected_entity {
-                ui.group(|ui| {
-                    ui.label("Camera");
-                    if let Some(camera) =
-                        get_component_mut::<Camera>(context, selected_entity, CAMERA)
-                    {
-                        if let Some(viewport) = camera.viewport.as_mut() {
-                            ui.group(|ui| {
-                                ui.label("Viewport");
-                                ui.horizontal(|ui| {
-                                    ui.label("x");
-                                    ui.add(egui::DragValue::new(&mut viewport.x).speed(0.1));
-                                    ui.label("y");
-                                    ui.add(egui::DragValue::new(&mut viewport.y).speed(0.1));
-                                    ui.label("width");
-                                    ui.add(egui::DragValue::new(&mut viewport.width).speed(0.1));
-                                    ui.label("height");
-                                    ui.add(egui::DragValue::new(&mut viewport.height).speed(0.1));
-                                });
-                            });
-                            if ui.button("Remove Viewport").clicked() {
-                                camera.viewport = None;
-                            }
-                        } else if ui.button("Add Viewport").clicked() {
-                            camera.viewport = Some(Viewport {
-                                x: 0,
-                                y: 0,
-                                width: viewport_width,
-                                height: viewport_height,
-                            });
-                        }
+            local_transform_inspector_ui(context, ui);
+            camera_inspector_ui(context, ui);
+        });
+    }
 
-                        if let Some(tile_id) = camera.tile_id.as_mut() {
-                            ui.group(|ui| {
-                                ui.label("Tile ID");
-                                ui.add(egui::DragValue::new(&mut tile_id.0).speed(0.1));
-                            });
-                            if ui.button("Remove").clicked() {
-                                camera.tile_id = None;
-                            }
-                        } else if ui.button("Add Tile ID").clicked() {
-                            camera.tile_id = Some(egui_tiles::TileId(0));
-                        }
+    fn camera_inspector_ui(context: &mut crate::modules::scene::Context, ui: &mut egui::Ui) {
+        use crate::modules::scene::*;
 
-                        match &camera.projection {
-                            Projection::Perspective(_perspective_camera) => {
-                                ui.label("Projection is `Perspective`");
-                            }
-                            Projection::Orthographic(_orthographic_camera) => {
-                                ui.label("Projection is `Orthographic`");
-                            }
-                        }
+        let (viewport_width, viewport_height) = context.resources.graphics.viewport_size;
+        let Some(selected_entity) = context.resources.user_interface.selected_entity else {
+            return;
+        };
 
-                        if ui.button("Remove").clicked() {
-                            remove_components(context, selected_entity, CAMERA);
-                            context.resources.user_interface.selected_entity = None;
-                        }
-                    } else if ui.button("Add").clicked() {
-                        add_components(context, selected_entity, CAMERA);
+        ui.group(|ui| {
+            ui.label("Camera");
+            if let Some(camera) = get_component_mut::<Camera>(context, selected_entity, CAMERA) {
+                if let Some(viewport) = camera.viewport.as_mut() {
+                    ui.group(|ui| {
+                        ui.label("Viewport");
+                        ui.horizontal(|ui| {
+                            ui.label("x");
+                            ui.add(egui::DragValue::new(&mut viewport.x).speed(0.1));
+                            ui.label("y");
+                            ui.add(egui::DragValue::new(&mut viewport.y).speed(0.1));
+                            ui.label("width");
+                            ui.add(egui::DragValue::new(&mut viewport.width).speed(0.1));
+                            ui.label("height");
+                            ui.add(egui::DragValue::new(&mut viewport.height).speed(0.1));
+                        });
+                    });
+                    if ui.button("Remove Viewport").clicked() {
+                        camera.viewport = None;
                     }
-                });
+                } else if ui.button("Add Viewport").clicked() {
+                    camera.viewport = Some(Viewport {
+                        x: 0,
+                        y: 0,
+                        width: viewport_width,
+                        height: viewport_height,
+                    });
+                }
+
+                if let Some(tile_id) = camera.tile_id.as_mut() {
+                    ui.group(|ui| {
+                        ui.label("Tile ID");
+                        ui.add(egui::DragValue::new(&mut tile_id.0).speed(0.1));
+                    });
+                    if ui.button("Remove").clicked() {
+                        camera.tile_id = None;
+                    }
+                } else if ui.button("Add Tile ID").clicked() {
+                    camera.tile_id = Some(egui_tiles::TileId(0));
+                }
+
+                match &camera.projection {
+                    Projection::Perspective(_perspective_camera) => {
+                        ui.label("Projection is `Perspective`");
+                    }
+                    Projection::Orthographic(_orthographic_camera) => {
+                        ui.label("Projection is `Orthographic`");
+                    }
+                }
+
+                if ui.button("Remove").clicked() {
+                    remove_components(context, selected_entity, CAMERA);
+                    context.resources.user_interface.selected_entity = None;
+                }
+            } else if ui.button("Add").clicked() {
+                add_components(context, selected_entity, CAMERA);
             }
         });
     }
 
     fn left_panel_ui(context: &mut crate::modules::scene::Context, ui: &egui::Context) {
+        use crate::modules::scene::{queries::*, *};
+
         if !context.resources.user_interface.show_left_panel {
             return;
         }
         egui::SidePanel::left("left").show(ui, |ui| {
+            ui.label("Scene");
+            ui.separator();
+            ui.available_width();
             egui::ScrollArea::vertical()
                 .id_salt(ui.next_auto_id())
                 .show(ui, |ui| {
-                    ui.collapsing("Scene", |ui| {
-                        egui::ScrollArea::vertical()
-                            .id_salt(ui.next_auto_id())
-                            .show(ui, |ui| {
-                                ui.group(|ui| {
-                                    if ui.button("Create Entity").clicked() {
-                                        let entity = crate::modules::scene::spawn_entities(
-                                            context,
-                                            crate::modules::scene::VISIBLE,
-                                            1,
-                                        )[0];
-                                        context.resources.user_interface.selected_entity =
-                                            Some(entity);
-                                    }
-                                    crate::modules::scene::queries::query_root_nodes(context)
-                                        .into_iter()
-                                        .for_each(|entity| {
-                                            entity_tree_ui(context, ui, entity);
-                                        });
+                    egui::ScrollArea::vertical()
+                        .id_salt(ui.next_auto_id())
+                        .show(ui, |ui| {
+                            ui.group(|ui| {
+                                if ui.button("Add Entity").clicked() {
+                                    let entity = spawn_entities(
+                                        context,
+                                        LOCAL_TRANSFORM | GLOBAL_TRANSFORM,
+                                        1,
+                                    )[0];
+                                    context.resources.user_interface.selected_entity = Some(entity);
+                                }
+                                query_root_nodes(context).into_iter().for_each(|entity| {
+                                    entity_tree_ui(context, ui, entity);
                                 });
                             });
-                    });
+                        });
+
                     ui.separator();
                 });
         });
@@ -353,7 +363,11 @@ pub mod systems {
 
                     response.context_menu(|ui| {
                         if ui.button("Add Child").clicked() {
-                            let child = spawn_entities(context, PARENT | VISIBLE, 1)[0];
+                            let child = spawn_entities(
+                                context,
+                                PARENT | LOCAL_TRANSFORM | GLOBAL_TRANSFORM,
+                                1,
+                            )[0];
                             if let Some(parent) =
                                 get_component_mut::<Parent>(context, child, PARENT)
                             {
@@ -381,4 +395,86 @@ pub mod systems {
                     });
             });
     }
+}
+
+fn local_transform_inspector_ui(context: &mut crate::modules::scene::Context, ui: &mut egui::Ui) {
+    use crate::modules::scene::*;
+    let Some(selected_entity) = context.resources.user_interface.selected_entity else {
+        return;
+    };
+    let mut uniform_scaling = context.resources.user_interface.uniform_scaling;
+    ui.group(|ui| {
+        match get_component_mut::<LocalTransform>(context, selected_entity, LOCAL_TRANSFORM) {
+            Some(local_transform) => {
+                ui.group(|ui| {
+                    ui.label("Translation");
+                    ui.horizontal(|ui| {
+                        ui.label("x");
+                        ui.add(egui::DragValue::new(&mut local_transform.translation.x).speed(0.1));
+                        ui.label("y");
+                        ui.add(egui::DragValue::new(&mut local_transform.translation.y).speed(0.1));
+                        ui.label("z");
+                        ui.add(egui::DragValue::new(&mut local_transform.translation.z).speed(0.1));
+                    });
+                });
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Scale");
+                        ui.label("X");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut local_transform.scale.x)
+                                    .speed(0.1)
+                                    .range(0..=usize::MAX),
+                            )
+                            .changed()
+                            && uniform_scaling
+                        {
+                            local_transform.scale.y = local_transform.scale.x;
+                            local_transform.scale.z = local_transform.scale.x;
+                        }
+                        ui.label("Y");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut local_transform.scale.y)
+                                    .speed(0.1)
+                                    .range(0..=usize::MAX),
+                            )
+                            .changed()
+                            && uniform_scaling
+                        {
+                            local_transform.scale.x = local_transform.scale.y;
+                            local_transform.scale.z = local_transform.scale.y;
+                        }
+                        ui.label("Z");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut local_transform.scale.z)
+                                    .speed(0.1)
+                                    .range(0..=usize::MAX),
+                            )
+                            .changed()
+                            && uniform_scaling
+                        {
+                            local_transform.scale.x = local_transform.scale.z;
+                            local_transform.scale.y = local_transform.scale.z;
+                        }
+                        ui.separator();
+                        ui.checkbox(&mut uniform_scaling, "Uniform");
+                    });
+                });
+                ui.separator();
+                if ui.button("Remove").clicked() {
+                    remove_components(context, selected_entity, LOCAL_TRANSFORM);
+                }
+            }
+            None => {
+                if ui.button("Add Transform").clicked() {
+                    add_components(context, selected_entity, LOCAL_TRANSFORM);
+                }
+            }
+        }
+    });
+
+    context.resources.user_interface.uniform_scaling = uniform_scaling;
 }

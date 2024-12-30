@@ -11,6 +11,14 @@ pub struct Keyboard {
     pub keystates: std::collections::HashMap<winit::keyboard::KeyCode, winit::event::ElementState>,
 }
 
+impl Keyboard {
+    pub fn is_key_pressed(&self, keycode: winit::keyboard::KeyCode) -> bool {
+        self.keystates
+            .get(&keycode)
+            .map_or(false, |state| *state == winit::event::ElementState::Pressed)
+    }
+}
+
 bitflags::bitflags! {
     #[derive(Default, Debug, Clone, Copy)]
     pub struct MouseState: u8 {
@@ -107,23 +115,10 @@ pub mod events {
     }
 }
 
-pub mod queries {
-    pub fn query_key_pressed(
-        context: &crate::modules::scene::Context,
-        keycode: winit::keyboard::KeyCode,
-    ) -> bool {
-        let keystates = &context.resources.input.keyboard.keystates;
-        keystates.contains_key(&keycode)
-            && keystates[&keycode] == winit::event::ElementState::Pressed
-    }
-}
-
 pub mod systems {
     pub fn escape_key_exit(context: &mut crate::modules::scene::Context) {
-        if crate::modules::input::queries::query_key_pressed(
-            context,
-            winit::keyboard::KeyCode::Escape,
-        ) {
+        let keyboard = &context.resources.input.keyboard;
+        if keyboard.is_key_pressed(winit::keyboard::KeyCode::Escape) {
             context.resources.window.should_exit = true;
         }
     }
