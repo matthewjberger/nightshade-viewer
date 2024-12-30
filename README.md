@@ -1,6 +1,6 @@
 #  Nightshade 🥀
 
-`Nightshade` is a portable graphics engine written in rust, capable of rendering complex interactive visualizations of arbitrary data streams
+`Nightshade` is a portable graphics engine written in rust, capable of rendering complex interactive visualizations of arbitrary data streams.
 
 ## Quickstart
 
