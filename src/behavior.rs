@@ -21,29 +21,23 @@ pub fn step(context: &mut crate::Context, event: &winit::event::WindowEvent) {
         return;
     }
 
-    receive_ui_events(context, event);
-    receive_resize_event(context, event);
-    receive_keyboard_event(context, event);
-    receive_mouse_event(context, event);
-
-    let winit::event::WindowEvent::RedrawRequested = event else {
-        return;
-    };
-    run_systems(context);
-    reset_systems(context);
-}
-
-/// Run systems meant to update each cycle of the main loop
-fn run_systems(context: &mut crate::Context) {
-    update_frame_timing_system(context);
-    ensure_tile_tree_system(context);
-    ui_system(context);
-    render_system(context);
-}
-
-/// Reset systems in preparation the next frame
-fn reset_systems(context: &mut crate::Context) {
-    reset_mouse_system(context);
+    match event {
+        // Update every frame
+        winit::event::WindowEvent::RedrawRequested => {
+            update_frame_timing_system(context);
+            ensure_tile_tree_system(context);
+            ui_system(context);
+            render_system(context);
+            reset_mouse_system(context);
+        }
+        // Receive events, which populate the world resources
+        event => {
+            receive_ui_events(context, event);
+            receive_resize_event(context, event);
+            receive_keyboard_event(context, event);
+            receive_mouse_event(context, event);
+        }
+    }
 }
 
 /// Winit window events drive the main loop,
@@ -640,6 +634,70 @@ pub mod commands {
             gui_state
                 .egui_ctx()
                 .set_pixels_per_point(window_handle.scale_factor() as f32);
+        }
+    }
+
+    pub mod window {
+        #[cfg(target_arch = "wasm32")]
+        use wasm_bindgen::prelude::*;
+
+        impl winit::application::ApplicationHandler for crate::Context {
+            fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+                #[allow(unused_mut)]
+                let mut attributes = winit::window::Window::default_attributes();
+
+                attributes.title = "Hemlock".to_string();
+
+                // On wasm, the window attributes have to include the canvas element
+                #[cfg(target_arch = "wasm32")]
+                {
+                    use winit::platform::web::WindowAttributesExtWebSys;
+                    let Some(window) = wgpu::web_sys::window() else {
+                        return;
+                    };
+                    let Some(document) = window.document() else {
+                        return;
+                    };
+                    let Some(element) = document.get_element_by_id("canvas") else {
+                        return;
+                    };
+                    let Ok(canvas) = element.dyn_into::<wgpu::web_sys::HtmlCanvasElement>() else {
+                        return;
+                    };
+                    self.resources.graphics.viewport_size = (canvas.width(), canvas.height());
+                    attributes = attributes.with_canvas(Some(canvas));
+                }
+
+                let Ok(window) = event_loop.create_window(attributes) else {
+                    return;
+                };
+
+                let window_handle = std::sync::Arc::new(window);
+                self.resources.window.handle = Some(window_handle.clone());
+
+                crate::commands::initialize(self);
+            }
+
+            fn window_event(
+                &mut self,
+                event_loop: &winit::event_loop::ActiveEventLoop,
+                _window_id: winit::window::WindowId,
+                event: winit::event::WindowEvent,
+            ) {
+                if self.resources.window.should_exit
+                    || matches!(event, winit::event::WindowEvent::CloseRequested)
+                {
+                    event_loop.exit();
+                    return;
+                }
+
+                crate::step(self, &event);
+
+                // Ensure we cycle frames continuously by requesting a redraw at the end of each frame
+                if let Some(window_handle) = self.resources.window.handle.as_mut() {
+                    window_handle.request_redraw();
+                }
+            }
         }
     }
 

@@ -64,8 +64,6 @@ pub mod components {
 
 pub use resources::*;
 pub mod resources {
-    use std::collections::{HashMap, HashSet};
-
     #[derive(Default)]
     pub struct Window {
         pub handle: Option<std::sync::Arc<winit::window::Window>>,
@@ -76,70 +74,6 @@ pub mod resources {
     pub struct Input {
         pub keyboard: Keyboard,
         pub mouse: Mouse,
-    }
-
-    pub mod window {
-        #[cfg(target_arch = "wasm32")]
-        use wasm_bindgen::prelude::*;
-
-        impl winit::application::ApplicationHandler for crate::Context {
-            fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-                #[allow(unused_mut)]
-                let mut attributes = winit::window::Window::default_attributes();
-
-                attributes.title = "Hemlock".to_string();
-
-                // On wasm, the window attributes have to include the canvas element
-                #[cfg(target_arch = "wasm32")]
-                {
-                    use winit::platform::web::WindowAttributesExtWebSys;
-                    let Some(window) = wgpu::web_sys::window() else {
-                        return;
-                    };
-                    let Some(document) = window.document() else {
-                        return;
-                    };
-                    let Some(element) = document.get_element_by_id("canvas") else {
-                        return;
-                    };
-                    let Ok(canvas) = element.dyn_into::<wgpu::web_sys::HtmlCanvasElement>() else {
-                        return;
-                    };
-                    self.resources.graphics.viewport_size = (canvas.width(), canvas.height());
-                    attributes = attributes.with_canvas(Some(canvas));
-                }
-
-                let Ok(window) = event_loop.create_window(attributes) else {
-                    return;
-                };
-
-                let window_handle = std::sync::Arc::new(window);
-                self.resources.window.handle = Some(window_handle.clone());
-
-                crate::commands::initialize(self);
-            }
-
-            fn window_event(
-                &mut self,
-                event_loop: &winit::event_loop::ActiveEventLoop,
-                _window_id: winit::window::WindowId,
-                event: winit::event::WindowEvent,
-            ) {
-                if self.resources.window.should_exit
-                    || matches!(event, winit::event::WindowEvent::CloseRequested)
-                {
-                    event_loop.exit();
-                    return;
-                }
-
-                crate::step(self, &event);
-
-                // Ensure we cycle frames continuously by requesting a redraw at the end of each frame
-                if let Some(window_handle) = self.resources.window.handle.as_mut() {
-                    window_handle.request_redraw();
-                }
-            }
-        }
     }
 
     pub use renderer::*;
@@ -300,8 +234,7 @@ pub mod resources {
 
     #[derive(Default)]
     pub struct TreeBehavior {
-        pub visible_tiles: HashSet<egui_tiles::TileId>,
-        pub tile_rects: HashMap<egui_tiles::TileId, egui::Rect>,
+        pub tile_rects: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
         pub add_child_to: Option<egui_tiles::TileId>,
     }
 
@@ -336,14 +269,11 @@ pub mod resources {
         fn top_bar_right_ui(
             &mut self,
             _tiles: &egui_tiles::Tiles<Pane>,
-            ui: &mut egui::Ui,
-            tile_id: egui_tiles::TileId,
+            _ui: &mut egui::Ui,
+            _tile_id: egui_tiles::TileId,
             _tabs: &egui_tiles::Tabs,
             _scroll_offset: &mut f32,
         ) {
-            if ui.button("➕").clicked() {
-                self.add_child_to = Some(tile_id);
-            }
         }
 
         fn pane_ui(
