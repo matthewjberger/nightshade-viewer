@@ -1,7 +1,12 @@
-mod behavior;
 mod ecs;
-mod state;
 
-pub use self::{behavior::*, state::*};
+pub mod modules {
+    pub mod graphics;
+    pub mod input;
+    pub mod run;
+    pub mod scene;
+    pub mod ui;
+    pub mod window;
+}
 
-pub use nalgebra_glm as math;
+pub use modules::run::start;

@@ -10,17 +10,28 @@ macro_rules! ecs {
             $($(#[$attr:meta])*  $resource_name:ident: $resource_type:ty),* $(,)?
         }
     ) => {
+
         /// Component masks
         #[repr(u32)]
         #[allow(clippy::upper_case_acronyms)]
         #[allow(non_camel_case_types)]
+        #[allow(dead_code)]
         pub enum Component {
+            None,
             $($mask,)*
             All,
         }
 
-        pub const ALL: u32 = 0;
-        $(pub const $mask: u32 = 1 << (Component::$mask as u32);)*
+        #[allow(dead_code)]
+        pub const NONE: u32 = Component::None as u32;
+
+        $(
+            #[allow(dead_code)]
+            pub const $mask: u32 = 1 << (Component::$mask as u32);
+        )*
+
+        #[allow(dead_code)]
+        pub const ALL: u32 = Component::All as u32;
 
         pub const COMPONENT_COUNT: usize = { Component::All as usize };
 
@@ -97,6 +108,7 @@ macro_rules! ecs {
             }
         }
 
+        #[allow(dead_code)]
         /// Spawn a batch of new entities with the same component mask
         pub fn spawn_entities(context: &mut $context, mask: u32, count: usize) -> Vec<EntityId> {
             let mut entities = Vec::with_capacity(count);
@@ -137,6 +149,7 @@ macro_rules! ecs {
             entities
         }
 
+        #[allow(dead_code)]
         /// Query for all entities that match the component mask
         pub fn query_entities(context: &$context, mask: u32) -> Vec<EntityId> {
             let total_capacity = context
@@ -162,6 +175,7 @@ macro_rules! ecs {
             result
         }
 
+        #[allow(dead_code)]
         /// Query for the first entity that matches the component mask
         /// Returns as soon as a match is found, instead of running for all entities
         pub fn query_first_entity(context: &$context, mask: u32) -> Option<EntityId> {
@@ -182,6 +196,7 @@ macro_rules! ecs {
             None
         }
 
+        #[allow(dead_code)]
         /// Get a specific component for an entity
         pub fn get_component<T: 'static>(context: &$context, entity: EntityId, mask: u32) -> Option<&T> {
            let (table_index, array_index) = get_location(&context.entity_locations, entity)?;
@@ -214,6 +229,7 @@ macro_rules! ecs {
            None
         }
 
+        #[allow(dead_code)]
         /// Get a mutable reference to a specific component for an entity
         pub fn get_component_mut<T: 'static>(context: &mut $context, entity: EntityId, mask: u32) -> Option<&mut T> {
             let (table_index, array_index) = get_location(&context.entity_locations, entity)?;
@@ -239,6 +255,7 @@ macro_rules! ecs {
             None
         }
 
+        #[allow(dead_code)]
         /// Despawn a batch of entities
         pub fn despawn_entities(context: &mut $context, entities: &[EntityId]) -> Vec<EntityId> {
             let mut despawned = Vec::with_capacity(entities.len());
@@ -297,6 +314,7 @@ macro_rules! ecs {
             despawned
         }
 
+        #[allow(dead_code)]
         /// Add components to an entity
         pub fn add_components(context: &mut $context, entity: EntityId, mask: u32) -> bool {
             if let Some((table_index, array_index)) = get_location(&context.entity_locations, entity) {
@@ -321,6 +339,7 @@ macro_rules! ecs {
             }
         }
 
+        #[allow(dead_code)]
         /// Remove components from an entity
         pub fn remove_components(context: &mut $context, entity: EntityId, mask: u32) -> bool {
             if let Some((table_index, array_index)) = get_location(&context.entity_locations, entity) {
@@ -346,6 +365,7 @@ macro_rules! ecs {
             }
         }
 
+        #[allow(dead_code)]
         /// Get the current component mask for an entity
         pub fn component_mask(context: &$context, entity: EntityId) -> Option<u32> {
             get_location(&context.entity_locations, entity)
