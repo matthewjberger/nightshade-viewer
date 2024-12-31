@@ -39,96 +39,89 @@ pub struct Mouse {
     pub wheel_delta: nalgebra_glm::Vec2,
 }
 
-pub mod events {
-    pub fn receive_keyboard_event(
-        context: &mut crate::scene::Context,
-        event: &winit::event::WindowEvent,
-    ) {
-        let winit::event::WindowEvent::KeyboardInput {
-            event:
-                winit::event::KeyEvent {
-                    physical_key: winit::keyboard::PhysicalKey::Code(key_code),
-                    state,
-                    ..
-                },
-            ..
-        } = event
-        else {
-            return;
-        };
-        *context
-            .resources
-            .input
-            .keyboard
-            .keystates
-            .entry(*key_code)
-            .or_insert(*state) = *state;
-    }
-
-    pub fn receive_mouse_event(
-        context: &mut crate::scene::Context,
-        event: &winit::event::WindowEvent,
-    ) {
-        let mouse = &mut context.resources.input.mouse;
-        match event {
-            winit::event::WindowEvent::MouseInput { button, state, .. } => {
-                let clicked = *state == winit::event::ElementState::Pressed;
-                match button {
-                    winit::event::MouseButton::Left => {
-                        mouse
-                            .state
-                            .set(crate::input::MouseState::LEFT_CLICKED, clicked);
-                    }
-                    winit::event::MouseButton::Middle => {
-                        mouse
-                            .state
-                            .set(crate::input::MouseState::MIDDLE_CLICKED, clicked);
-                    }
-                    winit::event::MouseButton::Right => {
-                        mouse
-                            .state
-                            .set(crate::input::MouseState::RIGHT_CLICKED, clicked);
-                    }
-                    _ => {}
-                }
-            }
-            winit::event::WindowEvent::CursorMoved { position, .. } => {
-                let last_position = mouse.position;
-                let current_position = nalgebra_glm::vec2(position.x as _, position.y as _);
-                mouse.position = current_position;
-                mouse.position_delta = current_position - last_position;
-                mouse.state.set(crate::input::MouseState::MOVED, true);
-            }
-            winit::event::WindowEvent::MouseWheel {
-                delta: winit::event::MouseScrollDelta::LineDelta(h_lines, v_lines),
-                ..
-            } => {
-                mouse.wheel_delta = nalgebra_glm::vec2(*h_lines, *v_lines);
-                mouse.state.set(crate::input::MouseState::SCROLLED, true);
-            }
-            _ => {}
-        }
+pub fn escape_key_exit_system(context: &mut crate::scene::Context) {
+    let keyboard = &context.resources.input.keyboard;
+    if keyboard.is_key_pressed(winit::keyboard::KeyCode::Escape) {
+        context.resources.window.should_exit = true;
     }
 }
 
-pub mod systems {
-    pub fn escape_key_exit(context: &mut crate::scene::Context) {
-        let keyboard = &context.resources.input.keyboard;
-        if keyboard.is_key_pressed(winit::keyboard::KeyCode::Escape) {
-            context.resources.window.should_exit = true;
-        }
+/// Resets the input state for the next frame
+pub fn reset_input_system(context: &mut crate::scene::Context) {
+    let mouse = &mut context.resources.input.mouse;
+    if mouse.state.contains(crate::input::MouseState::SCROLLED) {
+        mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
     }
+    mouse.state.set(crate::input::MouseState::MOVED, false);
+    if !mouse.state.contains(crate::input::MouseState::MOVED) {
+        mouse.position_delta = nalgebra_glm::vec2(0.0, 0.0);
+    }
+    mouse.state.set(crate::input::MouseState::MOVED, false);
+}
 
-    /// Resets the input state for the next frame
-    pub fn reset_input(context: &mut crate::scene::Context) {
-        let mouse = &mut context.resources.input.mouse;
-        if mouse.state.contains(crate::input::MouseState::SCROLLED) {
-            mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
+pub fn receive_keyboard_event(
+    context: &mut crate::scene::Context,
+    event: &winit::event::WindowEvent,
+) {
+    let winit::event::WindowEvent::KeyboardInput {
+        event:
+            winit::event::KeyEvent {
+                physical_key: winit::keyboard::PhysicalKey::Code(key_code),
+                state,
+                ..
+            },
+        ..
+    } = event
+    else {
+        return;
+    };
+    *context
+        .resources
+        .input
+        .keyboard
+        .keystates
+        .entry(*key_code)
+        .or_insert(*state) = *state;
+}
+
+pub fn receive_mouse_event(context: &mut crate::scene::Context, event: &winit::event::WindowEvent) {
+    let mouse = &mut context.resources.input.mouse;
+    match event {
+        winit::event::WindowEvent::MouseInput { button, state, .. } => {
+            let clicked = *state == winit::event::ElementState::Pressed;
+            match button {
+                winit::event::MouseButton::Left => {
+                    mouse
+                        .state
+                        .set(crate::input::MouseState::LEFT_CLICKED, clicked);
+                }
+                winit::event::MouseButton::Middle => {
+                    mouse
+                        .state
+                        .set(crate::input::MouseState::MIDDLE_CLICKED, clicked);
+                }
+                winit::event::MouseButton::Right => {
+                    mouse
+                        .state
+                        .set(crate::input::MouseState::RIGHT_CLICKED, clicked);
+                }
+                _ => {}
+            }
         }
-        mouse.state.set(crate::input::MouseState::MOVED, false);
-        if !mouse.state.contains(crate::input::MouseState::MOVED) {
-            mouse.position_delta = nalgebra_glm::vec2(0.0, 0.0);
+        winit::event::WindowEvent::CursorMoved { position, .. } => {
+            let last_position = mouse.position;
+            let current_position = nalgebra_glm::vec2(position.x as _, position.y as _);
+            mouse.position = current_position;
+            mouse.position_delta = current_position - last_position;
+            mouse.state.set(crate::input::MouseState::MOVED, true);
         }
-        mouse.state.set(crate::input::MouseState::MOVED, false);
+        winit::event::WindowEvent::MouseWheel {
+            delta: winit::event::MouseScrollDelta::LineDelta(h_lines, v_lines),
+            ..
+        } => {
+            mouse.wheel_delta = nalgebra_glm::vec2(*h_lines, *v_lines);
+            mouse.state.set(crate::input::MouseState::SCROLLED, true);
+        }
+        _ => {}
     }
 }
