@@ -159,95 +159,89 @@ pub fn initialize(context: &mut crate::scene::Context) {
     context.resources.frame_timing.last_frame_start_instant = Some(web_time::Instant::now());
 }
 
+pub fn receive_resize_event(
+    context: &mut crate::scene::Context,
+    event: &winit::event::WindowEvent,
+) {
+    let winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) = event
+    else {
+        return;
+    };
+    crate::window::resize_viewport(context, *width, *height);
+}
+
 /// Handles viewport resizing, such as when the window is resized by the user
 pub fn resize_viewport(context: &mut crate::scene::Context, width: u32, height: u32) {
-    crate::graphics::systems::resize_renderer(context, width, height);
-    crate::ui::systems::resize_ui(context);
+    crate::graphics::resize_renderer(context, width, height);
+    crate::ui::resize_ui(context);
 }
 
-pub mod events {
-    pub fn receive_resize_event(
-        context: &mut crate::scene::Context,
-        event: &winit::event::WindowEvent,
-    ) {
-        let winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) = event
-        else {
-            return;
-        };
-        crate::window::resize_viewport(context, *width, *height);
+/// Queries for the display viewport's aspect ratio
+pub fn query_viewport_aspect_ratio(context: &crate::scene::Context) -> Option<f32> {
+    let Some(renderer) = &context.resources.graphics.renderer else {
+        return None;
+    };
+    let surface_config = &renderer.gpu.surface_config;
+    let aspect_ratio = surface_config.width as f32 / surface_config.height.max(1) as f32;
+    Some(aspect_ratio)
+}
+
+/// Calculates and refreshes frame timing values such as delta time
+pub fn update_frame_timing_system(context: &mut crate::scene::Context) {
+    let now = web_time::Instant::now();
+
+    let crate::scene::Context {
+        resources:
+            crate::scene::Resources {
+                frame_timing:
+                    crate::window::FrameTiming {
+                        frames_per_second,
+                        delta_time,
+                        last_frame_start_instant,
+                        current_frame_start_instant,
+                        initial_frame_start_instant,
+                        frame_counter,
+                        uptime_milliseconds,
+                    },
+                ..
+            },
+        ..
+    } = context;
+
+    // Capture first instant
+    if initial_frame_start_instant.is_none() {
+        *initial_frame_start_instant = Some(now);
     }
-}
 
-pub mod queries {
-    /// Queries for the display viewport's aspect ratio
-    pub fn query_viewport_aspect_ratio(context: &crate::scene::Context) -> Option<f32> {
-        let Some(renderer) = &context.resources.graphics.renderer else {
-            return None;
-        };
-        let surface_config = &renderer.gpu.surface_config;
-        let aspect_ratio = surface_config.width as f32 / surface_config.height.max(1) as f32;
-        Some(aspect_ratio)
+    // Delta time
+    *delta_time =
+        last_frame_start_instant.map_or(0.0, |last_frame| (now - last_frame).as_secs_f32());
+
+    // Last frame start
+    *last_frame_start_instant = Some(now);
+
+    // Current frame start
+    if current_frame_start_instant.is_none() {
+        *current_frame_start_instant = Some(now);
     }
-}
 
-pub mod systems {
-    /// Calculates and refreshes frame timing values such as delta time
-    pub fn update_frame_timing(context: &mut crate::scene::Context) {
-        let now = web_time::Instant::now();
+    // Calculate uptime
+    if let Some(app_start) = *initial_frame_start_instant {
+        *uptime_milliseconds = (now - app_start).as_millis() as u64;
+    }
 
-        let crate::scene::Context {
-            resources:
-                crate::scene::Resources {
-                    frame_timing:
-                        crate::window::FrameTiming {
-                            frames_per_second,
-                            delta_time,
-                            last_frame_start_instant,
-                            current_frame_start_instant,
-                            initial_frame_start_instant,
-                            frame_counter,
-                            uptime_milliseconds,
-                        },
-                    ..
-                },
-            ..
-        } = context;
-
-        // Capture first instant
-        if initial_frame_start_instant.is_none() {
-            *initial_frame_start_instant = Some(now);
-        }
-
-        // Delta time
-        *delta_time =
-            last_frame_start_instant.map_or(0.0, |last_frame| (now - last_frame).as_secs_f32());
-
-        // Last frame start
-        *last_frame_start_instant = Some(now);
-
-        // Current frame start
-        if current_frame_start_instant.is_none() {
-            *current_frame_start_instant = Some(now);
-        }
-
-        // Calculate uptime
-        if let Some(app_start) = *initial_frame_start_instant {
-            *uptime_milliseconds = (now - app_start).as_millis() as u64;
-        }
-
-        // Calculate frames per second
-        *frame_counter += 1;
-        match current_frame_start_instant.as_ref() {
-            Some(start) => {
-                if (now - *start).as_secs_f32() >= 1.0 {
-                    *frames_per_second = *frame_counter as f32;
-                    *frame_counter = 0;
-                    *current_frame_start_instant = Some(now);
-                }
-            }
-            None => {
+    // Calculate frames per second
+    *frame_counter += 1;
+    match current_frame_start_instant.as_ref() {
+        Some(start) => {
+            if (now - *start).as_secs_f32() >= 1.0 {
+                *frames_per_second = *frame_counter as f32;
+                *frame_counter = 0;
                 *current_frame_start_instant = Some(now);
             }
+        }
+        None => {
+            *current_frame_start_instant = Some(now);
         }
     }
 }

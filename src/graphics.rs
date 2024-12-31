@@ -18,212 +18,7 @@ pub struct Renderer {
     pub depth_texture_view: wgpu::TextureView,
     pub ui: egui_wgpu::Renderer,
     pub grid: Grid,
-    pub triangle: TriangleRender,
     pub post_process: PostProcess,
-}
-
-pub use triangle::*;
-pub mod triangle {
-    /// Common vertex format for all triangle mesh rendering
-    #[repr(C)]
-    #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-    pub struct Vertex {
-        pub position: [f32; 4],
-        pub color: [f32; 4],
-    }
-
-    pub struct TriangleRender {
-        pub model: nalgebra_glm::Mat4,
-        pub vertex_buffer: wgpu::Buffer,
-        pub index_buffer: wgpu::Buffer,
-        pub buffer: wgpu::Buffer,
-        pub bind_group: wgpu::BindGroup,
-        pub pipeline: wgpu::RenderPipeline,
-    }
-    #[repr(C)]
-    #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-    pub struct UniformBuffer {
-        pub mvp: nalgebra_glm::Mat4,
-    }
-    pub const TRIANGLE_VERTICES: [crate::graphics::Vertex; 3] = [
-        crate::graphics::Vertex {
-            position: [1.0, -1.0, 0.0, 1.0],
-            color: [1.0, 0.0, 0.0, 1.0],
-        },
-        crate::graphics::Vertex {
-            position: [-1.0, -1.0, 0.0, 1.0],
-            color: [0.0, 1.0, 0.0, 1.0],
-        },
-        crate::graphics::Vertex {
-            position: [0.0, 1.0, 0.0, 1.0],
-            color: [0.0, 0.0, 1.0, 1.0],
-        },
-    ];
-    pub const TRIANGLE_INDICES: [u32; 3] = [0, 1, 2]; // Clockwise winding order
-
-    pub fn create_triangle(
-        device: &wgpu::Device,
-        depth_format: wgpu::TextureFormat,
-        surface_format: wgpu::TextureFormat,
-    ) -> crate::graphics::triangle::TriangleRender {
-        let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(&crate::graphics::triangle::TRIANGLE_VERTICES),
-                usage: wgpu::BufferUsages::VERTEX,
-            },
-        );
-        let index_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("index Buffer"),
-                contents: bytemuck::cast_slice(&crate::graphics::triangle::TRIANGLE_INDICES),
-                usage: wgpu::BufferUsages::INDEX,
-            },
-        );
-        let buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Uniform Buffer"),
-                contents: bytemuck::cast_slice(&[
-                    crate::graphics::triangle::UniformBuffer::default(),
-                ]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("uniform_bind_group_layout"),
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-            label: Some("uniform_bind_group"),
-        });
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/triangle.wgsl"));
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-        let attributes: &[wgpu::VertexAttribute] =
-            &wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vertex_main"),
-                buffers: &[{
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<crate::graphics::Vertex>()
-                            as wgpu::BufferAddress,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes,
-                    }
-                }],
-                compilation_options: Default::default(),
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: Some(wgpu::IndexFormat::Uint32),
-                front_face: wgpu::FrontFace::Cw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-                unclipped_depth: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: depth_format,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fragment_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            multiview: None,
-            cache: None,
-        });
-        crate::graphics::triangle::TriangleRender {
-            model: nalgebra_glm::Mat4::identity(),
-            pipeline,
-            vertex_buffer,
-            index_buffer,
-            buffer,
-            bind_group,
-        }
-    }
-
-    pub fn render_triangle(
-        triangle: &mut crate::graphics::triangle::TriangleRender,
-        render_pass: &mut wgpu::RenderPass<'_>,
-    ) {
-        render_pass.set_pipeline(&triangle.pipeline);
-        render_pass.set_bind_group(0, &triangle.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, triangle.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(triangle.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(
-            0..(crate::graphics::triangle::TRIANGLE_INDICES.len() as _),
-            0,
-            0..1,
-        );
-    }
-
-    pub fn update_triangle(context: &mut crate::scene::Context) {
-        let delta_time = context.resources.frame_timing.delta_time;
-        use crate::scene::queries::*;
-        let Some(camera_entity) = query_first_camera(context) else {
-            return;
-        };
-        let Some(CameraMatrices {
-            projection, view, ..
-        }) = query_camera_matrices(context, camera_entity)
-        else {
-            return;
-        };
-        let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
-            return;
-        };
-        renderer.triangle.model = nalgebra_glm::rotate(
-            &renderer.triangle.model,
-            30_f32.to_radians() * delta_time,
-            &nalgebra_glm::Vec3::y(),
-        );
-        renderer.gpu.queue.write_buffer(
-            &renderer.triangle.buffer,
-            0,
-            bytemuck::cast_slice(&[crate::graphics::triangle::UniformBuffer {
-                mvp: projection * view * renderer.triangle.model,
-            }]),
-        );
-    }
 }
 
 /// Low-level wgpu handles
@@ -235,7 +30,7 @@ pub struct Gpu {
 }
 
 pub use grid::*;
-pub mod grid {
+mod grid {
     use super::*;
 
     pub struct Grid {
@@ -363,11 +158,10 @@ pub mod grid {
     }
 
     pub fn update_grid_uniform(context: &mut crate::scene::Context) {
-        use crate::scene::queries::*;
-        let Some(camera_entity) = query_first_camera(context) else {
+        let Some(camera_entity) = crate::scene::query_first_camera(context) else {
             return;
         };
-        let Some(matrices) = query_camera_matrices(context, camera_entity) else {
+        let Some(matrices) = crate::scene::query_camera_matrices(context, camera_entity) else {
             return;
         };
         let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
@@ -396,7 +190,7 @@ pub mod grid {
 }
 
 pub use post_process::*;
-pub mod post_process {
+mod post_process {
     pub struct PostProcess {
         pub texture_view: wgpu::TextureView,
         pub depth_texture_view: wgpu::TextureView,
@@ -630,248 +424,244 @@ pub mod post_process {
     }
 }
 
-pub mod systems {
-    use super::*;
-
-    /// Receives the renderer from the async task that creates it on wasm, injecting it as a resource
-    #[cfg(target_arch = "wasm32")]
-    pub fn receive_renderer(context: &mut crate::scene::Context) {
-        if let Some(receiver) = context.resources.graphics.renderer_receiver.as_mut() {
-            if let Ok(Some(renderer)) = receiver.try_recv() {
-                context.resources.graphics.renderer = Some(renderer);
-                context.resources.graphics.renderer_receiver = None;
-            }
-        }
-        if context.resources.graphics.renderer.is_none() {
-            return;
+/// Receives the renderer from the async task that creates it on wasm, injecting it as a resource
+#[cfg(target_arch = "wasm32")]
+pub fn receive_renderer_system(context: &mut crate::scene::Context) {
+    if let Some(receiver) = context.resources.graphics.renderer_receiver.as_mut() {
+        if let Ok(Some(renderer)) = receiver.try_recv() {
+            context.resources.graphics.renderer = Some(renderer);
+            context.resources.graphics.renderer_receiver = None;
         }
     }
+    if context.resources.graphics.renderer.is_none() {
+        return;
+    }
+}
 
-    pub fn resize_renderer(context: &mut crate::scene::Context, width: u32, height: u32) {
-        let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
-            return;
-        };
-        log::info!("Resizing renderer surface to: ({width}, {height})");
-        renderer.gpu.surface_config.width = width;
-        renderer.gpu.surface_config.height = height;
+pub fn resize_renderer(context: &mut crate::scene::Context, width: u32, height: u32) {
+    let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
+        return;
+    };
+
+    // Update surface config
+    renderer.gpu.surface_config.width = width;
+    renderer.gpu.surface_config.height = height;
+    renderer
+        .gpu
+        .surface
+        .configure(&renderer.gpu.device, &renderer.gpu.surface_config);
+
+    let new_depth_view = crate::graphics::create_depth_texture(&renderer.gpu.device, width, height);
+    renderer.depth_texture_view = new_depth_view;
+
+    // Create new depth texture view
+    let new_depth_view = crate::graphics::create_depth_texture(&renderer.gpu.device, width, height);
+
+    // Update both depth textures atomically
+    renderer.post_process.depth_texture_view = new_depth_view;
+
+    // Update post processing with synchronized dimensions
+    post_process::resize(context, width, height);
+    context.resources.graphics.viewport_size = (width, height);
+}
+
+/// This system renders and presents the next frame
+pub fn render_frame_system(context: &mut crate::scene::Context) {
+    update_grid_uniform(context);
+
+    let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
+        context.resources.user_interface.frame_output.take()
+    else {
+        return;
+    };
+    let Some(window_handle) = context.resources.window.handle.as_ref() else {
+        return;
+    };
+    let screen_descriptor = {
+        let (width, height) = context.resources.graphics.viewport_size;
+        egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [width, height],
+            pixels_per_point: window_handle.scale_factor() as f32,
+        }
+    };
+
+    let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
+        return;
+    };
+
+    for (id, image_delta) in &textures_delta.set {
         renderer
-            .gpu
-            .surface
-            .configure(&renderer.gpu.device, &renderer.gpu.surface_config);
-        renderer.depth_texture_view =
-            crate::graphics::create_depth_texture(&renderer.gpu.device, width, height);
-        post_process::resize(context, width, height);
-        context.resources.graphics.viewport_size = (width, height);
+            .ui
+            .update_texture(&renderer.gpu.device, &renderer.gpu.queue, *id, image_delta);
     }
 
-    /// This system renders and presents the next frame
-    pub fn render_frame(context: &mut crate::scene::Context) {
-        update_render_buffers(context);
+    for id in &textures_delta.free {
+        renderer.ui.free_texture(id);
+    }
 
-        let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
-            context.resources.user_interface.frame_output.take()
-        else {
-            return;
-        };
-        let Some(window_handle) = context.resources.window.handle.as_ref() else {
-            return;
-        };
-        let screen_descriptor = {
-            let (width, height) = context.resources.graphics.viewport_size;
-            egui_wgpu::ScreenDescriptor {
-                size_in_pixels: [width, height],
-                pixels_per_point: window_handle.scale_factor() as f32,
-            }
-        };
+    let mut encoder = renderer
+        .gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
 
-        let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
-            return;
-        };
+    renderer.ui.update_buffers(
+        &renderer.gpu.device,
+        &renderer.gpu.queue,
+        &mut encoder,
+        &paint_jobs,
+        &screen_descriptor,
+    );
 
-        for (id, image_delta) in &textures_delta.set {
-            renderer
-                .ui
-                .update_texture(&renderer.gpu.device, &renderer.gpu.queue, *id, image_delta);
-        }
+    let surface_texture = renderer
+        .gpu
+        .surface
+        .get_current_texture()
+        .expect("Failed to get surface texture!");
 
-        for id in &textures_delta.free {
-            renderer.ui.free_texture(id);
-        }
+    let surface_texture_view = surface_texture
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor {
+            label: wgpu::Label::default(),
+            aspect: wgpu::TextureAspect::default(),
+            format: Some(renderer.gpu.surface_config.format),
+            dimension: None,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        });
 
-        let mut encoder =
-            renderer
-                .gpu
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
+    encoder.insert_debug_marker("Main Render Pass");
 
-        renderer.ui.update_buffers(
-            &renderer.gpu.device,
-            &renderer.gpu.queue,
-            &mut encoder,
+    // This scope around the crate::render_pass prevents the
+    // crate::render_pass from holding a borrow to the encoder,
+    // which would prevent calling `.finish()` in
+    // preparation for queue submission.
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &renderer.post_process.texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.19,
+                        g: 0.24,
+                        b: 0.42,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &renderer.post_process.depth_texture_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        render_grid(&mut render_pass, renderer);
+
+        renderer.ui.render(
+            &mut render_pass.forget_lifetime(),
             &paint_jobs,
             &screen_descriptor,
         );
-
-        let surface_texture = renderer
-            .gpu
-            .surface
-            .get_current_texture()
-            .expect("Failed to get surface texture!");
-
-        let surface_texture_view =
-            surface_texture
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor {
-                    label: wgpu::Label::default(),
-                    aspect: wgpu::TextureAspect::default(),
-                    format: Some(renderer.gpu.surface_config.format),
-                    dimension: None,
-                    base_mip_level: 0,
-                    mip_level_count: None,
-                    base_array_layer: 0,
-                    array_layer_count: None,
-                });
-
-        encoder.insert_debug_marker("Main Render Pass");
-
-        // This scope around the crate::render_pass prevents the
-        // crate::render_pass from holding a borrow to the encoder,
-        // which would prevent calling `.finish()` in
-        // preparation for queue submission.
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &renderer.post_process.texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.19,
-                            g: 0.24,
-                            b: 0.42,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &renderer.post_process.depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            render_triangle(&mut renderer.triangle, &mut render_pass);
-            render_grid(&mut render_pass, renderer);
-
-            renderer.ui.render(
-                &mut render_pass.forget_lifetime(),
-                &paint_jobs,
-                &screen_descriptor,
-            );
-        }
-
-        // Second render pass: apply post-processing to final frame
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Post Process Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            render_pass.set_pipeline(&renderer.post_process.pipeline);
-            render_pass.set_bind_group(0, &renderer.post_process.bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
-        }
-
-        // Final render pass: render GUI
-        {
-            let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("GUI Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &renderer.post_process.depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            renderer.ui.render(
-                &mut render_pass.forget_lifetime(),
-                &paint_jobs,
-                &screen_descriptor,
-            );
-        }
-
-        renderer.gpu.queue.submit(std::iter::once(encoder.finish()));
-        surface_texture.present();
     }
 
-    fn update_render_buffers(context: &mut crate::scene::Context) {
-        update_triangle(context);
-        update_grid_uniform(context);
+    // Second render pass: apply post-processing to final frame
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Post Process Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &surface_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        render_pass.set_pipeline(&renderer.post_process.pipeline);
+        render_pass.set_bind_group(0, &renderer.post_process.bind_group, &[]);
+        render_pass.draw(0..3, 0..1);
     }
+
+    // Final render pass: render GUI
+    {
+        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("GUI Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &surface_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &renderer.post_process.depth_texture_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        renderer.ui.render(
+            &mut render_pass.forget_lifetime(),
+            &paint_jobs,
+            &screen_descriptor,
+        );
+    }
+
+    renderer.gpu.queue.submit(std::iter::once(encoder.finish()));
+    surface_texture.present();
 }
+
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 pub async fn create_renderer_async(
     window: impl Into<wgpu::SurfaceTarget<'static>>,
     width: u32,
     height: u32,
 ) -> crate::graphics::Renderer {
-    let depth_format = wgpu::TextureFormat::Depth32Float;
     let gpu = create_gpu_async(window, width, height).await;
     let depth_texture_view = create_depth_texture(&gpu.device, width, height);
     let egui_renderer = egui_wgpu::Renderer::new(
         &gpu.device,
         gpu.surface_config.format,
-        Some(depth_format),
+        Some(DEPTH_FORMAT),
         1,
         false,
     );
-    let grid = create_grid(&gpu.device, gpu.surface_config.format, depth_format);
-    let triangle =
-        crate::graphics::create_triangle(&gpu.device, depth_format, gpu.surface_config.format);
+    let grid = create_grid(&gpu.device, gpu.surface_config.format, DEPTH_FORMAT);
     let post_process = create_post_process(
         &gpu.device,
         width,
         height,
         gpu.surface_config.format,
-        depth_format,
+        DEPTH_FORMAT,
     );
     crate::graphics::Renderer {
         gpu,
         depth_texture_view,
         ui: egui_renderer,
         grid,
-        triangle,
         post_process,
     }
 }
