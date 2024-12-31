@@ -161,28 +161,8 @@ pub fn initialize(context: &mut crate::scene::Context) {
 
 /// Handles viewport resizing, such as when the window is resized by the user
 pub fn resize_viewport(context: &mut crate::scene::Context, width: u32, height: u32) {
-    log::info!("Resizing renderer surface to: ({width}, {height})");
-    if let Some(renderer) = context.resources.graphics.renderer.as_mut() {
-        renderer.gpu.surface_config.width = width;
-        renderer.gpu.surface_config.height = height;
-        renderer
-            .gpu
-            .surface
-            .configure(&renderer.gpu.device, &renderer.gpu.surface_config);
-        renderer.depth_texture_view =
-            crate::graphics::create_depth_texture(&renderer.gpu.device, width, height);
-    }
-    context.resources.graphics.viewport_size = (width, height);
-
-    // Update the egui context with the new scale factor
-    if let (Some(window_handle), Some(gui_state)) = (
-        context.resources.window.handle.as_ref(),
-        context.resources.user_interface.state.as_mut(),
-    ) {
-        gui_state
-            .egui_ctx()
-            .set_pixels_per_point(window_handle.scale_factor() as f32);
-    }
+    crate::graphics::systems::resize_renderer(context, width, height);
+    crate::ui::systems::resize_ui(context);
 }
 
 pub mod events {

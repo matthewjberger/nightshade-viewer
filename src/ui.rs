@@ -119,6 +119,19 @@ pub mod events {
 pub mod systems {
     use super::local_transform_inspector_ui;
 
+    /// Resizes the egui UI, ensuring it matches the window scale factor
+    pub fn resize_ui(context: &mut crate::scene::Context) {
+        let (Some(window_handle), Some(gui_state)) = (
+            context.resources.window.handle.as_ref(),
+            context.resources.user_interface.state.as_mut(),
+        ) else {
+            return;
+        };
+        gui_state
+            .egui_ctx()
+            .set_pixels_per_point(window_handle.scale_factor() as f32);
+    }
+
     /// Ensures a default layout when the tile tree is emptied
     pub fn ensure_tile_tree(context: &mut crate::scene::Context) {
         if let Some(tile_tree) = &context.resources.user_interface.tile_tree {
