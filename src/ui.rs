@@ -34,7 +34,6 @@ pub struct TileTreeContext {
     pub tile_rects: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
     pub add_child_to: Option<egui_tiles::TileId>,
     pub visible_tiles: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
-    last_window_size: Option<(f32, f32)>,
 }
 
 impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
@@ -236,46 +235,10 @@ fn create_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
     central_panel_ui(context, ui);
 }
 
-fn check_layout_changes(context: &mut crate::scene::Context, ui: &egui::Ui) {
-    let visible_tiles = &context
-        .resources
-        .user_interface
-        .tile_tree_context
-        .visible_tiles;
-
-    println!("\n=== Visible Tiles ===");
-    for (tile_id, viewport) in visible_tiles {
-        println!(
-            "Tile {}: pos({:.1}, {:.1}), size({:.1} x {:.1})",
-            tile_id.0,
-            viewport.min.x,
-            viewport.min.y,
-            viewport.width(),
-            viewport.height()
-        );
-    }
-    println!("==================\n");
-
-    context
-        .resources
-        .user_interface
-        .tile_tree_context
-        .visible_tiles
-        .clear();
-}
-
 fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
     egui::CentralPanel::default()
         .frame(egui::Frame::none())
         .show(ui, |ui| {
-            println!(
-                "Visible Tiles: {:?}",
-                context
-                    .resources
-                    .user_interface
-                    .tile_tree_context
-                    .visible_tiles
-            );
             context
                 .resources
                 .user_interface
@@ -355,18 +318,6 @@ fn camera_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
                 });
             }
 
-            if let Some(tile_id) = camera.tile_id.as_mut() {
-                ui.group(|ui| {
-                    ui.label("Tile ID");
-                    ui.add(egui::DragValue::new(&mut tile_id.0).speed(0.1));
-                });
-                if ui.button("Remove").clicked() {
-                    camera.tile_id = None;
-                }
-            } else if ui.button("Add Tile ID").clicked() {
-                camera.tile_id = Some(egui_tiles::TileId(0));
-            }
-
             match &camera.projection {
                 Projection::Perspective(_perspective_camera) => {
                     ui.label("Projection is `Perspective`");
@@ -427,24 +378,23 @@ fn top_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
         egui::menu::bar(ui, |ui| {
             egui::global_theme_preference_switch(ui);
             ui.separator();
-            ui.menu_button("Project", |ui| {
-                let _ = ui.button("Save");
-                let _ = ui.button("Load");
-            });
-            ui.separator();
             ui.label(format!(
                 "FPS: {}",
                 context.resources.frame_timing.frames_per_second
             ));
             ui.separator();
+            ui.label("Panels:");
             ui.checkbox(
                 &mut context.resources.user_interface.show_left_panel,
-                "Show Left Panel",
-            );
+                "Left",
+            )
+            .on_hover_text("Toggle Left Panel");
             ui.checkbox(
                 &mut context.resources.user_interface.show_right_panel,
-                "Show Right Panel",
-            );
+                "Right",
+            )
+            .on_hover_text("Toggle Right Panel");
+            ui.separator();
         });
     });
 }

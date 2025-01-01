@@ -97,7 +97,6 @@ pub struct Active;
 pub struct Camera {
     pub projection: Projection,
     pub viewport: Option<Viewport>,
-    pub tile_id: Option<egui_tiles::TileId>,
 }
 
 impl Camera {
