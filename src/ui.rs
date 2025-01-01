@@ -33,6 +33,8 @@ pub struct Pane {
 pub struct TileTreeContext {
     pub tile_rects: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
     pub add_child_to: Option<egui_tiles::TileId>,
+    pub visible_tiles: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
+    last_window_size: Option<(f32, f32)>,
 }
 
 impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
@@ -71,7 +73,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         _tabs: &egui_tiles::Tabs,
         _scroll_offset: &mut f32,
     ) {
-        if ui.button("Add Pane").clicked() {
+        if ui.button("➕").clicked() {
             self.add_child_to = Some(tile_id);
         }
     }
@@ -83,7 +85,10 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         pane: &mut crate::ui::Pane,
     ) -> egui_tiles::UiResponse {
         let rect = ui.max_rect();
-        self.tile_rects.insert(tile_id, rect);
+
+        // Store the tile's viewport in our visible tiles map - the parent tabs system
+        // will handle visibility by only calling pane_ui for visible tabs
+        self.visible_tiles.insert(tile_id, rect);
 
         // Apply background color if set
         match pane.background {
@@ -96,18 +101,17 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         let mut drag_response = egui_tiles::UiResponse::None;
 
         // Create a top area for controls that won't interfere with dragging
-        let controls_height = 28.0; // Height for controls area
+        let controls_height = 28.0;
         let (controls_rect, content_rect) =
             rect.split_top_bottom_at_y(rect.min.y + controls_height);
 
-        // Handle controls in the top area using the builder pattern
+        // Handle controls in the top area
         let controls_response = ui.allocate_ui_with_layout(
             controls_rect.size(),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.add_space(4.0);
 
-                // Make dropdown more compact and properly interactable
                 egui::ComboBox::new(format!("background_{}", tile_id.0), "")
                     .selected_text(match pane.background {
                         PaneBackground::Transparent => "Transparent",
@@ -129,7 +133,6 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                         }
                     });
 
-                // Show color picker if solid color is selected
                 if let PaneBackground::Color(ref mut color) = pane.background {
                     ui.add_space(4.0);
                     ui.color_edit_button_srgba(color);
@@ -137,7 +140,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
             },
         );
 
-        // Handle the content area separately
+        // Handle the content area
         let _content_response = ui.allocate_ui_with_layout(
             content_rect.size(),
             egui::Layout::centered_and_justified(egui::Direction::TopDown),
@@ -150,10 +153,8 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         let shift_pressed = ui.input(|i| i.modifiers.shift);
         if shift_pressed && !controls_response.response.hovered() {
             let cursor = egui::CursorIcon::Grab;
-
-            let drag_rect = content_rect;
             let response = ui
-                .allocate_rect(drag_rect, egui::Sense::click_and_drag())
+                .allocate_rect(content_rect, egui::Sense::click_and_drag())
                 .on_hover_cursor(cursor);
 
             if response.dragged() {
@@ -235,10 +236,52 @@ fn create_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
     central_panel_ui(context, ui);
 }
 
+fn check_layout_changes(context: &mut crate::scene::Context, ui: &egui::Ui) {
+    let visible_tiles = &context
+        .resources
+        .user_interface
+        .tile_tree_context
+        .visible_tiles;
+
+    println!("\n=== Visible Tiles ===");
+    for (tile_id, viewport) in visible_tiles {
+        println!(
+            "Tile {}: pos({:.1}, {:.1}), size({:.1} x {:.1})",
+            tile_id.0,
+            viewport.min.x,
+            viewport.min.y,
+            viewport.width(),
+            viewport.height()
+        );
+    }
+    println!("==================\n");
+
+    context
+        .resources
+        .user_interface
+        .tile_tree_context
+        .visible_tiles
+        .clear();
+}
+
 fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
     egui::CentralPanel::default()
         .frame(egui::Frame::none())
         .show(ui, |ui| {
+            println!(
+                "Visible Tiles: {:?}",
+                context
+                    .resources
+                    .user_interface
+                    .tile_tree_context
+                    .visible_tiles
+            );
+            context
+                .resources
+                .user_interface
+                .tile_tree_context
+                .visible_tiles
+                .clear();
             let crate::ui::UserInterface {
                 tile_tree: Some(tile_tree),
                 tile_tree_context,
