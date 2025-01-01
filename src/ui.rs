@@ -11,9 +11,22 @@ pub struct UserInterface {
     pub selected_entity: Option<crate::scene::EntityId>,
 }
 
-/// Panes display in resizable tiles in the application
-#[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct Pane {}
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub enum PaneBackground {
+    Transparent,
+    Color(egui::Color32),
+}
+
+impl Default for PaneBackground {
+    fn default() -> Self {
+        Self::Transparent
+    }
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct Pane {
+    pub background: PaneBackground,
+}
 
 /// A context shared between all the panes in the tile tree
 #[derive(Default)]
@@ -53,50 +66,102 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
     fn top_bar_right_ui(
         &mut self,
         _tiles: &egui_tiles::Tiles<crate::ui::Pane>,
-        _ui: &mut egui::Ui,
-        _tile_id: egui_tiles::TileId,
+        ui: &mut egui::Ui,
+        tile_id: egui_tiles::TileId,
         _tabs: &egui_tiles::Tabs,
         _scroll_offset: &mut f32,
     ) {
+        if ui.button("Add Pane").clicked() {
+            self.add_child_to = Some(tile_id);
+        }
     }
 
     fn pane_ui(
         &mut self,
         ui: &mut egui::Ui,
         tile_id: egui_tiles::TileId,
-        _pane: &mut crate::ui::Pane,
+        pane: &mut crate::ui::Pane,
     ) -> egui_tiles::UiResponse {
         let rect = ui.max_rect();
-
-        // Store this tile's rect for overlap checking
         self.tile_rects.insert(tile_id, rect);
 
-        // Display tile ID in the center of each pane
-        ui.centered_and_justified(|ui| {
-            ui.label(format!("Tile {}", tile_id.0));
-        });
-
-        if ui.button("Click Me").clicked() {
-            println!("Button clicked in Pane");
+        // Apply background color if set
+        match pane.background {
+            PaneBackground::Color(color) => {
+                ui.painter().rect_filled(rect, 0.0, color);
+            }
+            PaneBackground::Transparent => {}
         }
 
-        // Only enable dragging when shift is pressed
+        let mut drag_response = egui_tiles::UiResponse::None;
+
+        // Create a top area for controls that won't interfere with dragging
+        let controls_height = 28.0; // Height for controls area
+        let (controls_rect, content_rect) =
+            rect.split_top_bottom_at_y(rect.min.y + controls_height);
+
+        // Handle controls in the top area using the builder pattern
+        let controls_response = ui.allocate_ui_with_layout(
+            controls_rect.size(),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.add_space(4.0);
+
+                // Make dropdown more compact and properly interactable
+                egui::ComboBox::new(format!("background_{}", tile_id.0), "")
+                    .selected_text(match pane.background {
+                        PaneBackground::Transparent => "Transparent",
+                        PaneBackground::Color(_) => "Solid Color",
+                    })
+                    .width(100.0)
+                    .show_ui(ui, |ui| {
+                        let is_transparent = matches!(pane.background, PaneBackground::Transparent);
+                        if ui.selectable_label(is_transparent, "Transparent").clicked() {
+                            pane.background = PaneBackground::Transparent;
+                        }
+
+                        let is_color = matches!(pane.background, PaneBackground::Color(_));
+                        if ui.selectable_label(is_color, "Solid Color").clicked() {
+                            if let PaneBackground::Transparent = pane.background {
+                                pane.background =
+                                    PaneBackground::Color(egui::Color32::from_gray(200));
+                            }
+                        }
+                    });
+
+                // Show color picker if solid color is selected
+                if let PaneBackground::Color(ref mut color) = pane.background {
+                    ui.add_space(4.0);
+                    ui.color_edit_button_srgba(color);
+                }
+            },
+        );
+
+        // Handle the content area separately
+        let _content_response = ui.allocate_ui_with_layout(
+            content_rect.size(),
+            egui::Layout::centered_and_justified(egui::Direction::TopDown),
+            |ui| {
+                ui.label(format!("Tile {}", tile_id.0));
+            },
+        );
+
+        // Only enable dragging in the content area and when shift is pressed
         let shift_pressed = ui.input(|i| i.modifiers.shift);
-        let cursor = if shift_pressed {
-            egui::CursorIcon::Grab
-        } else {
-            egui::CursorIcon::Default
-        };
+        if shift_pressed && !controls_response.response.hovered() {
+            let cursor = egui::CursorIcon::Grab;
 
-        let response = ui
-            .allocate_rect(ui.max_rect(), egui::Sense::click_and_drag())
-            .on_hover_cursor(cursor);
+            let drag_rect = content_rect;
+            let response = ui
+                .allocate_rect(drag_rect, egui::Sense::click_and_drag())
+                .on_hover_cursor(cursor);
 
-        if shift_pressed && response.dragged() {
-            egui_tiles::UiResponse::DragStarted
-        } else {
-            egui_tiles::UiResponse::None
+            if response.dragged() {
+                drag_response = egui_tiles::UiResponse::DragStarted;
+            }
         }
+
+        drag_response
     }
 }
 
@@ -184,7 +249,9 @@ fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
             };
             tile_tree.ui(tile_tree_context, ui);
             if let Some(parent) = tile_tree_context.add_child_to.take() {
-                let new_child = tile_tree.tiles.insert_pane(crate::ui::Pane {});
+                let new_child = tile_tree.tiles.insert_pane(Pane {
+                    background: PaneBackground::Color(egui::Color32::from_rgb(200, 200, 200)),
+                });
                 if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
                     tile_tree.tiles.get_mut(parent)
                 {
@@ -335,7 +402,6 @@ fn top_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
                 &mut context.resources.user_interface.show_right_panel,
                 "Show Right Panel",
             );
-            ui.separator();
         });
     });
 }
