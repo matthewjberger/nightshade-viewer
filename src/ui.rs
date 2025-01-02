@@ -13,6 +13,16 @@ pub struct UserInterface {
     pub selected_entity: Option<crate::scene::EntityId>,
 }
 
+/// A context shared between all the panes in the tile tree
+#[derive(Default)]
+pub struct TileTreeContext {
+    pub tile_rects: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
+    pub add_child_to: Option<egui_tiles::TileId>,
+    pub viewport_tiles: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
+    pub selected_tile: Option<egui_tiles::TileId>,
+    pub tile_mapping: std::collections::HashMap<egui_tiles::TileId, usize>,
+}
+
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub enum PaneKind {
     MainCamera,
@@ -28,14 +38,6 @@ impl Default for PaneKind {
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct Pane {
     pub kind: PaneKind,
-}
-
-/// A context shared between all the panes in the tile tree
-#[derive(Default)]
-pub struct TileTreeContext {
-    pub tile_rects: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
-    pub add_child_to: Option<egui_tiles::TileId>,
-    pub viewport_tiles: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
 }
 
 impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
@@ -86,27 +88,40 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         pane: &mut crate::ui::Pane,
     ) -> egui_tiles::UiResponse {
         let rect = ui.max_rect();
+        self.tile_rects.insert(tile_id, rect);
 
         if matches!(pane.kind, PaneKind::MainCamera) {
             self.viewport_tiles.insert(tile_id, rect);
         }
 
-        // Apply background color if set
+        // Draw selection border only for selected tile
+        if self.selected_tile == Some(tile_id) {
+            let border_color = egui::Color32::from_rgb(251, 146, 60);
+            let border_width = 8.0;
+            let border_rounding = 6.0;
+
+            let border_rect = rect.shrink(1.0);
+            ui.painter().rect_stroke(
+                border_rect,
+                border_rounding,
+                egui::Stroke::new(border_width, border_color),
+            );
+        }
+
         match pane.kind {
             PaneKind::Color(color) => {
-                ui.painter().rect_filled(rect, 0.0, color);
+                let bg_rect = rect.shrink(1.0);
+                ui.painter().rect_filled(bg_rect, 0.0, color);
             }
             PaneKind::MainCamera => {}
         }
 
         let mut drag_response = egui_tiles::UiResponse::None;
 
-        // Create a top area for controls that won't interfere with dragging
         let controls_height = 28.0;
         let (controls_rect, content_rect) =
             rect.split_top_bottom_at_y(rect.min.y + controls_height);
 
-        // Handle controls in the top area
         let controls_response = ui.allocate_ui_with_layout(
             controls_rect.size(),
             egui::Layout::left_to_right(egui::Align::Center),
@@ -140,16 +155,15 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
             },
         );
 
-        // Handle the content area
         let _content_response = ui.allocate_ui_with_layout(
             content_rect.size(),
             egui::Layout::centered_and_justified(egui::Direction::TopDown),
             |ui| {
-                ui.label(format!("Tile {}", tile_id.0));
+                let consistent_id = self.tile_mapping.get(&tile_id).unwrap_or(&0);
+                ui.label(format!("Tile {}", consistent_id));
             },
         );
 
-        // Only enable dragging in the content area and when shift is pressed
         let shift_pressed = ui.input(|i| i.modifiers.shift);
         if shift_pressed && !controls_response.response.hovered() {
             let cursor = egui::CursorIcon::Grab;
@@ -175,6 +189,37 @@ pub fn receive_ui_event(context: &mut crate::scene::Context, event: &winit::even
     };
     context.resources.user_interface.consumed_event =
         gui_state.on_window_event(window_handle, event).consumed;
+
+    if let winit::event::WindowEvent::MouseInput {
+        state: winit::event::ElementState::Pressed,
+        button: winit::event::MouseButton::Left,
+        ..
+    } = event
+    {
+        let mouse_pos = context.resources.input.mouse.position;
+        let mouse_pos = egui::pos2(mouse_pos.x, mouse_pos.y);
+
+        context
+            .resources
+            .user_interface
+            .tile_tree_context
+            .selected_tile = None;
+        for (tile_id, rect) in &context
+            .resources
+            .user_interface
+            .tile_tree_context
+            .tile_rects
+        {
+            if rect.contains(mouse_pos) {
+                context
+                    .resources
+                    .user_interface
+                    .tile_tree_context
+                    .selected_tile = Some(*tile_id);
+                break;
+            }
+        }
+    }
 }
 
 /// Resizes the egui UI, ensuring it matches the window scale factor
@@ -246,6 +291,13 @@ fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
                 .tile_tree_context
                 .viewport_tiles
                 .clear();
+            context
+                .resources
+                .user_interface
+                .tile_tree_context
+                .tile_rects
+                .clear();
+
             let crate::ui::UserInterface {
                 tile_tree: Some(tile_tree),
                 tile_tree_context,
@@ -254,7 +306,20 @@ fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
             else {
                 return;
             };
+
+            // Update mappings using free function
+            let mut counter = 0;
+            if let Some(root) = tile_tree.root {
+                update_tile_mappings(
+                    &tile_tree.tiles,
+                    root,
+                    &mut tile_tree_context.tile_mapping,
+                    &mut counter,
+                );
+            }
+
             tile_tree.ui(tile_tree_context, ui);
+
             if let Some(parent) = tile_tree_context.add_child_to.take() {
                 let new_child = tile_tree.tiles.insert_pane(Pane {
                     kind: PaneKind::Color(egui::Color32::from_rgb(200, 200, 200)),
@@ -340,30 +405,18 @@ pub fn lines_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui
                         ui.group(|ui| {
                             ui.horizontal(|ui| {
                                 ui.label("Color:");
-                                ui.label("r");
-                                ui.add(
-                                    egui::DragValue::new(&mut line.color.x)
-                                        .speed(0.1)
-                                        .range(0.0..=1.0),
+                                let mut color = egui::Color32::from_rgba_unmultiplied(
+                                    (line.color.x * 255.0) as u8,
+                                    (line.color.y * 255.0) as u8,
+                                    (line.color.z * 255.0) as u8,
+                                    (line.color.w * 255.0) as u8,
                                 );
-                                ui.label("g");
-                                ui.add(
-                                    egui::DragValue::new(&mut line.color.y)
-                                        .speed(0.1)
-                                        .range(0.0..=1.0),
-                                );
-                                ui.label("b");
-                                ui.add(
-                                    egui::DragValue::new(&mut line.color.z)
-                                        .speed(0.1)
-                                        .range(0.0..=1.0),
-                                );
-                                ui.label("a");
-                                ui.add(
-                                    egui::DragValue::new(&mut line.color.w)
-                                        .speed(0.1)
-                                        .range(0.0..=1.0),
-                                );
+                                if ui.color_edit_button_srgba(&mut color).changed() {
+                                    line.color.x = color.r() as f32 / 255.0;
+                                    line.color.y = color.g() as f32 / 255.0;
+                                    line.color.z = color.b() as f32 / 255.0;
+                                    line.color.w = color.a() as f32 / 255.0;
+                                }
                             });
                         });
                     });
@@ -450,30 +503,18 @@ pub fn quads_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui
                         ui.group(|ui| {
                             ui.horizontal(|ui| {
                                 ui.label("Color:");
-                                ui.label("r");
-                                ui.add(
-                                    egui::DragValue::new(&mut quad.color.x)
-                                        .speed(0.1)
-                                        .range(0.0..=1.0),
+                                let mut color = egui::Color32::from_rgba_unmultiplied(
+                                    (quad.color.x * 255.0) as u8,
+                                    (quad.color.y * 255.0) as u8,
+                                    (quad.color.z * 255.0) as u8,
+                                    (quad.color.w * 255.0) as u8,
                                 );
-                                ui.label("g");
-                                ui.add(
-                                    egui::DragValue::new(&mut quad.color.y)
-                                        .speed(0.1)
-                                        .range(0.0..=1.0),
-                                );
-                                ui.label("b");
-                                ui.add(
-                                    egui::DragValue::new(&mut quad.color.z)
-                                        .speed(0.1)
-                                        .range(0.0..=1.0),
-                                );
-                                ui.label("a");
-                                ui.add(
-                                    egui::DragValue::new(&mut quad.color.w)
-                                        .speed(0.1)
-                                        .range(0.0..=1.0),
-                                );
+                                if ui.color_edit_button_srgba(&mut color).changed() {
+                                    quad.color.x = color.r() as f32 / 255.0;
+                                    quad.color.y = color.g() as f32 / 255.0;
+                                    quad.color.z = color.b() as f32 / 255.0;
+                                    quad.color.w = color.a() as f32 / 255.0;
+                                }
                             });
                         });
                     });
@@ -767,4 +808,42 @@ fn local_transform_inspector_ui(context: &mut crate::scene::Context, ui: &mut eg
     });
 
     context.resources.user_interface.uniform_scaling = uniform_scaling;
+}
+
+fn update_tile_mappings(
+    tiles: &egui_tiles::Tiles<Pane>,
+    tile_id: egui_tiles::TileId,
+    mapping: &mut std::collections::HashMap<egui_tiles::TileId, usize>,
+    counter: &mut usize,
+) {
+    // If this is a pane, assign it an ID
+    if tiles
+        .get(tile_id)
+        .map_or(false, |t| matches!(t, egui_tiles::Tile::Pane(_)))
+    {
+        mapping.insert(tile_id, *counter);
+        *counter += 1;
+        return;
+    }
+
+    // For containers, process their children
+    if let Some(egui_tiles::Tile::Container(container)) = tiles.get(tile_id) {
+        match container {
+            egui_tiles::Container::Tabs(tabs) => {
+                for &child in &tabs.children {
+                    update_tile_mappings(tiles, child, mapping, counter);
+                }
+            }
+            egui_tiles::Container::Linear(linear) => {
+                for &child in &linear.children {
+                    update_tile_mappings(tiles, child, mapping, counter);
+                }
+            }
+            egui_tiles::Container::Grid(grid) => {
+                for child in grid.children() {
+                    update_tile_mappings(tiles, *child, mapping, counter);
+                }
+            }
+        }
+    }
 }

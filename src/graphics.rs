@@ -579,7 +579,10 @@ mod sky {
     }
 
     fn load_sky_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Texture {
-        // Load HDR image
+        // TODO:
+        // This HDR is big and we statically build it in,
+        // so this contributes significantly to the final binary's filesize
+        // and can be reduced by using a compressed format (like a ktx8)
         let hdr_data = include_bytes!("hdr/kloppenheim.hdr");
         let cursor = std::io::Cursor::new(hdr_data);
         let decoder =

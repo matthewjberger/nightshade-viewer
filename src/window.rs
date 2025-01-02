@@ -36,7 +36,20 @@ impl winit::application::ApplicationHandler for crate::scene::Context {
         #[allow(unused_mut)]
         let mut attributes = winit::window::Window::default_attributes();
 
-        attributes.title = "nightshade".to_string();
+        attributes.title = "Nightshade".to_string();
+
+        match image::load_from_memory(include_bytes!("icon/nightshade.png")) {
+            Ok(image) => {
+                let image = image.to_rgba8();
+                let (width, height) = image.dimensions();
+                if let Ok(icon) = winit::window::Icon::from_rgba(image.to_vec(), width, height) {
+                    attributes.window_icon = Some(icon);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to load icon: {e}");
+            }
+        }
 
         // On wasm, the window attributes have to include the canvas element
         #[cfg(target_arch = "wasm32")]
@@ -58,7 +71,7 @@ impl winit::application::ApplicationHandler for crate::scene::Context {
             attributes = attributes.with_canvas(Some(canvas));
         }
 
-        let Ok(window) = event_loop.create_window(attributes) else {
+        let Ok(window) = event_loop.create_window(dbg!(attributes)) else {
             return;
         };
 
