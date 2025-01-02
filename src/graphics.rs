@@ -158,7 +158,8 @@ mod grid {
     }
 
     pub fn update_grid_uniform(context: &mut crate::scene::Context) {
-        let Some(camera_entity) = crate::scene::query_first_camera(context) else {
+        use crate::scene::*;
+        let Some(camera_entity) = query_first_entity(context, ACTIVE_CAMERA | CAMERA) else {
             return;
         };
         let Some(matrices) = crate::scene::query_camera_matrices(context, camera_entity) else {
@@ -467,6 +468,15 @@ pub fn resize_renderer(context: &mut crate::scene::Context, width: u32, height: 
 
 /// This system renders and presents the next frame
 pub fn render_frame_system(context: &mut crate::scene::Context) {
+    let viewports = context
+        .resources
+        .user_interface
+        .tile_tree_context
+        .viewport_tiles
+        .values()
+        .map(|r| *r)
+        .collect::<Vec<_>>();
+
     update_grid_uniform(context);
 
     let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
@@ -567,13 +577,28 @@ pub fn render_frame_system(context: &mut crate::scene::Context) {
             occlusion_query_set: None,
         });
 
-        render_grid(&mut render_pass, renderer);
+        viewports.into_iter().for_each(|viewport| {
+            if viewport.min.x < 0.0 || viewport.min.y < 0.0 {
+                return;
+            }
 
-        renderer.ui.render(
-            &mut render_pass.forget_lifetime(),
-            &paint_jobs,
-            &screen_descriptor,
-        );
+            if viewport.max.x > renderer.gpu.surface_config.width as f32
+                || viewport.max.y > renderer.gpu.surface_config.height as f32
+            {
+                return;
+            }
+
+            render_pass.set_viewport(
+                viewport.min.x,
+                viewport.min.y,
+                viewport.width(),
+                viewport.height(),
+                0.0,
+                1.0,
+            );
+
+            render_grid(&mut render_pass, renderer);
+        });
     }
 
     // Second render pass: apply post-processing to final frame

@@ -12,20 +12,20 @@ pub struct UserInterface {
 }
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub enum PaneBackground {
-    Transparent,
+pub enum PaneKind {
+    MainCamera,
     Color(egui::Color32),
 }
 
-impl Default for PaneBackground {
+impl Default for PaneKind {
     fn default() -> Self {
-        Self::Transparent
+        Self::MainCamera
     }
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct Pane {
-    pub background: PaneBackground,
+    pub kind: PaneKind,
 }
 
 /// A context shared between all the panes in the tile tree
@@ -33,7 +33,7 @@ pub struct Pane {
 pub struct TileTreeContext {
     pub tile_rects: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
     pub add_child_to: Option<egui_tiles::TileId>,
-    pub visible_tiles: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
+    pub viewport_tiles: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
 }
 
 impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
@@ -85,16 +85,16 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
     ) -> egui_tiles::UiResponse {
         let rect = ui.max_rect();
 
-        // Store the tile's viewport in our visible tiles map - the parent tabs system
-        // will handle visibility by only calling pane_ui for visible tabs
-        self.visible_tiles.insert(tile_id, rect);
+        if matches!(pane.kind, PaneKind::MainCamera) {
+            self.viewport_tiles.insert(tile_id, rect);
+        }
 
         // Apply background color if set
-        match pane.background {
-            PaneBackground::Color(color) => {
+        match pane.kind {
+            PaneKind::Color(color) => {
                 ui.painter().rect_filled(rect, 0.0, color);
             }
-            PaneBackground::Transparent => {}
+            PaneKind::MainCamera => {}
         }
 
         let mut drag_response = egui_tiles::UiResponse::None;
@@ -112,27 +112,26 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                 ui.add_space(4.0);
 
                 egui::ComboBox::new(format!("background_{}", tile_id.0), "")
-                    .selected_text(match pane.background {
-                        PaneBackground::Transparent => "Transparent",
-                        PaneBackground::Color(_) => "Solid Color",
+                    .selected_text(match pane.kind {
+                        PaneKind::MainCamera => "Main Camera",
+                        PaneKind::Color(_) => "Color",
                     })
                     .width(100.0)
                     .show_ui(ui, |ui| {
-                        let is_transparent = matches!(pane.background, PaneBackground::Transparent);
-                        if ui.selectable_label(is_transparent, "Transparent").clicked() {
-                            pane.background = PaneBackground::Transparent;
+                        let is_transparent = matches!(pane.kind, PaneKind::MainCamera);
+                        if ui.selectable_label(is_transparent, "Main Camera").clicked() {
+                            pane.kind = PaneKind::MainCamera;
                         }
 
-                        let is_color = matches!(pane.background, PaneBackground::Color(_));
-                        if ui.selectable_label(is_color, "Solid Color").clicked() {
-                            if let PaneBackground::Transparent = pane.background {
-                                pane.background =
-                                    PaneBackground::Color(egui::Color32::from_gray(200));
+                        let is_color = matches!(pane.kind, PaneKind::Color(_));
+                        if ui.selectable_label(is_color, "Color").clicked() {
+                            if let PaneKind::MainCamera = pane.kind {
+                                pane.kind = PaneKind::Color(egui::Color32::from_gray(200));
                             }
                         }
                     });
 
-                if let PaneBackground::Color(ref mut color) = pane.background {
+                if let PaneKind::Color(ref mut color) = pane.kind {
                     ui.add_space(4.0);
                     ui.color_edit_button_srgba(color);
                 }
@@ -243,7 +242,7 @@ fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
                 .resources
                 .user_interface
                 .tile_tree_context
-                .visible_tiles
+                .viewport_tiles
                 .clear();
             let crate::ui::UserInterface {
                 tile_tree: Some(tile_tree),
@@ -256,7 +255,7 @@ fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
             tile_tree.ui(tile_tree_context, ui);
             if let Some(parent) = tile_tree_context.add_child_to.take() {
                 let new_child = tile_tree.tiles.insert_pane(Pane {
-                    background: PaneBackground::Color(egui::Color32::from_rgb(200, 200, 200)),
+                    kind: PaneKind::Color(egui::Color32::from_rgb(200, 200, 200)),
                 });
                 if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
                     tile_tree.tiles.get_mut(parent)

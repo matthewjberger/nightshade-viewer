@@ -2,7 +2,7 @@ use crate::*;
 
 crate::ecs! {
     Context {
-        active: Active => ACTIVE,
+        active_camera: ActiveCamera => ACTIVE_CAMERA,
         camera: Camera => CAMERA,
         global_transform: GlobalTransform => GLOBAL_TRANSFORM,
         local_transform: LocalTransform => LOCAL_TRANSFORM,
@@ -91,7 +91,7 @@ pub struct Name(pub String);
 pub struct Parent(pub crate::scene::EntityId);
 
 #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct Active;
+pub struct ActiveCamera;
 
 #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
@@ -252,10 +252,6 @@ pub fn query_descendents(context: &Context, target_entity: EntityId) -> Vec<Enti
     descendents
 }
 
-pub fn query_first_camera(context: &Context) -> Option<EntityId> {
-    query_entities(context, CAMERA).into_iter().next()
-}
-
 pub fn query_global_transform(context: &Context, entity: EntityId) -> nalgebra_glm::Mat4 {
     let Some(local_transform) = get_component::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
     else {
@@ -266,6 +262,15 @@ pub fn query_global_transform(context: &Context, entity: EntityId) -> nalgebra_g
     } else {
         local_transform.as_matrix()
     }
+}
+
+pub fn activate_camera(context: &mut Context, camera_entity: EntityId) {
+    query_entities(context, CAMERA)
+        .into_iter()
+        .for_each(|entity| {
+            remove_components(context, entity, ACTIVE_CAMERA);
+        });
+    add_components(context, camera_entity, ACTIVE_CAMERA);
 }
 
 pub fn query_camera_matrices(context: &Context, camera_entity: EntityId) -> Option<CameraMatrices> {
@@ -304,10 +309,10 @@ pub fn query_camera_matrices(context: &Context, camera_entity: EntityId) -> Opti
 }
 
 pub fn ensure_main_camera_system(context: &mut Context) {
-    if query_first_camera(context).is_some() {
+    if query_first_entity(context, ACTIVE_CAMERA | CAMERA).is_some() {
         return;
     }
-    let camera_mask = ACTIVE | CAMERA | LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME;
+    let camera_mask = ACTIVE_CAMERA | CAMERA | LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME;
     let camera_entity = spawn_entities(context, camera_mask, 1)[0];
     if let Some(name) = get_component_mut::<Name>(context, camera_entity, NAME) {
         *name = Name("Main Camera".to_string());
@@ -321,7 +326,7 @@ pub fn ensure_main_camera_system(context: &mut Context) {
 
 pub fn wasd_keyboard_controls_system(context: &mut Context) {
     let delta_time = context.resources.frame_timing.delta_time;
-    query_entities(context, ACTIVE | CAMERA | LOCAL_TRANSFORM)
+    query_entities(context, ACTIVE_CAMERA | CAMERA | LOCAL_TRANSFORM)
         .into_iter()
         .for_each(|entity| {
             let speed = 10.0 * delta_time;
@@ -375,7 +380,7 @@ pub fn wasd_keyboard_controls_system(context: &mut Context) {
 /// Updates the active camera's orientation using
 /// mouse controls for orbiting and panning
 pub fn look_camera_system(context: &mut Context) {
-    query_entities(context, ACTIVE | CAMERA | LOCAL_TRANSFORM)
+    query_entities(context, ACTIVE_CAMERA | CAMERA | LOCAL_TRANSFORM)
         .into_iter()
         .for_each(|entity| {
             let (local_transform_matrix, _, right, up) = {
