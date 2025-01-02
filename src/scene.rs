@@ -7,6 +7,7 @@ crate::ecs! {
         global_transform: GlobalTransform => GLOBAL_TRANSFORM,
         local_transform: LocalTransform => LOCAL_TRANSFORM,
         lines: Lines => LINES,
+        quads: Quads => QUADS,
         name: Name => NAME,
         parent: Parent => PARENT,
     }
@@ -101,6 +102,16 @@ pub struct Lines(pub Vec<Line>);
 pub struct Line {
     pub start: nalgebra_glm::Vec3,
     pub end: nalgebra_glm::Vec3,
+    pub color: nalgebra_glm::Vec4,
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Quads(pub Vec<Quad>);
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Quad {
+    pub size: nalgebra_glm::Vec2,
+    pub offset: nalgebra_glm::Vec3,
     pub color: nalgebra_glm::Vec4,
 }
 

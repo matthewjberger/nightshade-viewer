@@ -278,6 +278,7 @@ fn right_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
         local_transform_inspector_ui(context, ui);
         camera_inspector_ui(context, ui);
         lines_inspector_ui(context, ui);
+        quads_inspector_ui(context, ui);
     });
 }
 
@@ -383,6 +384,116 @@ pub fn lines_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui
                         *lines = vec![Line {
                             start: nalgebra_glm::vec3(0.0, 0.0, 0.0),
                             end: nalgebra_glm::vec3(1.0, 1.0, 1.0),
+                            color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
+                        }];
+                    }
+                }
+            }
+        }
+    });
+}
+
+pub fn quads_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
+    use crate::scene::*;
+
+    let Some(entity) = context.resources.user_interface.selected_entity else {
+        return;
+    };
+
+    ui.group(|ui| {
+        ui.label("Quads");
+        match get_component_mut::<Quads>(context, entity, QUADS) {
+            Some(Quads(quads)) => {
+                // Show existing quads with edit/delete capabilities
+                let mut quads_to_remove = Vec::new();
+                for (index, quad) in quads.iter_mut().enumerate() {
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(format!("Quad {}", index));
+                            if ui.button("Remove").clicked() {
+                                quads_to_remove.push(index);
+                            }
+                        });
+
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("Size:");
+                                ui.label("width");
+                                ui.add(egui::DragValue::new(&mut quad.size.x).speed(0.1));
+                                ui.label("height");
+                                ui.add(egui::DragValue::new(&mut quad.size.y).speed(0.1));
+                            });
+                        });
+
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("Offset:");
+                                ui.label("x");
+                                ui.add(egui::DragValue::new(&mut quad.offset.x).speed(0.1));
+                                ui.label("y");
+                                ui.add(egui::DragValue::new(&mut quad.offset.y).speed(0.1));
+                                ui.label("z");
+                                ui.add(egui::DragValue::new(&mut quad.offset.z).speed(0.1));
+                            });
+                        });
+
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("Color:");
+                                ui.label("r");
+                                ui.add(
+                                    egui::DragValue::new(&mut quad.color.x)
+                                        .speed(0.1)
+                                        .range(0.0..=1.0),
+                                );
+                                ui.label("g");
+                                ui.add(
+                                    egui::DragValue::new(&mut quad.color.y)
+                                        .speed(0.1)
+                                        .range(0.0..=1.0),
+                                );
+                                ui.label("b");
+                                ui.add(
+                                    egui::DragValue::new(&mut quad.color.z)
+                                        .speed(0.1)
+                                        .range(0.0..=1.0),
+                                );
+                                ui.label("a");
+                                ui.add(
+                                    egui::DragValue::new(&mut quad.color.w)
+                                        .speed(0.1)
+                                        .range(0.0..=1.0),
+                                );
+                            });
+                        });
+                    });
+                }
+
+                // Remove any quads marked for deletion (in reverse order to maintain indices)
+                for index in quads_to_remove.into_iter().rev() {
+                    quads.remove(index);
+                }
+
+                // Add new quad button
+                if ui.button("Add Quad").clicked() {
+                    quads.push(Quad {
+                        size: nalgebra_glm::vec2(1.0, 1.0),
+                        offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                        color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
+                    });
+                }
+
+                if ui.button("Remove Component").clicked() {
+                    remove_components(context, entity, QUADS);
+                }
+            }
+            None => {
+                if ui.button("Add Quads").clicked() {
+                    add_components(context, entity, QUADS);
+                    if let Some(Quads(quads)) = get_component_mut::<Quads>(context, entity, QUADS) {
+                        *quads = vec![Quad {
+                            size: nalgebra_glm::vec2(1.0, 1.0),
+                            offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
                             color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
                         }];
                     }
