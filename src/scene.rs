@@ -15,7 +15,6 @@ crate::ecs! {
         #[serde(skip)] window: window::Window,
         #[serde(skip)] graphics: graphics::Graphics,
         #[serde(skip)] input: input::Input,
-        #[serde(skip)] frame_timing: window::FrameTiming,
         #[serde(skip)] user_interface: ui::UserInterface,
     }
 }
@@ -319,7 +318,7 @@ pub fn query_camera_matrices(context: &Context, camera_entity: EntityId) -> Opti
         + nalgebra_glm::quat_rotate_vec3(&normalized_rotation, &(-nalgebra_glm::Vec3::z()));
     let up = nalgebra_glm::quat_rotate_vec3(&normalized_rotation, &nalgebra_glm::Vec3::y());
 
-    let aspect_ratio = dbg!(window::query_viewport_aspect_ratio(context)).unwrap_or(4.0 / 3.0);
+    let aspect_ratio = window::query_viewport_aspect_ratio(context).unwrap_or(4.0 / 3.0);
 
     Some(CameraMatrices {
         camera_position: camera_translation,
@@ -345,7 +344,7 @@ pub fn ensure_main_camera_system(context: &mut Context) {
 }
 
 pub fn wasd_keyboard_controls_system(context: &mut Context) {
-    let delta_time = context.resources.frame_timing.delta_time;
+    let delta_time = context.resources.window.delta_time;
     query_entities(context, ACTIVE_CAMERA | CAMERA | LOCAL_TRANSFORM)
         .into_iter()
         .for_each(|entity| {
@@ -425,7 +424,7 @@ pub fn look_camera_system(context: &mut Context) {
                 .contains(input::MouseState::RIGHT_CLICKED)
             {
                 let mut delta = context.resources.input.mouse.position_delta
-                    * context.resources.frame_timing.delta_time;
+                    * context.resources.window.delta_time;
                 delta.x *= -1.0;
                 delta.y *= -1.0;
 
@@ -456,7 +455,7 @@ pub fn look_camera_system(context: &mut Context) {
                 .contains(input::MouseState::MIDDLE_CLICKED)
             {
                 let mut delta = context.resources.input.mouse.position_delta
-                    * context.resources.frame_timing.delta_time;
+                    * context.resources.window.delta_time;
                 delta.x *= -1.0;
                 delta.y *= -1.0;
 

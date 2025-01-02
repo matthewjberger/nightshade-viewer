@@ -1,13 +1,11 @@
-/// Contains resources for window creation and destruction
 #[derive(Default)]
 pub struct Window {
+    /// The raw window handle
     pub handle: Option<std::sync::Arc<winit::window::Window>>,
-    pub should_exit: bool,
-}
 
-/// Contains timing information about the current frame
-#[derive(Default, Debug, Copy, Clone, PartialEq)]
-pub struct FrameTiming {
+    /// Should the program exit next frame
+    pub should_exit: bool,
+
     /// The number of frames rendered per second
     pub frames_per_second: f32,
 
@@ -156,7 +154,7 @@ pub fn initialize(context: &mut crate::scene::Context) {
     }
 
     context.resources.user_interface.state = Some(gui_state);
-    context.resources.frame_timing.last_frame_start_instant = Some(web_time::Instant::now());
+    context.resources.window.last_frame_start_instant = Some(web_time::Instant::now());
 }
 
 pub fn receive_resize_event(
@@ -193,15 +191,16 @@ pub fn update_frame_timing_system(context: &mut crate::scene::Context) {
     let crate::scene::Context {
         resources:
             crate::scene::Resources {
-                frame_timing:
-                    crate::window::FrameTiming {
-                        frames_per_second,
+                window:
+                    crate::window::Window {
                         delta_time,
                         last_frame_start_instant,
                         current_frame_start_instant,
                         initial_frame_start_instant,
                         frame_counter,
                         uptime_milliseconds,
+                        frames_per_second,
+                        ..
                     },
                 ..
             },

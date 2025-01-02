@@ -1,3 +1,5 @@
+use crate::paint::{paint_cube_scene, paint_entity};
+
 #[derive(Default)]
 pub struct UserInterface {
     pub state: Option<egui_winit::State>,
@@ -279,6 +281,14 @@ fn right_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
         camera_inspector_ui(context, ui);
         lines_inspector_ui(context, ui);
         quads_inspector_ui(context, ui);
+        let time = context.resources.window.uptime_milliseconds;
+        if let Some(selected_entity) = context.resources.user_interface.selected_entity {
+            if ui.button("Paint").clicked() {
+                let mut painting = crate::paint::Painting::default();
+                paint_cube_scene(time as _, &mut painting);
+                paint_entity(context, selected_entity, painting);
+            }
+        }
     });
 }
 
@@ -602,7 +612,7 @@ fn top_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
             ui.separator();
             ui.label(format!(
                 "FPS: {}",
-                context.resources.frame_timing.frames_per_second
+                context.resources.window.frames_per_second
             ));
             ui.separator();
             ui.label("Panels:");
