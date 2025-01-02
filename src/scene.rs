@@ -6,6 +6,7 @@ crate::ecs! {
         camera: Camera => CAMERA,
         global_transform: GlobalTransform => GLOBAL_TRANSFORM,
         local_transform: LocalTransform => LOCAL_TRANSFORM,
+        lines: Lines => LINES,
         name: Name => NAME,
         parent: Parent => PARENT,
     }
@@ -92,6 +93,16 @@ pub struct Parent(pub crate::scene::EntityId);
 
 #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct ActiveCamera;
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Lines(pub Vec<Line>);
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Line {
+    pub start: nalgebra_glm::Vec3,
+    pub end: nalgebra_glm::Vec3,
+    pub color: nalgebra_glm::Vec4,
+}
 
 #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
@@ -271,6 +282,15 @@ pub fn activate_camera(context: &mut Context, camera_entity: EntityId) {
             remove_components(context, entity, ACTIVE_CAMERA);
         });
     add_components(context, camera_entity, ACTIVE_CAMERA);
+}
+
+pub fn query_active_camera(context: &Context) -> Option<EntityId> {
+    query_first_entity(context, ACTIVE_CAMERA | CAMERA)
+}
+
+pub fn query_active_camera_matrices(context: &Context) -> Option<CameraMatrices> {
+    let active_camera = query_active_camera(context)?;
+    query_camera_matrices(context, active_camera)
 }
 
 pub fn query_camera_matrices(context: &Context, camera_entity: EntityId) -> Option<CameraMatrices> {

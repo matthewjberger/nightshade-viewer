@@ -277,6 +277,118 @@ fn right_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
         ui.available_width();
         local_transform_inspector_ui(context, ui);
         camera_inspector_ui(context, ui);
+        lines_inspector_ui(context, ui);
+    });
+}
+
+pub fn lines_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
+    use crate::scene::*;
+
+    let Some(entity) = context.resources.user_interface.selected_entity else {
+        return;
+    };
+
+    ui.group(|ui| {
+        ui.label("Lines");
+        match get_component_mut::<Lines>(context, entity, LINES) {
+            Some(Lines(lines)) => {
+                let mut lines_to_remove = Vec::new();
+                for (index, line) in lines.iter_mut().enumerate() {
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(format!("Line {}", index));
+                            if ui.button("Remove").clicked() {
+                                lines_to_remove.push(index);
+                            }
+                        });
+
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("Start:");
+                                ui.label("x");
+                                ui.add(egui::DragValue::new(&mut line.start.x).speed(0.1));
+                                ui.label("y");
+                                ui.add(egui::DragValue::new(&mut line.start.y).speed(0.1));
+                                ui.label("z");
+                                ui.add(egui::DragValue::new(&mut line.start.z).speed(0.1));
+                            });
+                        });
+
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("End:");
+                                ui.label("x");
+                                ui.add(egui::DragValue::new(&mut line.end.x).speed(0.1));
+                                ui.label("y");
+                                ui.add(egui::DragValue::new(&mut line.end.y).speed(0.1));
+                                ui.label("z");
+                                ui.add(egui::DragValue::new(&mut line.end.z).speed(0.1));
+                            });
+                        });
+
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("Color:");
+                                ui.label("r");
+                                ui.add(
+                                    egui::DragValue::new(&mut line.color.x)
+                                        .speed(0.1)
+                                        .range(0.0..=1.0),
+                                );
+                                ui.label("g");
+                                ui.add(
+                                    egui::DragValue::new(&mut line.color.y)
+                                        .speed(0.1)
+                                        .range(0.0..=1.0),
+                                );
+                                ui.label("b");
+                                ui.add(
+                                    egui::DragValue::new(&mut line.color.z)
+                                        .speed(0.1)
+                                        .range(0.0..=1.0),
+                                );
+                                ui.label("a");
+                                ui.add(
+                                    egui::DragValue::new(&mut line.color.w)
+                                        .speed(0.1)
+                                        .range(0.0..=1.0),
+                                );
+                            });
+                        });
+                    });
+                }
+
+                // Remove any lines marked for deletion (in reverse order to maintain indices)
+                for index in lines_to_remove.into_iter().rev() {
+                    lines.remove(index);
+                }
+
+                // Add new line button
+                if ui.button("Add Line").clicked() {
+                    lines.push(Line {
+                        start: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                        end: nalgebra_glm::vec3(1.0, 1.0, 1.0),
+                        color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
+                    });
+                }
+
+                if ui.button("Remove").clicked() {
+                    remove_components(context, entity, LINES);
+                }
+            }
+            None => {
+                if ui.button("Add Lines").clicked() {
+                    add_components(context, entity, LINES);
+                    if let Some(Lines(lines)) = get_component_mut::<Lines>(context, entity, LINES) {
+                        *lines = vec![Line {
+                            start: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                            end: nalgebra_glm::vec3(1.0, 1.0, 1.0),
+                            color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
+                        }];
+                    }
+                }
+            }
+        }
     });
 }
 

@@ -18,7 +18,267 @@ pub struct Renderer {
     pub depth_texture_view: wgpu::TextureView,
     pub ui: egui_wgpu::Renderer,
     pub grid: Grid,
+    pub lines: LineRenderer,
     pub post_process: PostProcess,
+}
+
+pub struct LineRenderer {
+    vertex_buffer: wgpu::Buffer,
+    instance_buffer: wgpu::Buffer,
+    uniform_buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+    pipeline: wgpu::RenderPipeline,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct LineVertex {
+    position: nalgebra_glm::Vec3,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct DebugLineInstance {
+    start: nalgebra_glm::Vec4,
+    end: nalgebra_glm::Vec4,
+    color: nalgebra_glm::Vec4,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct DebugLineUniform {
+    view_proj: nalgebra_glm::Mat4,
+}
+
+fn create_line_renderer(device: &wgpu::Device, format: wgpu::TextureFormat) -> LineRenderer {
+    let vertices = [
+        LineVertex {
+            position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+        },
+        LineVertex {
+            position: nalgebra_glm::vec3(1.0, 0.0, 0.0),
+        },
+    ];
+
+    let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
+        device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Line Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        },
+    );
+
+    let initial_instance_capacity = 1024;
+    let instance_buffer_size = std::mem::size_of::<DebugLineInstance>() * initial_instance_capacity;
+
+    let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Line Instance Buffer"),
+        size: instance_buffer_size as u64,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Line Uniform Buffer"),
+        size: std::mem::size_of::<DebugLineUniform>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+        label: Some("Line Bind Group Layout"),
+    });
+
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform_buffer.as_entire_binding(),
+        }],
+        label: Some("Line Bind Group"),
+    });
+
+    let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/line.wgsl"));
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Line Pipeline Layout"),
+        bind_group_layouts: &[&bind_group_layout],
+        push_constant_ranges: &[],
+    });
+
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Line Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<LineVertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<DebugLineInstance>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &wgpu::vertex_attr_array![
+                        1 => Float32x4,
+                        2 => Float32x4,
+                        3 => Float32x4
+                    ],
+                },
+            ],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::LineList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: true, // Enable depth writing
+            depth_compare: wgpu::CompareFunction::LessEqual, // Use LessEqual for proper depth testing
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState {
+                constant: -1, // Small negative bias to avoid z-fighting
+                slope_scale: 0.0,
+                clamp: 0.0,
+            },
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None,
+    });
+
+    LineRenderer {
+        vertex_buffer,
+        instance_buffer,
+        uniform_buffer,
+        bind_group,
+        pipeline,
+    }
+}
+
+fn update_line_uniforms(context: &mut crate::Context) {
+    use crate::scene::*;
+
+    let Some(camera_entity) = query_first_entity(context, ACTIVE_CAMERA | CAMERA) else {
+        return;
+    };
+    let Some(matrices) = crate::scene::query_camera_matrices(context, camera_entity) else {
+        return;
+    };
+    // Collect all debug lines from entities
+    let instances: Vec<_> = query_entities(context, LINES | GLOBAL_TRANSFORM)
+        .into_iter()
+        .filter_map(|entity| {
+            let Lines(lines) = get_component::<Lines>(context, entity, LINES)?;
+            let global_transform =
+                get_component::<GlobalTransform>(context, entity, GLOBAL_TRANSFORM)?;
+
+            Some(
+                lines
+                    .iter()
+                    .map(|line| {
+                        // Transform start and end points by the global transform
+                        let start_world = (global_transform.0
+                            * nalgebra_glm::vec4(line.start.x, line.start.y, line.start.z, 1.0))
+                        .xyz();
+                        let end_world = (global_transform.0
+                            * nalgebra_glm::vec4(line.end.x, line.end.y, line.end.z, 1.0))
+                        .xyz();
+
+                        DebugLineInstance {
+                            start: nalgebra_glm::vec4(
+                                start_world.x,
+                                start_world.y,
+                                start_world.z,
+                                1.0,
+                            ),
+                            end: nalgebra_glm::vec4(end_world.x, end_world.y, end_world.z, 1.0),
+                            color: line.color,
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .flatten()
+        .collect();
+
+    // Create the data that will be sent to the GPU
+    let gpu_data = if instances.is_empty() {
+        vec![DebugLineInstance {
+            start: nalgebra_glm::vec4(0.0, 0.0, 0.0, 0.0),
+            end: nalgebra_glm::vec4(0.0, 0.0, 0.0, 0.0),
+            color: nalgebra_glm::vec4(0.0, 0.0, 0.0, 0.0),
+        }]
+    } else {
+        instances
+    };
+
+    let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
+        return;
+    };
+
+    let uniform = DebugLineUniform {
+        view_proj: matrices.projection * matrices.view,
+    };
+
+    renderer.gpu.queue.write_buffer(
+        &renderer.lines.uniform_buffer,
+        0,
+        bytemuck::cast_slice(&[uniform]),
+    );
+
+    // Always recreate the buffer with the exact size needed
+    renderer.lines.instance_buffer =
+        renderer
+            .gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Debug Line Instance Buffer"),
+                contents: bytemuck::cast_slice(&gpu_data),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+}
+
+fn render_lines(render_pass: &mut wgpu::RenderPass, renderer: &Renderer) {
+    let instance_size = std::mem::size_of::<DebugLineInstance>();
+    let debug_line_instance_count =
+        (renderer.lines.instance_buffer.size() as usize / instance_size) as u32;
+    if debug_line_instance_count > 0 {
+        render_pass.set_pipeline(&renderer.lines.pipeline);
+        render_pass.set_bind_group(0, &renderer.lines.bind_group, &[]);
+        render_pass.set_vertex_buffer(0, renderer.lines.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, renderer.lines.instance_buffer.slice(..));
+        render_pass.draw(0..2, 0..debug_line_instance_count);
+    }
 }
 
 /// Low-level wgpu handles
@@ -191,6 +451,7 @@ mod grid {
 }
 
 pub use post_process::*;
+use wgpu::util::DeviceExt as _;
 mod post_process {
     pub struct PostProcess {
         pub texture_view: wgpu::TextureView,
@@ -478,6 +739,7 @@ pub fn render_frame_system(context: &mut crate::scene::Context) {
         .collect::<Vec<_>>();
 
     update_grid_uniform(context);
+    update_line_uniforms(context);
 
     let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
         context.resources.user_interface.frame_output.take()
@@ -598,6 +860,7 @@ pub fn render_frame_system(context: &mut crate::scene::Context) {
             );
 
             render_grid(&mut render_pass, renderer);
+            render_lines(&mut render_pass, renderer);
         });
     }
 
@@ -675,6 +938,7 @@ pub async fn create_renderer_async(
         false,
     );
     let grid = create_grid(&gpu.device, gpu.surface_config.format, DEPTH_FORMAT);
+    let lines = create_line_renderer(&gpu.device, gpu.surface_config.format);
     let post_process = create_post_process(
         &gpu.device,
         width,
@@ -687,6 +951,7 @@ pub async fn create_renderer_async(
         depth_texture_view,
         ui: egui_renderer,
         grid,
+        lines,
         post_process,
     }
 }
