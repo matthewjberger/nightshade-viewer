@@ -23,6 +23,7 @@ egui = "0.30.0"
 egui_tiles = "0.11.0"
 egui-wgpu = { version = "0.30.0", features = ["winit"] }
 futures = "0.3.31"
+image = { version = "0.24.9", default-features = false, features = ["hdr"] }
 log = "0.4.22"
 nalgebra-glm = { version = "0.19.0", features = [
     "convert-bytemuck",

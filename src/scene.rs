@@ -319,18 +319,7 @@ pub fn query_camera_matrices(context: &Context, camera_entity: EntityId) -> Opti
         + nalgebra_glm::quat_rotate_vec3(&normalized_rotation, &(-nalgebra_glm::Vec3::z()));
     let up = nalgebra_glm::quat_rotate_vec3(&normalized_rotation, &nalgebra_glm::Vec3::y());
 
-    // Ensure viewport is valid and get aspect ratio
-    let aspect_ratio = match camera.viewport {
-        Some(viewport) => {
-            let width = viewport.width as f32;
-            let height = viewport.height as f32;
-            if width == 0.0 || height == 0.0 {
-                return None;
-            }
-            width / height
-        }
-        None => window::query_viewport_aspect_ratio(context).unwrap_or(1.0),
-    };
+    let aspect_ratio = dbg!(window::query_viewport_aspect_ratio(context)).unwrap_or(4.0 / 3.0);
 
     Some(CameraMatrices {
         camera_position: camera_translation,
