@@ -34,7 +34,7 @@ pub struct Gpu {
 
 /// Receives the renderer from the async task that creates it on wasm, injecting it as a resource
 #[cfg(target_arch = "wasm32")]
-pub fn receive_renderer_system(context: &mut crate::scene::Context) {
+pub fn receive_renderer_system(context: &mut crate::context::Context) {
     if let Some(receiver) = context.resources.graphics.renderer_receiver.as_mut() {
         if let Ok(Some(renderer)) = receiver.try_recv() {
             context.resources.graphics.renderer = Some(renderer);
@@ -46,7 +46,7 @@ pub fn receive_renderer_system(context: &mut crate::scene::Context) {
     }
 }
 
-pub fn resize_renderer(context: &mut crate::scene::Context, width: u32, height: u32) {
+pub fn resize_renderer(context: &mut crate::context::Context, width: u32, height: u32) {
     let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
         return;
     };
@@ -74,7 +74,7 @@ pub fn resize_renderer(context: &mut crate::scene::Context, width: u32, height: 
 }
 
 /// This system renders and presents the next frame
-pub fn render_frame_system(context: &mut crate::scene::Context) {
+pub fn render_frame_system(context: &mut crate::context::Context) {
     let viewports = context
         .resources
         .user_interface
@@ -759,11 +759,11 @@ mod sky {
     }
 
     pub fn update_sky_uniforms(context: &mut crate::Context) {
-        use crate::scene::*;
+        use crate::context::*;
         let Some(camera_entity) = query_first_entity(context, ACTIVE_CAMERA | CAMERA) else {
             return;
         };
-        let Some(matrices) = crate::scene::query_camera_matrices(context, camera_entity) else {
+        let Some(matrices) = crate::context::query_camera_matrices(context, camera_entity) else {
             return;
         };
         let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
@@ -966,12 +966,12 @@ mod lines {
     }
 
     pub fn update_line_uniforms(context: &mut crate::Context) {
-        use crate::scene::*;
+        use crate::context::*;
 
         let Some(camera_entity) = query_first_entity(context, ACTIVE_CAMERA | CAMERA) else {
             return;
         };
-        let Some(matrices) = crate::scene::query_camera_matrices(context, camera_entity) else {
+        let Some(matrices) = crate::context::query_camera_matrices(context, camera_entity) else {
             return;
         };
         // Collect all debug lines from entities
@@ -1263,12 +1263,12 @@ mod quads {
     }
 
     pub fn update_quad_uniforms(context: &mut crate::Context) {
-        use crate::scene::*;
+        use crate::context::*;
 
         let Some(camera_entity) = query_first_entity(context, ACTIVE_CAMERA | CAMERA) else {
             return;
         };
-        let Some(matrices) = crate::scene::query_camera_matrices(context, camera_entity) else {
+        let Some(matrices) = crate::context::query_camera_matrices(context, camera_entity) else {
             return;
         };
 
@@ -1497,12 +1497,12 @@ mod grid {
         }
     }
 
-    pub fn update_grid_uniform(context: &mut crate::scene::Context) {
-        use crate::scene::*;
+    pub fn update_grid_uniform(context: &mut crate::context::Context) {
+        use crate::context::*;
         let Some(camera_entity) = query_first_entity(context, ACTIVE_CAMERA | CAMERA) else {
             return;
         };
-        let Some(matrices) = crate::scene::query_camera_matrices(context, camera_entity) else {
+        let Some(matrices) = crate::context::query_camera_matrices(context, camera_entity) else {
             return;
         };
         let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
@@ -1678,7 +1678,7 @@ mod post_process {
         }
     }
 
-    pub fn resize(context: &mut crate::scene::Context, width: u32, height: u32) {
+    pub fn resize(context: &mut crate::context::Context, width: u32, height: u32) {
         let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
             return;
         };

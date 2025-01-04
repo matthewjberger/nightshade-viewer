@@ -39,7 +39,7 @@ pub struct Mouse {
     pub wheel_delta: nalgebra_glm::Vec2,
 }
 
-pub fn escape_key_exit_system(context: &mut crate::scene::Context) {
+pub fn escape_key_exit_system(context: &mut crate::context::Context) {
     let keyboard = &context.resources.input.keyboard;
     if keyboard.is_key_pressed(winit::keyboard::KeyCode::Escape) {
         context.resources.window.should_exit = true;
@@ -47,7 +47,7 @@ pub fn escape_key_exit_system(context: &mut crate::scene::Context) {
 }
 
 /// Resets the input state for the next frame
-pub fn reset_input_system(context: &mut crate::scene::Context) {
+pub fn reset_input_system(context: &mut crate::context::Context) {
     let mouse = &mut context.resources.input.mouse;
     if mouse.state.contains(crate::input::MouseState::SCROLLED) {
         mouse.wheel_delta = nalgebra_glm::vec2(0.0, 0.0);
@@ -60,7 +60,7 @@ pub fn reset_input_system(context: &mut crate::scene::Context) {
 }
 
 pub fn receive_keyboard_event(
-    context: &mut crate::scene::Context,
+    context: &mut crate::context::Context,
     event: &winit::event::WindowEvent,
 ) {
     let winit::event::WindowEvent::KeyboardInput {
@@ -84,7 +84,10 @@ pub fn receive_keyboard_event(
         .or_insert(*state) = *state;
 }
 
-pub fn receive_mouse_event(context: &mut crate::scene::Context, event: &winit::event::WindowEvent) {
+pub fn receive_mouse_event(
+    context: &mut crate::context::Context,
+    event: &winit::event::WindowEvent,
+) {
     let mouse = &mut context.resources.input.mouse;
     match event {
         winit::event::WindowEvent::MouseInput { button, state, .. } => {

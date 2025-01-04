@@ -10,7 +10,7 @@ pub struct UserInterface {
     pub show_right_panel: bool,
     pub uniform_scaling: bool,
     pub consumed_event: bool,
-    pub selected_entity: Option<crate::scene::EntityId>,
+    pub selected_entity: Option<crate::context::EntityId>,
 }
 
 /// A context shared between all the panes in the tile tree
@@ -180,7 +180,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
     }
 }
 
-pub fn receive_ui_event(context: &mut crate::scene::Context, event: &winit::event::WindowEvent) {
+pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::event::WindowEvent) {
     let Some(gui_state) = &mut context.resources.user_interface.state else {
         return;
     };
@@ -223,7 +223,7 @@ pub fn receive_ui_event(context: &mut crate::scene::Context, event: &winit::even
 }
 
 /// Resizes the egui UI, ensuring it matches the window scale factor
-pub fn resize_ui(context: &mut crate::scene::Context) {
+pub fn resize_ui(context: &mut crate::context::Context) {
     let (Some(window_handle), Some(gui_state)) = (
         context.resources.window.handle.as_ref(),
         context.resources.user_interface.state.as_mut(),
@@ -236,7 +236,7 @@ pub fn resize_ui(context: &mut crate::scene::Context) {
 }
 
 /// Ensures a default layout when the tile tree is emptied
-pub fn ensure_tile_tree_system(context: &mut crate::scene::Context) {
+pub fn ensure_tile_tree_system(context: &mut crate::context::Context) {
     if let Some(tile_tree) = &context.resources.user_interface.tile_tree {
         if !tile_tree.tiles.is_empty() {
             return;
@@ -254,7 +254,7 @@ pub fn ensure_tile_tree_system(context: &mut crate::scene::Context) {
 
 /// Creates the UI for the frame and
 /// emits the resources needed for rendering
-pub fn render_ui_system(context: &mut crate::scene::Context) {
+pub fn render_ui_system(context: &mut crate::context::Context) {
     let ui = {
         let Some(gui_state) = context.resources.user_interface.state.as_mut() else {
             return;
@@ -274,14 +274,14 @@ pub fn render_ui_system(context: &mut crate::scene::Context) {
     context.resources.user_interface.frame_output = Some((output, paint_jobs));
 }
 
-fn create_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
+fn create_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     top_panel_ui(context, ui);
     left_panel_ui(context, ui);
     right_panel_ui(context, ui);
     central_panel_ui(context, ui);
 }
 
-fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
+fn central_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     egui::CentralPanel::default()
         .frame(egui::Frame::none())
         .show(ui, |ui| {
@@ -334,7 +334,7 @@ fn central_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
         });
 }
 
-fn right_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
+fn right_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     if !context.resources.user_interface.show_right_panel {
         return;
     }
@@ -357,8 +357,8 @@ fn right_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
     });
 }
 
-pub fn lines_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
-    use crate::scene::*;
+pub fn lines_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
+    use crate::context::*;
 
     let Some(entity) = context.resources.user_interface.selected_entity else {
         return;
@@ -456,8 +456,8 @@ pub fn lines_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui
     });
 }
 
-pub fn quads_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
-    use crate::scene::*;
+pub fn quads_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
+    use crate::context::*;
 
     let Some(entity) = context.resources.user_interface.selected_entity else {
         return;
@@ -554,8 +554,8 @@ pub fn quads_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui
     });
 }
 
-fn camera_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
-    use crate::scene::*;
+fn camera_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
+    use crate::context::*;
 
     let (viewport_width, viewport_height) = context.resources.graphics.viewport_size;
     let Some(selected_entity) = context.resources.user_interface.selected_entity else {
@@ -610,7 +610,7 @@ fn camera_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
     });
 }
 
-fn left_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
+fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     if !context.resources.user_interface.show_left_panel {
         return;
     }
@@ -626,14 +626,15 @@ fn left_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
                     .show(ui, |ui| {
                         ui.group(|ui| {
                             if ui.button("Add Entity").clicked() {
-                                let entity = crate::scene::spawn_entities(
+                                let entity = crate::context::spawn_entities(
                                     context,
-                                    crate::scene::LOCAL_TRANSFORM | crate::scene::GLOBAL_TRANSFORM,
+                                    crate::context::LOCAL_TRANSFORM
+                                        | crate::context::GLOBAL_TRANSFORM,
                                     1,
                                 )[0];
                                 context.resources.user_interface.selected_entity = Some(entity);
                             }
-                            crate::scene::query_root_nodes(context)
+                            crate::context::query_root_nodes(context)
                                 .into_iter()
                                 .for_each(|entity| {
                                     entity_tree_ui(context, ui, entity);
@@ -646,7 +647,7 @@ fn left_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
     });
 }
 
-fn top_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
+fn top_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     egui::TopBottomPanel::top("menu").show(ui, |ui| {
         egui::menu::bar(ui, |ui| {
             egui::global_theme_preference_switch(ui);
@@ -674,13 +675,13 @@ fn top_panel_ui(context: &mut crate::scene::Context, ui: &egui::Context) {
 
 // Recursively renders the entity tree in the ui system
 fn entity_tree_ui(
-    context: &mut crate::scene::Context,
+    context: &mut crate::context::Context,
     ui: &mut egui::Ui,
-    entity: crate::scene::EntityId,
+    entity: crate::context::EntityId,
 ) {
-    use crate::scene::*;
+    use crate::context::*;
 
-    let name = match crate::scene::get_component::<Name>(context, entity, NAME) {
+    let name = match crate::context::get_component::<Name>(context, entity, NAME) {
         Some(Name(name)) if !name.is_empty() => name.to_string(),
         _ => "Entity".to_string(),
     };
@@ -728,8 +729,8 @@ fn entity_tree_ui(
         });
 }
 
-fn local_transform_inspector_ui(context: &mut crate::scene::Context, ui: &mut egui::Ui) {
-    use crate::scene::*;
+fn local_transform_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
+    use crate::context::*;
     let Some(selected_entity) = context.resources.user_interface.selected_entity else {
         return;
     };

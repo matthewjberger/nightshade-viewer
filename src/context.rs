@@ -89,7 +89,7 @@ fn extract_forward_vector(transform: &nalgebra_glm::Mat4) -> nalgebra_glm::Vec3 
 pub struct Name(pub String);
 
 #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct Parent(pub crate::scene::EntityId);
+pub struct Parent(pub crate::context::EntityId);
 
 #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct ActiveCamera;

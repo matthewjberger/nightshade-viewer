@@ -31,7 +31,7 @@ pub struct Window {
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-impl winit::application::ApplicationHandler for crate::scene::Context {
+impl winit::application::ApplicationHandler for crate::context::Context {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         #[allow(unused_mut)]
         let mut attributes = winit::window::Window::default_attributes();
@@ -104,7 +104,7 @@ impl winit::application::ApplicationHandler for crate::scene::Context {
 }
 
 /// Initializes context resources on startup
-pub fn initialize(context: &mut crate::scene::Context) {
+pub fn initialize(context: &mut crate::context::Context) {
     let window_handle = {
         let Some(window_handle) = context.resources.window.handle.as_mut() else {
             return;
@@ -171,7 +171,7 @@ pub fn initialize(context: &mut crate::scene::Context) {
 }
 
 pub fn receive_resize_event(
-    context: &mut crate::scene::Context,
+    context: &mut crate::context::Context,
     event: &winit::event::WindowEvent,
 ) {
     let winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) = event
@@ -182,13 +182,13 @@ pub fn receive_resize_event(
 }
 
 /// Handles viewport resizing, such as when the window is resized by the user
-pub fn resize_viewport(context: &mut crate::scene::Context, width: u32, height: u32) {
+pub fn resize_viewport(context: &mut crate::context::Context, width: u32, height: u32) {
     crate::graphics::resize_renderer(context, width, height);
     crate::ui::resize_ui(context);
 }
 
 /// Queries for the display viewport's aspect ratio
-pub fn query_viewport_aspect_ratio(context: &crate::scene::Context) -> Option<f32> {
+pub fn query_viewport_aspect_ratio(context: &crate::context::Context) -> Option<f32> {
     let Some(renderer) = &context.resources.graphics.renderer else {
         return None;
     };
@@ -198,12 +198,12 @@ pub fn query_viewport_aspect_ratio(context: &crate::scene::Context) -> Option<f3
 }
 
 /// Calculates and refreshes frame timing values such as delta time
-pub fn update_frame_timing_system(context: &mut crate::scene::Context) {
+pub fn update_frame_timing_system(context: &mut crate::context::Context) {
     let now = web_time::Instant::now();
 
-    let crate::scene::Context {
+    let crate::context::Context {
         resources:
-            crate::scene::Resources {
+            crate::context::Resources {
                 window:
                     crate::window::Window {
                         delta_time,
