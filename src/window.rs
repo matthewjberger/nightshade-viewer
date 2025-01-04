@@ -71,7 +71,7 @@ impl winit::application::ApplicationHandler for crate::scene::Context {
             attributes = attributes.with_canvas(Some(canvas));
         }
 
-        let Ok(window) = event_loop.create_window(dbg!(attributes)) else {
+        let Ok(window) = event_loop.create_window(attributes) else {
             return;
         };
 
