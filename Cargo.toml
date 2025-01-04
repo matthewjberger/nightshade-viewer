@@ -27,9 +27,7 @@ image = { version = "0.24.9", default-features = false, features = ["png", "hdr"
 log = "0.4.22"
 nalgebra-glm = { version = "0.19.0", features = [
     "convert-bytemuck",
-    "serde-serialize",
 ] }
-serde = { version = "1.0.217", features = ["derive"] }
 web-time = "1.1.0"
 wgpu = { version = "23.0.1", default-features = false }
 winit = "0.30.7"

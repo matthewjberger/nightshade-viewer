@@ -12,14 +12,14 @@ crate::ecs! {
         parent: Parent => PARENT,
     }
     Resources {
-        #[serde(skip)] window: window::Window,
-        #[serde(skip)] graphics: graphics::Graphics,
-        #[serde(skip)] input: input::Input,
-        #[serde(skip)] user_interface: ui::UserInterface,
+        window: window::Window,
+        graphics: graphics::Graphics,
+        input: input::Input,
+        user_interface: ui::UserInterface,
     }
 }
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct LocalTransform {
     pub translation: nalgebra_glm::Vec3,
     pub rotation: nalgebra_glm::Quat,
@@ -56,7 +56,7 @@ impl LocalTransform {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct GlobalTransform(pub nalgebra_glm::Mat4);
 
 impl GlobalTransform {
@@ -85,36 +85,36 @@ fn extract_forward_vector(transform: &nalgebra_glm::Mat4) -> nalgebra_glm::Vec3 
     nalgebra_glm::vec3(-transform[(0, 2)], -transform[(1, 2)], -transform[(2, 2)])
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Name(pub String);
 
-#[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct Parent(pub crate::context::EntityId);
 
-#[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct ActiveCamera;
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Clone)]
 pub struct Lines(pub Vec<Line>);
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Line {
     pub start: nalgebra_glm::Vec3,
     pub end: nalgebra_glm::Vec3,
     pub color: nalgebra_glm::Vec4,
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Clone)]
 pub struct Quads(pub Vec<Quad>);
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Quad {
     pub size: nalgebra_glm::Vec2,
     pub offset: nalgebra_glm::Vec3,
     pub color: nalgebra_glm::Vec4,
 }
 
-#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Camera {
     pub projection: Projection,
     pub viewport: Option<Viewport>,
@@ -129,14 +129,14 @@ impl Camera {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct CameraMatrices {
     pub camera_position: nalgebra_glm::Vec3,
     pub projection: nalgebra_glm::Mat4,
     pub view: nalgebra_glm::Mat4,
 }
 
-#[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct Viewport {
     pub x: u32,
     pub y: u32,
@@ -144,7 +144,7 @@ pub struct Viewport {
     pub height: u32,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub enum Projection {
     Perspective(PerspectiveCamera),
     Orthographic(OrthographicCamera),
@@ -156,7 +156,7 @@ impl Default for Projection {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct PerspectiveCamera {
     pub aspect_ratio: Option<f32>,
     pub y_fov_rad: f32,
@@ -191,7 +191,7 @@ impl PerspectiveCamera {
     }
 }
 
-#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct OrthographicCamera {
     pub x_mag: f32,
     pub y_mag: f32,

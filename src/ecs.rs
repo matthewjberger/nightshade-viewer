@@ -36,7 +36,7 @@ macro_rules! ecs {
         pub const COMPONENT_COUNT: usize = { Component::All as usize };
 
         /// Entity ID, an index into storage and a generation counter to prevent stale references
-        #[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+        #[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Hash)]
         pub struct EntityId {
             pub id: u32,
             pub generation: u32,
@@ -50,13 +50,13 @@ macro_rules! ecs {
         }
 
         // Handles allocation and reuse of entity IDs
-        #[derive(Default, serde::Serialize, serde::Deserialize)]
+        #[derive(Default)]
         pub struct EntityAllocator {
             next_id: u32,
             free_ids: Vec<(u32, u32)>, // (id, next_generation)
         }
 
-        #[derive(Copy, Clone, Default, serde::Serialize, serde::Deserialize)]
+        #[derive(Default, Copy, Clone)]
         struct EntityLocation {
             generation: u32,
             table_index: u16,
@@ -65,37 +65,36 @@ macro_rules! ecs {
         }
 
         /// Entity location cache for quick access
-        #[derive(Default, serde::Serialize, serde::Deserialize)]
+        #[derive(Default)]
         pub struct EntityLocations {
             locations: Vec<EntityLocation>,
         }
 
         /// A collection of component tables and resources
-        #[derive(Default, serde::Serialize, serde::Deserialize)]
+        #[derive(Default)]
         pub struct $context {
             pub entity_locations: EntityLocations,
             pub tables: Vec<ComponentArrays>,
             pub allocator: EntityAllocator,
             pub resources: $resources,
             table_edges: Vec<TableEdges>,
-            pending_despawns: Vec<EntityId>,
         }
 
         /// Resources
-        #[derive(Default, serde::Serialize, serde::Deserialize)]
+        #[derive(Default)]
         pub struct $resources {
             $($(#[$attr])* pub $resource_name: $resource_type,)*
         }
 
         /// Component Table
-        #[derive(Default, serde::Serialize, serde::Deserialize)]
+        #[derive(Default)]
         pub struct ComponentArrays {
             $(pub $name: Vec<$type>,)*
             pub entity_indices: Vec<EntityId>,
             pub mask: u32,
         }
 
-        #[derive(Copy, Clone, Default, serde::Serialize, serde::Deserialize)]
+        #[derive(Copy, Clone, Default)]
         struct TableEdges {
             add_edges: [Option<usize>; COMPONENT_COUNT],
             remove_edges: [Option<usize>; COMPONENT_COUNT],

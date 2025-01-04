@@ -23,7 +23,7 @@ pub struct TileTreeContext {
     pub tile_mapping: std::collections::HashMap<egui_tiles::TileId, usize>,
 }
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum PaneKind {
     MainCamera,
     Color(egui::Color32),
@@ -35,7 +35,7 @@ impl Default for PaneKind {
     }
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Pane {
     pub kind: PaneKind,
 }
