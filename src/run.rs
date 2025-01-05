@@ -1,7 +1,7 @@
 use crate::{context, graphics, input, ui, window};
 
 /// This is the entry point for the engine
-pub fn start() -> Result<(), Box<dyn std::error::Error>> {
+pub fn start() -> Result<(), winit::error::EventLoopError> {
     let event_loop = winit::event_loop::EventLoop::builder().build()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     event_loop.run_app(&mut context::Context::default())?;

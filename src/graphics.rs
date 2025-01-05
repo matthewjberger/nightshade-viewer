@@ -322,7 +322,7 @@ pub async fn create_renderer_async(
 }
 
 /// This creates the low-level GPU resources needed for rendering
-pub async fn create_gpu_async(
+async fn create_gpu_async(
     window: impl Into<wgpu::SurfaceTarget<'static>>,
     width: u32,
     height: u32,
@@ -392,7 +392,7 @@ pub async fn create_gpu_async(
 }
 
 /// Create a depth texture for the renderer to use
-pub fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
+fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
     let texture = device.create_texture(
         &(wgpu::TextureDescriptor {
             label: Some("Depth Texture"),

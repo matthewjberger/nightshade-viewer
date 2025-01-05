@@ -1,6 +1,6 @@
 // #![windows_subsystem = "windows"] // uncomment this to suppress terminal on windows
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), winit::error::EventLoopError> {
     nightshade_core::start()?;
     Ok(())
 }

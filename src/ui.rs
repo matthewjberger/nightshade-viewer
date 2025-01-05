@@ -269,7 +269,14 @@ pub fn render_ui_system(context: &mut crate::context::Context) {
 
     create_ui(context, &ui);
 
+    let Some(gui_state) = context.resources.user_interface.state.as_mut() else {
+        return;
+    };
+    let Some(window_handle) = context.resources.window.handle.as_ref() else {
+        return;
+    };
     let output = ui.end_pass();
+    gui_state.handle_platform_output(&window_handle, output.platform_output.clone());
     let paint_jobs = ui.tessellate(output.shapes.clone(), output.pixels_per_point);
     context.resources.user_interface.frame_output = Some((output, paint_jobs));
 }
