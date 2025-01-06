@@ -89,6 +89,9 @@ pub fn render_frame_system(context: &mut crate::context::Context) {
     update_line_uniforms(context);
     update_quad_uniforms(context);
 
+    let show_sky = context.resources.user_interface.show_sky;
+    let show_grid = context.resources.user_interface.show_grid;
+
     let Some((egui::FullOutput { textures_delta, .. }, paint_jobs)) =
         context.resources.user_interface.frame_output.take()
     else {
@@ -215,8 +218,12 @@ pub fn render_frame_system(context: &mut crate::context::Context) {
 
             render_lines(&mut render_pass, renderer);
             render_quads(&mut render_pass, renderer);
-            render_sky(&mut render_pass, renderer);
-            render_grid(&mut render_pass, renderer);
+            if show_sky {
+                render_sky(&mut render_pass, renderer);
+            }
+            if show_grid {
+                render_grid(&mut render_pass, renderer);
+            }
         });
     }
 

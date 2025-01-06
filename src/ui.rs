@@ -8,6 +8,8 @@ pub struct UserInterface {
     pub frame_output: Option<(egui::FullOutput, Vec<egui::ClippedPrimitive>)>,
     pub show_left_panel: bool,
     pub show_right_panel: bool,
+    pub show_sky: bool,
+    pub show_grid: bool,
     pub uniform_scaling: bool,
     pub consumed_event: bool,
     pub selected_entity: Option<crate::context::EntityId>,
@@ -276,7 +278,7 @@ pub fn render_ui_system(context: &mut crate::context::Context) {
         return;
     };
     let output = ui.end_pass();
-    gui_state.handle_platform_output(&window_handle, output.platform_output.clone());
+    gui_state.handle_platform_output(window_handle, output.platform_output.clone());
     let paint_jobs = ui.tessellate(output.shapes.clone(), output.pixels_per_point);
     context.resources.user_interface.frame_output = Some((output, paint_jobs));
 }
@@ -364,7 +366,7 @@ fn right_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     });
 }
 
-pub fn lines_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
+fn lines_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
     use crate::context::*;
 
     let Some(entity) = context.resources.user_interface.selected_entity else {
@@ -675,6 +677,10 @@ fn top_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                 "Right",
             )
             .on_hover_text("Toggle Right Panel");
+            ui.separator();
+            ui.checkbox(&mut context.resources.user_interface.show_grid, "Grid");
+            ui.separator();
+            ui.checkbox(&mut context.resources.user_interface.show_sky, "Sky");
             ui.separator();
         });
     });
