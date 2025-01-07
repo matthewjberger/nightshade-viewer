@@ -1,4 +1,7 @@
-use crate::paint::{paint_cube_scene, paint_entity};
+use crate::{
+    context::activate_camera,
+    paint::{paint_cube_scene, paint_entity},
+};
 
 #[derive(Default)]
 pub struct UserInterface {
@@ -8,11 +11,11 @@ pub struct UserInterface {
     pub frame_output: Option<(egui::FullOutput, Vec<egui::ClippedPrimitive>)>,
     pub show_left_panel: bool,
     pub show_right_panel: bool,
-    pub show_sky: bool,
-    pub show_grid: bool,
+    pub show_bottom_panel: bool,
     pub uniform_scaling: bool,
     pub consumed_event: bool,
     pub selected_entity: Option<crate::context::EntityId>,
+    pub timeline_state: TimelineState,
 }
 
 /// A context shared between all the panes in the tile tree
@@ -20,7 +23,7 @@ pub struct UserInterface {
 pub struct TileTreeContext {
     pub tile_rects: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
     pub add_child_to: Option<egui_tiles::TileId>,
-    pub viewport_tiles: std::collections::HashMap<egui_tiles::TileId, egui::Rect>,
+    pub viewport_tiles: std::collections::HashMap<egui_tiles::TileId, (PaneKind, egui::Rect)>,
     pub selected_tile: Option<egui_tiles::TileId>,
     pub tile_mapping: std::collections::HashMap<egui_tiles::TileId, usize>,
 }
@@ -28,6 +31,7 @@ pub struct TileTreeContext {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum PaneKind {
     MainCamera,
+    SecondCamera,
     Color(egui::Color32),
 }
 
@@ -92,8 +96,11 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         let rect = ui.max_rect();
         self.tile_rects.insert(tile_id, rect);
 
-        if matches!(pane.kind, PaneKind::MainCamera) {
-            self.viewport_tiles.insert(tile_id, rect);
+        if matches!(
+            pane.kind,
+            PaneKind::MainCamera | PaneKind::SecondCamera | PaneKind::Color(_)
+        ) {
+            self.viewport_tiles.insert(tile_id, (pane.kind, rect));
         }
 
         // Draw selection border only for selected tile
@@ -111,11 +118,17 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         }
 
         match pane.kind {
-            PaneKind::Color(color) => {
-                let bg_rect = rect.shrink(1.0);
-                ui.painter().rect_filled(bg_rect, 0.0, color);
+            PaneKind::SecondCamera => {
+                // ui.label("Second Camera");
             }
-            PaneKind::MainCamera => {}
+            PaneKind::Color(_color) => {
+                // TODO: demonstrate a regular egui widget here
+                // let bg_rect = rect.shrink(1.0);
+                // ui.painter().rect_filled(bg_rect, 0.0, color);
+            }
+            PaneKind::MainCamera => {
+                // ui.label("Main Camera");
+            }
         }
 
         let mut drag_response = egui_tiles::UiResponse::None;
@@ -133,20 +146,27 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                 egui::ComboBox::new(format!("background_{}", tile_id.0), "")
                     .selected_text(match pane.kind {
                         PaneKind::MainCamera => "Main Camera",
+                        PaneKind::SecondCamera => "Second Camera",
                         PaneKind::Color(_) => "Color",
                     })
                     .width(100.0)
                     .show_ui(ui, |ui| {
-                        let is_transparent = matches!(pane.kind, PaneKind::MainCamera);
-                        if ui.selectable_label(is_transparent, "Main Camera").clicked() {
+                        let is_main_camera = matches!(pane.kind, PaneKind::MainCamera);
+                        if ui.selectable_label(is_main_camera, "Main Camera").clicked() {
                             pane.kind = PaneKind::MainCamera;
+                        }
+
+                        let is_second_camera = matches!(pane.kind, PaneKind::SecondCamera);
+                        if ui
+                            .selectable_label(is_second_camera, "Second Camera")
+                            .clicked()
+                        {
+                            pane.kind = PaneKind::SecondCamera;
                         }
 
                         let is_color = matches!(pane.kind, PaneKind::Color(_));
                         if ui.selectable_label(is_color, "Color").clicked() {
-                            if let PaneKind::MainCamera = pane.kind {
-                                pane.kind = PaneKind::Color(egui::Color32::from_gray(200));
-                            }
+                            pane.kind = PaneKind::Color(egui::Color32::from_gray(200));
                         }
                     });
 
@@ -168,7 +188,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
         let shift_pressed = ui.input(|i| i.modifiers.shift);
         if shift_pressed && !controls_response.response.hovered() {
-            let cursor = egui::CursorIcon::Grab;
+            let cursor = egui::CursorIcon::Move;
             let response = ui
                 .allocate_rect(content_rect, egui::Sense::click_and_drag())
                 .on_hover_cursor(cursor);
@@ -191,6 +211,8 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
     };
     context.resources.user_interface.consumed_event =
         gui_state.on_window_event(window_handle, event).consumed;
+
+    let mut new_selected_tile = None;
 
     if let winit::event::WindowEvent::MouseInput {
         state: winit::event::ElementState::Pressed,
@@ -218,7 +240,35 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
                     .user_interface
                     .tile_tree_context
                     .selected_tile = Some(*tile_id);
+                new_selected_tile = Some(*tile_id);
                 break;
+            }
+        }
+    }
+
+    if let Some(selected_tile) = new_selected_tile {
+        if let Some((pane_kind, _rect)) = context
+            .resources
+            .user_interface
+            .tile_tree_context
+            .viewport_tiles
+            .get(&selected_tile)
+        {
+            // Give control to the specific system
+            match pane_kind {
+                PaneKind::MainCamera => {
+                    if let Some(camera) = crate::context::query_nth_camera(context, 0) {
+                        activate_camera(context, camera);
+                    }
+                }
+                PaneKind::SecondCamera => {
+                    if let Some(camera) = crate::context::query_nth_camera(context, 1) {
+                        activate_camera(context, camera);
+                    }
+                }
+                PaneKind::Color(_color32) => {
+                    //
+                }
             }
         }
     }
@@ -257,6 +307,8 @@ pub fn ensure_tile_tree_system(context: &mut crate::context::Context) {
 /// Creates the UI for the frame and
 /// emits the resources needed for rendering
 pub fn render_ui_system(context: &mut crate::context::Context) {
+    update_timeline_system(context);
+
     let ui = {
         let Some(gui_state) = context.resources.user_interface.state.as_mut() else {
             return;
@@ -288,6 +340,7 @@ fn create_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     left_panel_ui(context, ui);
     right_panel_ui(context, ui);
     central_panel_ui(context, ui);
+    bottom_panel_ui(context, ui);
 }
 
 fn central_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
@@ -364,6 +417,20 @@ fn right_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
             }
         }
     });
+}
+
+fn bottom_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
+    if !context.resources.user_interface.show_bottom_panel {
+        return;
+    }
+
+    egui::TopBottomPanel::bottom("timeline").show(ui, |ui| {
+        timeline_ui(ui, &mut context.resources.user_interface.timeline_state);
+    });
+
+    if context.resources.user_interface.timeline_state.playing {
+        ui.request_repaint();
+    }
 }
 
 fn lines_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
@@ -566,55 +633,27 @@ pub fn quads_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::
 fn camera_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
     use crate::context::*;
 
-    let (viewport_width, viewport_height) = context.resources.graphics.viewport_size;
     let Some(selected_entity) = context.resources.user_interface.selected_entity else {
         return;
     };
 
     ui.group(|ui| {
         ui.label("Camera");
-        if let Some(camera) = get_component_mut::<Camera>(context, selected_entity, CAMERA) {
-            if let Some(viewport) = camera.viewport.as_mut() {
-                ui.group(|ui| {
-                    ui.label("Viewport");
-                    ui.horizontal(|ui| {
-                        ui.label("x");
-                        ui.add(egui::DragValue::new(&mut viewport.x).speed(0.1));
-                        ui.label("y");
-                        ui.add(egui::DragValue::new(&mut viewport.y).speed(0.1));
-                        ui.label("width");
-                        ui.add(egui::DragValue::new(&mut viewport.width).speed(0.1));
-                        ui.label("height");
-                        ui.add(egui::DragValue::new(&mut viewport.height).speed(0.1));
-                    });
-                });
-                if ui.button("Remove Viewport").clicked() {
-                    camera.viewport = None;
-                }
-            } else if ui.button("Add Viewport").clicked() {
-                camera.viewport = Some(Viewport {
-                    x: 0,
-                    y: 0,
-                    width: viewport_width,
-                    height: viewport_height,
-                });
-            }
-
-            match &camera.projection {
-                Projection::Perspective(_perspective_camera) => {
-                    ui.label("Projection is `Perspective`");
-                }
-                Projection::Orthographic(_orthographic_camera) => {
-                    ui.label("Projection is `Orthographic`");
-                }
-            }
-
+        if let Some(_camera) = get_component_mut::<Camera>(context, selected_entity, CAMERA) {
             if ui.button("Remove").clicked() {
                 remove_components(context, selected_entity, CAMERA);
                 context.resources.user_interface.selected_entity = None;
             }
         } else if ui.button("Add").clicked() {
             add_components(context, selected_entity, CAMERA);
+        }
+        let active =
+            get_component::<ActiveCamera>(context, selected_entity, ACTIVE_CAMERA).is_some();
+        if ui
+            .add_enabled(!active, egui::Button::new("Activate"))
+            .clicked()
+        {
+            activate_camera(context, selected_entity);
         }
     });
 }
@@ -670,17 +709,15 @@ fn top_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
             ui.checkbox(
                 &mut context.resources.user_interface.show_left_panel,
                 "Left",
-            )
-            .on_hover_text("Toggle Left Panel");
+            );
             ui.checkbox(
                 &mut context.resources.user_interface.show_right_panel,
                 "Right",
-            )
-            .on_hover_text("Toggle Right Panel");
-            ui.separator();
-            ui.checkbox(&mut context.resources.user_interface.show_grid, "Grid");
-            ui.separator();
-            ui.checkbox(&mut context.resources.user_interface.show_sky, "Sky");
+            );
+            ui.checkbox(
+                &mut context.resources.user_interface.show_bottom_panel,
+                "Bottom",
+            );
             ui.separator();
         });
     });
@@ -859,5 +896,119 @@ fn update_tile_mappings(
                 }
             }
         }
+    }
+}
+
+pub use timeline::*;
+mod timeline {
+    pub fn timeline_ui(ui: &mut egui::Ui, state: &mut TimelineState) {
+        let rect = ui.max_rect();
+        let border_color = egui::Color32::from_rgb(59, 130, 246);
+        let border_width = 1.0;
+        let border_rounding = 1.0;
+        let border_rect = rect.shrink(1.0);
+        ui.painter().rect_stroke(
+            border_rect,
+            border_rounding,
+            egui::Stroke::new(border_width, border_color),
+        );
+
+        egui::Frame::none()
+            .inner_margin(egui::Margin::from(6.0))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    // Step buttons
+                    if ui.button("⏮").clicked() {
+                        state.current_time = (state.current_time - 1.0).max(0.0);
+                    }
+
+                    // Play/Pause button
+                    if ui.button(if state.playing { "⏸" } else { "▶" }).clicked() {
+                        state.playing = !state.playing;
+                    }
+
+                    if ui.button("⏭").clicked() {
+                        state.current_time = (state.current_time + 1.0).min(state.total_duration);
+                    }
+
+                    ui.add_space(16.0);
+
+                    // Time display
+                    let time_text = format!(
+                        "{} / {}",
+                        format_time(state.current_time),
+                        format_time(state.total_duration)
+                    );
+                    ui.label(time_text);
+
+                    ui.add_space(16.0);
+
+                    // Timeline slider
+                    let slider =
+                        egui::Slider::new(&mut state.current_time, 0.0..=state.total_duration)
+                            .show_value(false)
+                            .custom_formatter(|_, _| String::new())
+                            .custom_parser(|s| s.parse::<f64>().ok());
+
+                    if ui.add(slider).dragged() {
+                        state.playing = false;
+                    }
+
+                    ui.add_space(16.0);
+
+                    egui::ComboBox::from_label("Speed")
+                        .selected_text(format!("{:.1}x", state.playback_speed))
+                        .show_ui(ui, |ui| {
+                            for &speed in &[0.1, 0.5, 1.0, 2.0, 5.0] {
+                                ui.selectable_value(
+                                    &mut state.playback_speed,
+                                    speed,
+                                    format!("{:.1}x", speed),
+                                );
+                            }
+                        });
+                });
+
+                ui.available_width();
+            });
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct TimelineState {
+        pub playing: bool,
+        pub current_time: f64,
+        pub total_duration: f64,
+        pub playback_speed: f64,
+    }
+
+    impl Default for TimelineState {
+        fn default() -> Self {
+            Self {
+                playing: false,
+                current_time: 0.0,
+                total_duration: 100.0,
+                playback_speed: 1.0,
+            }
+        }
+    }
+
+    pub fn update_timeline_system(context: &mut crate::context::Context) {
+        let delta_time = context.resources.window.delta_time as f64;
+        let timeilne = &mut context.resources.user_interface.timeline_state;
+        if !timeilne.playing {
+            return;
+        }
+        timeilne.current_time += delta_time * timeilne.playback_speed;
+        if timeilne.current_time >= timeilne.total_duration {
+            timeilne.current_time = timeilne.total_duration;
+            timeilne.playing = false;
+        }
+    }
+
+    pub fn format_time(seconds: f64) -> String {
+        let minutes = (seconds as i32) / 60;
+        let secs = (seconds as i32) % 60;
+        let ms = (seconds.fract() * 1000.0) as i32;
+        format!("{:02}:{:02}.{:03}", minutes, secs, ms)
     }
 }

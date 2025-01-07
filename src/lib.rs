@@ -12,7 +12,6 @@ pub use run::start;
 
 pub mod prelude {
     pub use crate::context::*;
-    pub use crate::graphics::*;
     pub use crate::input::*;
     pub use crate::paint::*;
     pub use crate::ui::*;

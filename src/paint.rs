@@ -122,6 +122,7 @@ pub fn paint_sphere(
 }
 
 pub fn paint_entity(context: &mut crate::Context, entity: EntityId, painting: Painting) {
+    use crate::context::*;
     if let Some(Lines(lines)) = get_component_mut::<Lines>(context, entity, LINES) {
         lines.clear();
         *lines = painting.lines;

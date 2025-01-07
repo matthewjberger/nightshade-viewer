@@ -117,7 +117,6 @@ pub struct Quad {
 #[derive(Default, Debug, Clone)]
 pub struct Camera {
     pub projection: Projection,
-    pub viewport: Option<Viewport>,
 }
 
 impl Camera {
@@ -134,14 +133,6 @@ pub struct CameraMatrices {
     pub camera_position: nalgebra_glm::Vec3,
     pub projection: nalgebra_glm::Mat4,
     pub view: nalgebra_glm::Mat4,
-}
-
-#[derive(Default, Debug, Copy, Clone)]
-pub struct Viewport {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -286,7 +277,7 @@ pub fn query_global_transform(context: &Context, entity: EntityId) -> nalgebra_g
 }
 
 pub fn activate_camera(context: &mut Context, camera_entity: EntityId) {
-    query_entities(context, CAMERA)
+    query_entities(context, ACTIVE_CAMERA)
         .into_iter()
         .for_each(|entity| {
             remove_components(context, entity, ACTIVE_CAMERA);
@@ -325,6 +316,21 @@ pub fn query_camera_matrices(context: &Context, camera_entity: EntityId) -> Opti
         projection: camera.projection_matrix(aspect_ratio),
         view: nalgebra_glm::look_at(&camera_translation, &target, &up),
     })
+}
+
+pub fn query_nth_camera(context: &mut Context, index: usize) -> Option<EntityId> {
+    let camera_entities = query_entities(context, CAMERA);
+    camera_entities.get(index).copied()
+}
+
+pub fn query_nth_camera_matrices(
+    context: &mut crate::Context,
+    index: usize,
+) -> Option<crate::prelude::CameraMatrices> {
+    use crate::context::*;
+    let camera_entity = query_nth_camera(context, index)?;
+    let matrices = query_camera_matrices(context, camera_entity)?;
+    Some(matrices)
 }
 
 pub fn ensure_main_camera_system(context: &mut Context) {
