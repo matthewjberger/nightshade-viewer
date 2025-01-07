@@ -916,23 +916,7 @@ mod timeline {
         egui::Frame::none()
             .inner_margin(egui::Margin::from(6.0))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    // Step buttons
-                    if ui.button("⏮").clicked() {
-                        state.current_time = (state.current_time - 1.0).max(0.0);
-                    }
-
-                    // Play/Pause button
-                    if ui.button(if state.playing { "⏸" } else { "▶" }).clicked() {
-                        state.playing = !state.playing;
-                    }
-
-                    if ui.button("⏭").clicked() {
-                        state.current_time = (state.current_time + 1.0).min(state.total_duration);
-                    }
-
-                    ui.add_space(16.0);
-
+                ui.horizontal_centered(|ui| {
                     // Time display
                     let time_text = format!(
                         "{} / {}",
@@ -956,6 +940,22 @@ mod timeline {
 
                     ui.add_space(16.0);
 
+                    // Step buttons
+                    if ui.button("⏮").clicked() {
+                        state.current_time = (state.current_time - 1.0).max(0.0);
+                    }
+
+                    // Play/Pause button
+                    if ui.button(if state.playing { "⏸" } else { "▶" }).clicked() {
+                        state.playing = !state.playing;
+                    }
+
+                    if ui.button("⏭").clicked() {
+                        state.current_time = (state.current_time + 1.0).min(state.total_duration);
+                    }
+
+                    ui.add_space(16.0);
+
                     egui::ComboBox::from_label("Speed")
                         .selected_text(format!("{:.1}x", state.playback_speed))
                         .show_ui(ui, |ui| {
@@ -968,8 +968,6 @@ mod timeline {
                             }
                         });
                 });
-
-                ui.available_width();
             });
     }
 
