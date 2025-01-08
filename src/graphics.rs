@@ -29,6 +29,7 @@ pub struct RenderTarget {
     pub sky: Sky,
     pub lines: Lines,
     pub quads: Quads,
+    pub meshes: Meshes,
 }
 
 /// Low-level wgpu handles
@@ -168,6 +169,11 @@ pub fn resize_renderer(context: &mut crate::context::Context, width: u32, height
             renderer.gpu.surface_config.format,
             DEPTH_FORMAT,
         );
+        let meshes = create_mesh_renderer(
+            &renderer.gpu.device,
+            renderer.gpu.surface_config.format,
+            DEPTH_FORMAT,
+        );
         let target = RenderTarget {
             color_texture,
             color_texture_view,
@@ -177,6 +183,7 @@ pub fn resize_renderer(context: &mut crate::context::Context, width: u32, height
             sky,
             lines,
             quads,
+            meshes,
         };
         targets.push(target);
     });
@@ -642,6 +649,11 @@ fn ensure_viewports(context: &mut crate::Context, viewport_count: usize) {
             renderer.gpu.surface_config.format,
             DEPTH_FORMAT,
         );
+        let meshes = create_mesh_renderer(
+            &renderer.gpu.device,
+            renderer.gpu.surface_config.format,
+            DEPTH_FORMAT,
+        );
         renderer.targets.push(RenderTarget {
             color_texture,
             color_texture_view,
@@ -651,6 +663,7 @@ fn ensure_viewports(context: &mut crate::Context, viewport_count: usize) {
             sky,
             lines,
             quads,
+            meshes,
         });
     });
 }
@@ -779,6 +792,7 @@ async fn create_gpu_async(
     }
 }
 
+use mesh::{create_mesh_renderer, Meshes};
 pub use sky::*;
 mod sky {
     pub struct Sky {
@@ -1741,4 +1755,380 @@ mod quads {
             render_pass.draw_indexed(0..6, 0, 0..instance_count);
         }
     }
+}
+
+mod mesh {
+    #[repr(C)]
+    #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+    pub struct Vertex {
+        pub position: nalgebra_glm::Vec3,
+        pub normal: nalgebra_glm::Vec3,
+        pub uv_0: nalgebra_glm::Vec2,
+        pub uv_1: nalgebra_glm::Vec2,
+        pub joint_0: nalgebra_glm::Vec4,
+        pub weight_0: nalgebra_glm::Vec4,
+        pub color_0: nalgebra_glm::Vec3,
+    }
+
+    pub struct Meshes {
+        pub vertex_buffer: wgpu::Buffer,
+        pub index_buffer: wgpu::Buffer,
+        pub instance_buffer: wgpu::Buffer,
+        pub uniform_buffer: wgpu::Buffer,
+        pub bind_group: wgpu::BindGroup,
+        pub pipeline: wgpu::RenderPipeline,
+        pub draw_commands: std::collections::HashMap<usize, Vec<DrawCommand>>,
+    }
+
+    #[repr(C)]
+    #[derive(Default, Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+    pub struct MeshRenderUniform {
+        pub view: nalgebra_glm::Mat4,
+        pub projection: nalgebra_glm::Mat4,
+        pub camera_position: nalgebra_glm::Vec4,
+    }
+
+    #[derive(Debug, PartialEq)]
+    pub struct DrawCommand {
+        pub vertex_offset: u32,
+        pub index_offset: u32,
+        pub index_count: u32,
+        pub instance_offset: u32,
+        pub instance_count: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+    pub struct MeshInstanceBinding {
+        pub model_matrix_0: nalgebra_glm::Vec4,
+        pub model_matrix_1: nalgebra_glm::Vec4,
+        pub model_matrix_2: nalgebra_glm::Vec4,
+        pub model_matrix_3: nalgebra_glm::Vec4,
+        pub color: nalgebra_glm::Vec4,
+    }
+
+    pub fn create_mesh_renderer(
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        depth_format: wgpu::TextureFormat,
+    ) -> Meshes {
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Mesh Vertex Buffer"),
+            size: 1024,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Mesh Index Buffer"),
+            size: 1024,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Mesh Instance Buffer"),
+            size: 1024,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Mesh Uniform Buffer"),
+            size: std::mem::size_of::<MeshRenderUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("Mesh Bind Group Layout"),
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+            label: Some("Mesh Bind Group"),
+        });
+
+        let mesh_shader = device.create_shader_module(wgpu::include_wgsl!("shaders/mesh.wgsl"));
+
+        let scene_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Mesh Pipeline Layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Mesh Pipeline"),
+            layout: Some(&scene_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &mesh_shader,
+                entry_point: Some("vertex_main"),
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![
+                            0 => Float32x3, // position
+                            1 => Float32x3, // normal
+                            2 => Float32x2, // uv_0
+                            3 => Float32x2, // uv_1
+                            4 => Float32x4, // joint_0
+                            5 => Float32x4, // weight_0
+                            6 => Float32x3  // color_0
+                        ],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<MeshInstanceBinding>()
+                            as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![
+                            7 => Float32x4,  // model_matrix_0
+                            8 => Float32x4,  // model_matrix_1
+                            9 => Float32x4,  // model_matrix_2
+                            10 => Float32x4, // model_matrix_3
+                            11 => Float32x4  // color
+                        ],
+                    },
+                ],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &mesh_shader,
+                entry_point: Some("fragment_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: depth_format,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        Meshes {
+            vertex_buffer,
+            index_buffer,
+            instance_buffer,
+            uniform_buffer,
+            bind_group,
+            pipeline,
+            draw_commands: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn update_meshes(
+        matrices: &crate::context::CameraMatrices,
+        queue: &wgpu::Queue,
+        meshes: &Meshes,
+    ) {
+        // sync_mesh_data(renderer, world);
+
+        // let scene_uniform = SceneUniform {
+        //     view: matrices.view,
+        //     projection: matrices.projection,
+        //     camera_position: vec4(
+        //         matrices.camera_position.x,
+        //         matrices.camera_position.y,
+        //         matrices.camera_position.z,
+        //         1.0,
+        //     ),
+        // };
+
+        // if world.resources.should_sync_renderer {
+        //     renderer.scene = Some(create_scene(renderer, world));
+        //     world.resources.should_sync_renderer = false;
+        // }
+
+        // let Some(scene) = renderer.scene.as_mut() else {
+        //     return;
+        // };
+
+        // renderer.gpu.queue.write_buffer(
+        //     &scene.uniform_buffer,
+        //     0,
+        //     bytemuck::cast_slice(&[scene_uniform]),
+        // );
+
+        // // Update lighting uniform
+        // let lights = query_scene_lights(world);
+        // let mut lighting_uniform = LightingUniform {
+        //     ambient_color: vec4(0.1, 0.1, 0.1, 1.0),
+        //     num_lights: lights.len().min(MAX_LIGHTS) as u32,
+        //     lights: [GpuLight::default(); MAX_LIGHTS],
+        //     padding: [0; 3],
+        //     _padding: [0; 4],
+        // };
+
+        // for (i, (light, _)) in lights.iter().take(MAX_LIGHTS).enumerate() {
+        //     lighting_uniform.lights[i] = *light;
+        // }
+
+        // renderer.gpu.queue.write_buffer(
+        //     &scene.lighting_buffer,
+        //     0,
+        //     bytemuck::cast_slice(&[lighting_uniform]),
+        // );
+    }
+
+    // fn sync_mesh_data(renderer: &mut Renderer, world: &World) {
+    //     let mut all_vertices: Vec<Vertex> = Vec::new();
+    //     let mut all_indices = Vec::new();
+    //     let mut mesh_commands = Vec::new();
+
+    //     // First pass: collect mesh geometry data
+    //     world.resources.meshes.iter().for_each(|primitives| {
+    //         let mut commands = Vec::new();
+    //         primitives.iter().for_each(|primitive| {
+    //             let vertex_offset = all_vertices.len() as u32;
+    //             let index_offset = all_indices.len() as u32;
+    //             all_vertices.extend(&primitive.vertices);
+    //             all_indices.extend(primitive.indices.iter().map(|i| *i as u16));
+    //             commands.push(DrawCommand {
+    //                 vertex_offset,
+    //                 index_offset,
+    //                 index_count: primitive.indices.len() as u32,
+    //                 instance_offset: 0, // Will be set in second pass
+    //                 instance_count: 0,  // Will be set in second pass
+    //                 material_index: primitive.material_index,
+    //             });
+    //         });
+    //         mesh_commands.push(commands);
+    //     });
+
+    //     // Second pass: collect and organize instances by mesh type
+    //     let mut instance_bindings = Vec::new();
+    //     let mut mesh_instance_ranges: HashMap<usize, (u32, u32)> = HashMap::new();
+
+    //     // Group instances by mesh type
+    //     let mut grouped_instances: HashMap<usize, Vec<InstanceBinding>> = HashMap::new();
+
+    //     for entity in query_entities(world, GLOBAL_TRANSFORM | RENDER_MESH | VISIBLE) {
+    //         let Some(global_transform) =
+    //             get_component::<GlobalTransform>(world, entity, GLOBAL_TRANSFORM)
+    //         else {
+    //             continue;
+    //         };
+
+    //         let Some(RenderMesh { mesh_index }) =
+    //             get_component::<RenderMesh>(world, entity, RENDER_MESH)
+    //         else {
+    //             continue;
+    //         };
+
+    //         let instance = InstanceBinding {
+    //             model_matrix_0: global_transform.column(0).into(),
+    //             model_matrix_1: global_transform.column(1).into(),
+    //             model_matrix_2: global_transform.column(2).into(),
+    //             model_matrix_3: global_transform.column(3).into(),
+    //             color: vec4(1.0, 1.0, 1.0, 1.0),
+    //         };
+
+    //         grouped_instances
+    //             .entry(*mesh_index)
+    //             .or_default()
+    //             .push(instance);
+    //     }
+
+    //     // Add instances to final buffer and record ranges
+    //     for (mesh_name, instances) in grouped_instances {
+    //         if !instances.is_empty() {
+    //             let start_offset = instance_bindings.len() as u32;
+    //             let count = instances.len() as u32;
+
+    //             instance_bindings.extend(instances);
+    //             mesh_instance_ranges.insert(mesh_name, (start_offset, count));
+    //         }
+    //     }
+
+    //     // Update draw commands with correct instance ranges
+    //     for (mesh_index, commands) in mesh_commands.iter_mut().enumerate() {
+    //         if let Some(&(start_offset, count)) = mesh_instance_ranges.get(&mesh_index) {
+    //             for cmd in commands {
+    //                 cmd.instance_offset = start_offset;
+    //                 cmd.instance_count = count;
+    //             }
+    //         }
+    //     }
+
+    //     let Some(scene) = renderer.scene.as_mut() else {
+    //         return;
+    //     };
+
+    //     // Update buffers if we have data
+    //     if !all_vertices.is_empty() {
+    //         scene.vertex_buffer =
+    //             renderer
+    //                 .gpu
+    //                 .device
+    //                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    //                     label: Some("Scene Vertex Buffer"),
+    //                     contents: bytemuck::cast_slice(&all_vertices),
+    //                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+    //                 });
+    //     }
+    //     if !all_indices.is_empty() {
+    //         scene.index_buffer =
+    //             renderer
+    //                 .gpu
+    //                 .device
+    //                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    //                     label: Some("Scene Index Buffer"),
+    //                     contents: bytemuck::cast_slice(&all_indices),
+    //                     usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+    //                 });
+    //     }
+
+    //     if !instance_bindings.is_empty() {
+    //         scene.instance_buffer =
+    //             renderer
+    //                 .gpu
+    //                 .device
+    //                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    //                     label: Some("Scene Instance Buffer"),
+    //                     contents: bytemuck::cast_slice(&instance_bindings),
+    //                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+    //                 });
+    //     }
+
+    //     scene.draw_commands.clear();
+    //     mesh_commands
+    //         .into_iter()
+    //         .enumerate()
+    //         .for_each(|(mesh_index, commands)| {
+    //             scene.draw_commands.insert(mesh_index, commands);
+    //         });
+    // }
 }
