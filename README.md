@@ -2,7 +2,7 @@
 
  <img src="./src/icon/nightshade.png" alt="drawing" width="100"/>
 
-`Nightshade` is a portable graphics engine, written in rust.
+`Nightshade` is a portable graphics engine, written in rust
 
 
 ## Quickstart

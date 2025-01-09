@@ -15,7 +15,7 @@ impl Keyboard {
     pub fn is_key_pressed(&self, keycode: winit::keyboard::KeyCode) -> bool {
         self.keystates
             .get(&keycode)
-            .map_or(false, |state| *state == winit::event::ElementState::Pressed)
+            .is_some_and(|state| *state == winit::event::ElementState::Pressed)
     }
 }
 

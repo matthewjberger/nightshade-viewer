@@ -870,7 +870,7 @@ fn update_tile_mappings(
     // If this is a pane, assign it an ID
     if tiles
         .get(tile_id)
-        .map_or(false, |t| matches!(t, egui_tiles::Tile::Pane(_)))
+        .is_some_and(|t| matches!(t, egui_tiles::Tile::Pane(_)))
     {
         mapping.insert(tile_id, *counter);
         *counter += 1;
