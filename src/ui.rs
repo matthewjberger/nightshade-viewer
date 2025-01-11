@@ -1,7 +1,4 @@
-use crate::{
-    context::activate_camera,
-    paint::{paint_cube_scene, paint_entity},
-};
+use crate::paint::{paint_cube_scene, paint_entity};
 
 #[derive(Default)]
 pub struct UserInterface {
@@ -257,13 +254,13 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
             // Give control to the specific system
             match pane_kind {
                 PaneKind::MainCamera => {
-                    if let Some(camera) = crate::context::query_nth_camera(context, 0) {
-                        activate_camera(context, camera);
+                    if let Some(camera_entity) = crate::context::query_nth_camera(context, 0) {
+                        context.resources.active_camera_entity = Some(camera_entity);
                     }
                 }
                 PaneKind::SecondCamera => {
-                    if let Some(camera) = crate::context::query_nth_camera(context, 1) {
-                        activate_camera(context, camera);
+                    if let Some(camera_entity) = crate::context::query_nth_camera(context, 1) {
+                        context.resources.active_camera_entity = Some(camera_entity);
                     }
                 }
                 PaneKind::Color(_color32) => {
@@ -647,14 +644,6 @@ fn camera_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui)
         } else if ui.button("Add").clicked() {
             add_components(context, selected_entity, CAMERA);
         }
-        let active =
-            get_component::<ActiveCamera>(context, selected_entity, ACTIVE_CAMERA).is_some();
-        if ui
-            .add_enabled(!active, egui::Button::new("Activate"))
-            .clicked()
-        {
-            activate_camera(context, selected_entity);
-        }
     });
 }
 
@@ -765,6 +754,7 @@ fn entity_tree_ui(
                         for entity in descendents {
                             despawn_entities(context, &[entity]);
                         }
+                        context.resources.user_interface.selected_entity = None;
                         ui.close_menu();
                     }
                 });

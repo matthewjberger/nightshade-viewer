@@ -2,7 +2,6 @@ use crate::*;
 
 crate::ecs! {
     Context {
-        active_camera: ActiveCamera => ACTIVE_CAMERA,
         camera: Camera => CAMERA,
         global_transform: GlobalTransform => GLOBAL_TRANSFORM,
         local_transform: LocalTransform => LOCAL_TRANSFORM,
@@ -16,6 +15,7 @@ crate::ecs! {
         graphics: graphics::Graphics,
         input: input::Input,
         user_interface: ui::UserInterface,
+        active_camera_entity: Option<EntityId>,
     }
 }
 
@@ -276,21 +276,8 @@ pub fn query_global_transform(context: &Context, entity: EntityId) -> nalgebra_g
     }
 }
 
-pub fn activate_camera(context: &mut Context, camera_entity: EntityId) {
-    query_entities(context, ACTIVE_CAMERA)
-        .into_iter()
-        .for_each(|entity| {
-            remove_components(context, entity, ACTIVE_CAMERA);
-        });
-    add_components(context, camera_entity, ACTIVE_CAMERA);
-}
-
-pub fn query_active_camera(context: &Context) -> Option<EntityId> {
-    query_first_entity(context, ACTIVE_CAMERA | CAMERA)
-}
-
 pub fn query_active_camera_matrices(context: &Context) -> Option<CameraMatrices> {
-    let active_camera = query_active_camera(context)?;
+    let active_camera = context.resources.active_camera_entity?;
     query_camera_matrices(context, active_camera)
 }
 
@@ -334,11 +321,16 @@ pub fn query_nth_camera_matrices(
 }
 
 pub fn ensure_main_camera_system(context: &mut Context) {
-    if query_first_entity(context, ACTIVE_CAMERA | CAMERA).is_some() {
+    if context.resources.active_camera_entity.is_some() {
         return;
     }
-    let camera_mask = ACTIVE_CAMERA | CAMERA | LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME;
-    let camera_entity = spawn_entities(context, camera_mask, 1)[0];
+    let camera_entity = if let Some(first_camera) = query_entities(context, CAMERA).first() {
+        *first_camera
+    } else {
+        let camera_mask = CAMERA | LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME;
+        spawn_entities(context, camera_mask, 1)[0]
+    };
+
     if let Some(name) = get_component_mut::<Name>(context, camera_entity, NAME) {
         *name = Name("Main Camera".to_string());
     }
@@ -350,130 +342,128 @@ pub fn ensure_main_camera_system(context: &mut Context) {
 }
 
 pub fn wasd_keyboard_controls_system(context: &mut Context) {
+    let Some(camera_entity) = context.resources.active_camera_entity else {
+        return;
+    };
     let delta_time = context.resources.window.delta_time;
-    query_entities(context, ACTIVE_CAMERA | CAMERA | LOCAL_TRANSFORM)
-        .into_iter()
-        .for_each(|entity| {
-            let speed = 10.0 * delta_time;
+    let speed = 10.0 * delta_time;
 
-            let (
-                left_key_pressed,
-                right_key_pressed,
-                forward_key_pressed,
-                backward_key_pressed,
-                up_key_pressed,
-            ) = {
-                let keyboard = &context.resources.input.keyboard;
-                (
-                    keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyA),
-                    keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyD),
-                    keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyW),
-                    keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyS),
-                    keyboard.is_key_pressed(winit::keyboard::KeyCode::Space),
-                )
-            };
+    let (
+        left_key_pressed,
+        right_key_pressed,
+        forward_key_pressed,
+        backward_key_pressed,
+        up_key_pressed,
+    ) = {
+        let keyboard = &context.resources.input.keyboard;
+        (
+            keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyA),
+            keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyD),
+            keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyW),
+            keyboard.is_key_pressed(winit::keyboard::KeyCode::KeyS),
+            keyboard.is_key_pressed(winit::keyboard::KeyCode::Space),
+        )
+    };
 
-            let Some(local_transform) =
-                get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
-            else {
-                return;
-            };
-            let local_transform_matrix = local_transform.as_matrix();
-            let forward = extract_forward_vector(&local_transform_matrix);
-            let right = extract_right_vector(&local_transform_matrix);
-            let up = extract_up_vector(&local_transform_matrix);
+    let Some(local_transform) =
+        get_component_mut::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM)
+    else {
+        return;
+    };
+    let local_transform_matrix = local_transform.as_matrix();
+    let forward = extract_forward_vector(&local_transform_matrix);
+    let right = extract_right_vector(&local_transform_matrix);
+    let up = extract_up_vector(&local_transform_matrix);
 
-            if forward_key_pressed {
-                local_transform.translation += forward * speed;
-            }
-            if backward_key_pressed {
-                local_transform.translation -= forward * speed;
-            }
+    if forward_key_pressed {
+        local_transform.translation += forward * speed;
+    }
+    if backward_key_pressed {
+        local_transform.translation -= forward * speed;
+    }
 
-            if left_key_pressed {
-                local_transform.translation -= right * speed;
-            }
-            if right_key_pressed {
-                local_transform.translation += right * speed;
-            }
-            if up_key_pressed {
-                local_transform.translation += up * speed;
-            }
-        });
+    if left_key_pressed {
+        local_transform.translation -= right * speed;
+    }
+    if right_key_pressed {
+        local_transform.translation += right * speed;
+    }
+    if up_key_pressed {
+        local_transform.translation += up * speed;
+    }
 }
 
 /// Updates the active camera's orientation using
 /// mouse controls for orbiting and panning
 pub fn look_camera_system(context: &mut Context) {
-    query_entities(context, ACTIVE_CAMERA | CAMERA | LOCAL_TRANSFORM)
-        .into_iter()
-        .for_each(|entity| {
-            let (local_transform_matrix, _, right, up) = {
-                let Some(local_transform) =
-                    get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
-                else {
-                    return;
-                };
-                let local_transform_matrix = local_transform.as_matrix();
+    let Some(camera_entity) = context.resources.active_camera_entity else {
+        return;
+    };
+    let (local_transform_matrix, _, right, up) = {
+        let Some(local_transform) =
+            get_component_mut::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM)
+        else {
+            return;
+        };
+        let local_transform_matrix = local_transform.as_matrix();
 
-                let forward = extract_forward_vector(&local_transform_matrix);
-                let right = extract_right_vector(&local_transform_matrix);
-                let up = extract_up_vector(&local_transform_matrix);
-                (local_transform_matrix, forward, right, up)
-            };
+        let forward = extract_forward_vector(&local_transform_matrix);
+        let right = extract_right_vector(&local_transform_matrix);
+        let up = extract_up_vector(&local_transform_matrix);
+        (local_transform_matrix, forward, right, up)
+    };
 
-            if context
-                .resources
-                .input
-                .mouse
-                .state
-                .contains(input::MouseState::RIGHT_CLICKED)
-            {
-                let mut delta = context.resources.input.mouse.position_delta
-                    * context.resources.window.delta_time;
-                delta.x *= -1.0;
-                delta.y *= -1.0;
+    if context
+        .resources
+        .input
+        .mouse
+        .state
+        .contains(input::MouseState::RIGHT_CLICKED)
+    {
+        let mut delta =
+            context.resources.input.mouse.position_delta * context.resources.window.delta_time;
+        delta.x *= -1.0;
+        delta.y *= -1.0;
 
-                let Some(local_transform) =
-                    get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
-                else {
-                    return;
-                };
+        let Some(local_transform) =
+            get_component_mut::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM)
+        else {
+            return;
+        };
 
-                let yaw = nalgebra_glm::quat_angle_axis(delta.x, &nalgebra_glm::Vec3::y());
-                local_transform.rotation = yaw * local_transform.rotation;
+        let yaw = nalgebra_glm::quat_angle_axis(delta.x, &nalgebra_glm::Vec3::y());
+        local_transform.rotation = yaw * local_transform.rotation;
 
-                let forward = extract_forward_vector(&local_transform_matrix);
-                let current_pitch = forward.y.asin();
+        let forward = extract_forward_vector(&local_transform_matrix);
+        let current_pitch = forward.y.asin();
 
-                let new_pitch = current_pitch + delta.y;
-                if new_pitch.abs() <= 89_f32.to_radians() {
-                    let pitch = nalgebra_glm::quat_angle_axis(delta.y, &nalgebra_glm::Vec3::x());
-                    local_transform.rotation *= pitch;
-                }
-            }
+        let new_pitch = current_pitch + delta.y;
+        if new_pitch.abs() <= 89_f32.to_radians() {
+            let pitch = nalgebra_glm::quat_angle_axis(delta.y, &nalgebra_glm::Vec3::x());
+            local_transform.rotation *= pitch;
+        }
+    }
 
-            if context
-                .resources
-                .input
-                .mouse
-                .state
-                .contains(input::MouseState::MIDDLE_CLICKED)
-            {
-                let mut delta = context.resources.input.mouse.position_delta
-                    * context.resources.window.delta_time;
-                delta.x *= -1.0;
-                delta.y *= -1.0;
+    if context
+        .resources
+        .input
+        .mouse
+        .state
+        .contains(input::MouseState::MIDDLE_CLICKED)
+    {
+        let mut delta =
+            context.resources.input.mouse.position_delta * context.resources.window.delta_time;
+        delta.x *= -1.0;
+        delta.y *= -1.0;
 
-                let Some(local_transform) =
-                    get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
-                else {
-                    return;
-                };
-                local_transform.translation += right * delta.x;
-                local_transform.translation += up * delta.y;
-            }
-        });
+        let Some(local_transform) =
+            get_component_mut::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM)
+        else {
+            return;
+        };
+        local_transform.translation += right * delta.x;
+        local_transform.translation += up * delta.y;
+    }
 }
 
 /// Uses the `Parent` component and right-multiplied
