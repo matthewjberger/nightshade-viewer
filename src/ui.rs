@@ -67,8 +67,11 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         }
     }
 
-    fn tab_title_for_pane(&mut self, _pane: &crate::ui::Pane) -> egui::WidgetText {
-        "Pane".into()
+    fn tab_title_for_pane(&mut self, pane: &crate::ui::Pane) -> egui::WidgetText {
+        match pane.kind {
+            PaneKind::Camera { index } => format!("Camera {}", index + 1).into(),
+            PaneKind::Color(_) => "Color".into(),
+        }
     }
 
     fn top_bar_right_ui(
@@ -143,26 +146,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
                 egui::ComboBox::new(format!("background_{}", tile_id.0), "")
                     .selected_text(match pane.kind {
-                        PaneKind::Camera { index } => {
-                            if let Some(camera_entity) = crate::context::query_nth_camera(context, index) {
-                                if let Some(crate::context::Name(name)) = 
-                                    crate::context::get_component::<crate::context::Name>(
-                                        context, 
-                                        camera_entity, 
-                                        crate::context::NAME
-                                    ) {
-                                    if !name.is_empty() {
-                                        name.to_string()
-                                    } else {
-                                        format!("Camera {}", index + 1)
-                                    }
-                                } else {
-                                    format!("Camera {}", index + 1)
-                                }
-                            } else {
-                                format!("Camera {}", index + 1)
-                            }
-                        }
+                        PaneKind::Camera { index } => format!("Camera {}", index + 1),
                         PaneKind::Color(_) => "Color".to_string(),
                     })
                     .width(100.0)
@@ -171,25 +155,8 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                         let camera_count = crate::context::query_entities(context, crate::context::CAMERA).len();
                         for i in 0..camera_count {
                             let is_selected = matches!(pane.kind, PaneKind::Camera { index } if index == i);
-                            if let Some(camera_entity) = crate::context::query_nth_camera(context, i) {
-                                let camera_name = if let Some(crate::context::Name(name)) = 
-                                    crate::context::get_component::<crate::context::Name>(
-                                        context, 
-                                        camera_entity, 
-                                        crate::context::NAME
-                                    ) {
-                                    if !name.is_empty() {
-                                        name.to_string()
-                                    } else {
-                                        format!("Camera {}", i + 1)
-                                    }
-                                } else {
-                                    format!("Camera {}", i + 1)
-                                };
-                                
-                                if ui.selectable_label(is_selected, camera_name).clicked() {
-                                    pane.kind = PaneKind::Camera { index: i };
-                                }
+                            if ui.selectable_label(is_selected, format!("Camera {}", i + 1)).clicked() {
+                                pane.kind = PaneKind::Camera { index: i };
                             }
                         }
 
@@ -726,6 +693,14 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                     position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
                     size: 1.0,
                     name: "Cube".to_string(),
+                });
+                execute_command(context, command);
+            }
+
+            if ui.button("Spawn Camera").clicked() {
+                let command = Command::Entity(EntityCommand::SpawnCamera {
+                    position: nalgebra_glm::vec3(0.0, 0.0, 5.0),
+                    name: "Camera".to_string(),
                 });
                 execute_command(context, command);
             }

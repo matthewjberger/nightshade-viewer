@@ -223,7 +223,7 @@ fn update_panes_system(context: &mut crate::context::Context) {
     for (kind, viewport) in &viewports {
         let matrices = if let crate::ui::PaneKind::Camera { index } = kind {
             if let Some(camera_entity) = query_nth_camera(context, *index) {
-                if let Some(camera) = get_component::<Camera>(context, camera_entity, CAMERA) {
+                if let Some(_camera) = get_component::<Camera>(context, camera_entity, CAMERA) {
                     if let Some(transform) = get_component::<GlobalTransform>(context, camera_entity, GLOBAL_TRANSFORM) {
                         let view = nalgebra_glm::inverse(&transform.0);
                         let projection = nalgebra_glm::perspective_fov(
