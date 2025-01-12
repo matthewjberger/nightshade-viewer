@@ -25,6 +25,7 @@ pub(crate) fn step(context: &mut context::Context, event: &winit::event::WindowE
         // Update every frame
         winit::event::WindowEvent::RedrawRequested => {
             context::ensure_main_camera_system(context);
+            context::ensure_cameras_initialized_system(context);
             window::update_frame_timing_system(context);
             ui::ensure_tile_tree_system(context);
             input::escape_key_exit_system(context);

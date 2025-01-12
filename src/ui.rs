@@ -23,18 +23,18 @@ pub struct TileTreeContext {
     pub viewport_tiles: std::collections::HashMap<egui_tiles::TileId, (PaneKind, egui::Rect)>,
     pub selected_tile: Option<egui_tiles::TileId>,
     pub tile_mapping: std::collections::HashMap<egui_tiles::TileId, usize>,
+    pub context: Option<*mut crate::context::Context>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum PaneKind {
-    MainCamera,
-    SecondCamera,
+    Camera { index: usize },
     Color(egui::Color32),
 }
 
 impl Default for PaneKind {
     fn default() -> Self {
-        Self::MainCamera
+        Self::Camera { index: 0 }
     }
 }
 
@@ -90,12 +90,16 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         tile_id: egui_tiles::TileId,
         pane: &mut crate::ui::Pane,
     ) -> egui_tiles::UiResponse {
+        let Some(Some(context)) = self.context.as_mut().map(|ctx| unsafe { ctx.as_mut() }) else {
+            return egui_tiles::UiResponse::None;
+        };
+
         let rect = ui.max_rect();
         self.tile_rects.insert(tile_id, rect);
 
         if matches!(
             pane.kind,
-            PaneKind::MainCamera | PaneKind::SecondCamera | PaneKind::Color(_)
+            PaneKind::Camera { index: _ } | PaneKind::Color(_)
         ) {
             self.viewport_tiles.insert(tile_id, (pane.kind, rect));
         }
@@ -115,16 +119,13 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         }
 
         match pane.kind {
-            PaneKind::SecondCamera => {
-                // ui.label("Second Camera");
+            PaneKind::Camera { index: _ } => {
+                // Empty - we'll render the camera view elsewhere
             }
-            PaneKind::Color(_color) => {
+            PaneKind::Color(_) => {
                 // TODO: demonstrate a regular egui widget here
                 // let bg_rect = rect.shrink(1.0);
                 // ui.painter().rect_filled(bg_rect, 0.0, color);
-            }
-            PaneKind::MainCamera => {
-                // ui.label("Main Camera");
             }
         }
 
@@ -142,23 +143,54 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
                 egui::ComboBox::new(format!("background_{}", tile_id.0), "")
                     .selected_text(match pane.kind {
-                        PaneKind::MainCamera => "Main Camera",
-                        PaneKind::SecondCamera => "Second Camera",
-                        PaneKind::Color(_) => "Color",
+                        PaneKind::Camera { index } => {
+                            if let Some(camera_entity) = crate::context::query_nth_camera(context, index) {
+                                if let Some(crate::context::Name(name)) = 
+                                    crate::context::get_component::<crate::context::Name>(
+                                        context, 
+                                        camera_entity, 
+                                        crate::context::NAME
+                                    ) {
+                                    if !name.is_empty() {
+                                        name.to_string()
+                                    } else {
+                                        format!("Camera {}", index + 1)
+                                    }
+                                } else {
+                                    format!("Camera {}", index + 1)
+                                }
+                            } else {
+                                format!("Camera {}", index + 1)
+                            }
+                        }
+                        PaneKind::Color(_) => "Color".to_string(),
                     })
                     .width(100.0)
                     .show_ui(ui, |ui| {
-                        let is_main_camera = matches!(pane.kind, PaneKind::MainCamera);
-                        if ui.selectable_label(is_main_camera, "Main Camera").clicked() {
-                            pane.kind = PaneKind::MainCamera;
-                        }
-
-                        let is_second_camera = matches!(pane.kind, PaneKind::SecondCamera);
-                        if ui
-                            .selectable_label(is_second_camera, "Second Camera")
-                            .clicked()
-                        {
-                            pane.kind = PaneKind::SecondCamera;
+                        // Show all available cameras
+                        let camera_count = crate::context::query_entities(context, crate::context::CAMERA).len();
+                        for i in 0..camera_count {
+                            let is_selected = matches!(pane.kind, PaneKind::Camera { index } if index == i);
+                            if let Some(camera_entity) = crate::context::query_nth_camera(context, i) {
+                                let camera_name = if let Some(crate::context::Name(name)) = 
+                                    crate::context::get_component::<crate::context::Name>(
+                                        context, 
+                                        camera_entity, 
+                                        crate::context::NAME
+                                    ) {
+                                    if !name.is_empty() {
+                                        name.to_string()
+                                    } else {
+                                        format!("Camera {}", i + 1)
+                                    }
+                                } else {
+                                    format!("Camera {}", i + 1)
+                                };
+                                
+                                if ui.selectable_label(is_selected, camera_name).clicked() {
+                                    pane.kind = PaneKind::Camera { index: i };
+                                }
+                            }
                         }
 
                         let is_color = matches!(pane.kind, PaneKind::Color(_));
@@ -251,16 +283,16 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
             .viewport_tiles
             .get(&selected_tile)
         {
-            // Give control to the specific system
             match pane_kind {
-                PaneKind::MainCamera => {
-                    if let Some(camera_entity) = crate::context::query_nth_camera(context, 0) {
-                        context.resources.active_camera_entity = Some(camera_entity);
-                    }
-                }
-                PaneKind::SecondCamera => {
-                    if let Some(camera_entity) = crate::context::query_nth_camera(context, 1) {
-                        context.resources.active_camera_entity = Some(camera_entity);
+                PaneKind::Camera { index } => {
+                    // Get total number of cameras
+                    let camera_count = crate::context::query_entities(context, crate::context::CAMERA).len();
+                    
+                    // Only try to select camera if index is valid
+                    if *index < camera_count {
+                        if let Some(camera_entity) = crate::context::query_nth_camera(context, *index) {
+                            context.resources.active_camera_entity = Some(camera_entity);
+                        }
                     }
                 }
                 PaneKind::Color(_color32) => {
@@ -305,6 +337,9 @@ pub fn ensure_tile_tree_system(context: &mut crate::context::Context) {
 /// emits the resources needed for rendering
 pub fn render_ui_system(context: &mut crate::context::Context) {
     update_timeline_system(context);
+
+    // Set the context pointer before any UI work
+    context.resources.user_interface.tile_tree_context.context = Some(context as *mut _);
 
     let ui = {
         let Some(gui_state) = context.resources.user_interface.state.as_mut() else {

@@ -39,7 +39,7 @@ impl Default for LocalTransform {
 impl LocalTransform {
     pub fn as_matrix(&self) -> nalgebra_glm::Mat4 {
         nalgebra_glm::translation(&self.translation)
-            * nalgebra_glm::quat_to_mat4(&self.rotation)
+            * nalgebra_glm::quat_to_mat4(&self.rotation.normalize())
             * nalgebra_glm::scaling(&self.scale)
     }
 
@@ -305,9 +305,50 @@ pub fn query_camera_matrices(context: &Context, camera_entity: EntityId) -> Opti
     })
 }
 
-pub fn query_nth_camera(context: &mut Context, index: usize) -> Option<EntityId> {
-    let camera_entities = query_entities(context, CAMERA);
-    camera_entities.get(index).copied()
+/// Pure query function - only returns the nth camera entity
+pub fn query_nth_camera(context: &Context, index: usize) -> Option<EntityId> {
+    query_entities(context, CAMERA).get(index).copied()
+}
+
+/// Initializes a camera with proper transform settings
+pub fn initialize_camera_transform(context: &mut Context, camera_entity: EntityId) {
+    if let Some(local_transform) = 
+        get_component_mut::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM) 
+    {
+        // Set a default position offset from origin
+        local_transform.translation = nalgebra_glm::vec3(0.0, 4.0, 5.0);
+        
+        // Ensure rotation is looking at origin with proper up vector
+        let camera_pos = local_transform.translation;
+        let target = nalgebra_glm::Vec3::zeros();
+        let up = nalgebra_glm::Vec3::y();
+        
+        // Calculate rotation to look at target
+        let forward = nalgebra_glm::normalize(&(target - camera_pos));
+        let right = nalgebra_glm::normalize(&nalgebra_glm::cross(&up, &forward));
+        let new_up = nalgebra_glm::cross(&forward, &right);
+        
+        // Convert to quaternion
+        let rotation_mat = nalgebra_glm::mat3(
+            right.x, new_up.x, -forward.x,
+            right.y, new_up.y, -forward.y, 
+            right.z, new_up.z, -forward.z
+        );
+        local_transform.rotation = nalgebra_glm::mat3_to_quat(&rotation_mat);
+    }
+}
+
+/// System that ensures all cameras have proper initialization
+pub fn ensure_cameras_initialized_system(context: &mut Context) {
+    let camera_entities: Vec<_> = query_entities(context, CAMERA)
+        .into_iter()
+        .filter(|entity| !get_component::<LocalTransform>(context, *entity, LOCAL_TRANSFORM).is_some())
+        .collect();
+        
+    for entity in camera_entities {
+        add_components(context, entity, LOCAL_TRANSFORM);
+        initialize_camera_transform(context, entity);
+    }
 }
 
 pub fn query_nth_camera_matrices(

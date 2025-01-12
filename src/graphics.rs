@@ -1,3 +1,5 @@
+use crate::prelude::MouseState;
+
 /// A resource for graphics state
 #[derive(Default)]
 pub struct Graphics {
@@ -189,9 +191,51 @@ pub fn resize_renderer(context: &mut crate::context::Context, width: u32, height
 fn update_panes_system(context: &mut crate::context::Context) {
     use crate::context::*;
 
-    let main_camera = crate::context::query_nth_camera_matrices(context, 0);
-    let secondary_camera = crate::context::query_nth_camera_matrices(context, 1);
+    // Get viewports first since we need them for camera collection
+    let viewports = context
+        .resources
+        .user_interface
+        .tile_tree_context
+        .viewport_tiles
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
 
+    // Check for viewport clicks and handle camera selection
+    if context.resources.input.mouse.state.contains(MouseState::LEFT_CLICKED) {
+        let mouse_pos = context.resources.input.mouse.position;
+        // Find which viewport was clicked
+        for (kind, viewport) in &viewports {
+            if viewport.contains(egui::pos2(mouse_pos.x as f32, mouse_pos.y as f32)) {
+                if let crate::ui::PaneKind::Camera { index } = kind {
+                    // If we clicked a camera viewport, select its entity
+                    if let Some(camera_entity) = query_nth_camera(context, *index) {
+                        context.resources.user_interface.selected_entity = Some(camera_entity);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    let main_camera = query_nth_camera_matrices(context, 0);
+    let secondary_camera = query_nth_camera_matrices(context, 1);
+    
+    // Pre-collect all other camera matrices
+    let other_cameras: Vec<_> = viewports.iter()
+        .filter_map(|(kind, _)| {
+            if let crate::ui::PaneKind::Camera { index } = kind {
+                if index > &1 {  // Skip main and secondary which we already have
+                    if let Some(camera_entity) = query_nth_camera(context, *index) {
+                        return query_camera_matrices(context, camera_entity);
+                    }
+                }
+            }
+            None
+        })
+        .collect();
+
+    // Get all lines and quads data
     let lines: Vec<_> = query_entities(context, LINES | GLOBAL_TRANSFORM)
         .into_iter()
         .filter_map(|entity| {
@@ -228,7 +272,6 @@ fn update_panes_system(context: &mut crate::context::Context) {
         .flatten()
         .collect();
 
-    // Collect all quad instances from entities
     let quads: Vec<_> = query_entities(context, QUADS | GLOBAL_TRANSFORM)
         .into_iter()
         .filter_map(|entity| {
@@ -266,62 +309,39 @@ fn update_panes_system(context: &mut crate::context::Context) {
         .flatten()
         .collect();
 
-    let viewports = context
-        .resources
-        .user_interface
-        .tile_tree_context
-        .viewport_tiles
-        .values()
-        .copied()
-        .collect::<Vec<_>>();
-
     let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
         return;
     };
 
+    let mut other_camera_idx = 0;
     for (target, (kind, _viewport)) in renderer.targets.iter_mut().zip(viewports.iter()) {
         match kind {
-            crate::ui::PaneKind::MainCamera => {
+            crate::ui::PaneKind::Camera { index: 0 } => {
                 if let Some(matrices) = main_camera {
                     update_grid(&matrices, &renderer.gpu.queue, &target.grid);
                     update_sky(&matrices, &renderer.gpu.queue, &target.sky);
-                    update_lines_uniform(
-                        &matrices,
-                        &renderer.gpu.device,
-                        &renderer.gpu.queue,
-                        &mut target.lines,
-                        lines.to_vec(),
-                    );
-                    update_quads_uniform(
-                        &matrices,
-                        &renderer.gpu.device,
-                        &renderer.gpu.queue,
-                        &mut target.quads,
-                        quads.to_vec(),
-                    );
+                    update_lines_uniform(&matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.lines, lines.to_vec());
+                    update_quads_uniform(&matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.quads, quads.to_vec());
                 }
             }
-            crate::ui::PaneKind::SecondCamera => {
+            crate::ui::PaneKind::Camera { index: 1 } => {
                 if let Some(matrices) = secondary_camera {
                     update_grid(&matrices, &renderer.gpu.queue, &target.grid);
                     update_sky(&matrices, &renderer.gpu.queue, &target.sky);
-                    update_lines_uniform(
-                        &matrices,
-                        &renderer.gpu.device,
-                        &renderer.gpu.queue,
-                        &mut target.lines,
-                        lines.to_vec(),
-                    );
-                    update_quads_uniform(
-                        &matrices,
-                        &renderer.gpu.device,
-                        &renderer.gpu.queue,
-                        &mut target.quads,
-                        quads.to_vec(),
-                    );
+                    update_lines_uniform(&matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.lines, lines.to_vec());
+                    update_quads_uniform(&matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.quads, quads.to_vec());
                 }
             }
-            crate::ui::PaneKind::Color(_color) => {
+            crate::ui::PaneKind::Camera { index: _ } => {
+                if let Some(matrices) = other_cameras.get(other_camera_idx) {
+                    update_grid(matrices, &renderer.gpu.queue, &target.grid);
+                    update_sky(matrices, &renderer.gpu.queue, &target.sky);
+                    update_lines_uniform(matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.lines, lines.to_vec());
+                    update_quads_uniform(matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.quads, quads.to_vec());
+                }
+                other_camera_idx += 1;
+            }
+            crate::ui::PaneKind::Color(_) => {
                 //
             }
         }
@@ -523,8 +543,7 @@ fn render_pane(
     target: &RenderTarget,
 ) {
     let clear_color = match pane_kind {
-        crate::ui::PaneKind::MainCamera => wgpu::Color::BLACK,
-        crate::ui::PaneKind::SecondCamera => wgpu::Color::BLACK,
+        crate::ui::PaneKind::Camera { index: _ } => wgpu::Color::BLACK,
         crate::ui::PaneKind::Color(color) => wgpu::Color {
             r: (color.r() as f64 / 255.0),
             g: (color.g() as f64 / 255.0),
@@ -554,10 +573,7 @@ fn render_pane(
         occlusion_query_set: None,
     });
 
-    if matches!(
-        pane_kind,
-        crate::ui::PaneKind::MainCamera | crate::ui::PaneKind::SecondCamera
-    ) {
+    if matches!(pane_kind, crate::ui::PaneKind::Camera { index: _ }) {
         render_sky(&mut render_pass, &target.sky);
         render_lines(&mut render_pass, &target.lines);
         render_quads(&mut render_pass, &target.quads);
