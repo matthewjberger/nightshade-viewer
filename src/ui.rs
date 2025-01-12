@@ -1,4 +1,4 @@
-use crate::paint::{paint_cube_scene, paint_entity};
+use crate::{api::{execute_command, Command, EntityCommand}, paint::{paint_cube_scene, paint_entity}};
 
 #[derive(Default)]
 pub struct UserInterface {
@@ -716,6 +716,20 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
 
                 ui.separator();
             });
+        
+        // Add command panel
+        ui.group(|ui| {
+            ui.label("Commands");
+            
+            if ui.button("Spawn Cube").clicked() {
+                let command = Command::Entity(EntityCommand::SpawnCube {
+                    position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                    size: 1.0,
+                    name: "Cube".to_string(),
+                });
+                execute_command(context, command);
+            }
+        });
     });
 }
 

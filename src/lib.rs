@@ -1,3 +1,4 @@
+mod api;
 mod context;
 mod ecs;
 mod graphics;
@@ -11,6 +12,7 @@ pub use context::Context;
 pub use run::start;
 
 pub mod prelude {
+    pub use crate::api::*;
     pub use crate::context::*;
     pub use crate::input::*;
     pub use crate::paint::*;
