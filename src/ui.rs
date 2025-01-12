@@ -28,13 +28,13 @@ pub struct TileTreeContext {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum PaneKind {
-    Camera { index: usize },
+    Scene { active_camera_index: usize },
     Color(egui::Color32),
 }
 
 impl Default for PaneKind {
     fn default() -> Self {
-        Self::Camera { index: 0 }
+        Self::Scene { active_camera_index: 0 }
     }
 }
 
@@ -69,7 +69,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
     fn tab_title_for_pane(&mut self, pane: &crate::ui::Pane) -> egui::WidgetText {
         match pane.kind {
-            PaneKind::Camera { index } => format!("Camera {}", index + 1).into(),
+            PaneKind::Scene { .. } => "Scene".into(),
             PaneKind::Color(_) => "Color".into(),
         }
     }
@@ -102,7 +102,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
         if matches!(
             pane.kind,
-            PaneKind::Camera { index: _ } | PaneKind::Color(_)
+            PaneKind::Scene { .. } | PaneKind::Color(_)
         ) {
             self.viewport_tiles.insert(tile_id, (pane.kind, rect));
         }
@@ -122,13 +122,11 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         }
 
         match pane.kind {
-            PaneKind::Camera { index: _ } => {
+            PaneKind::Scene { active_camera_index: _ } => {
                 // Empty - we'll render the camera view elsewhere
             }
             PaneKind::Color(_) => {
                 // TODO: demonstrate a regular egui widget here
-                // let bg_rect = rect.shrink(1.0);
-                // ui.painter().rect_filled(bg_rect, 0.0, color);
             }
         }
 
@@ -140,45 +138,50 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
         let controls_response = ui.allocate_ui_with_layout(
             controls_rect.size(),
-            egui::Layout::left_to_right(egui::Align::Center),
+            egui::Layout::top_down(egui::Align::Center),
             |ui| {
                 ui.add_space(4.0);
 
                 egui::ComboBox::new(format!("background_{}", tile_id.0), "")
                     .selected_text(match pane.kind {
-                        PaneKind::Camera { index } => format!("Camera {}", index + 1),
-                        PaneKind::Color(_) => "Color".to_string(),
+                        PaneKind::Scene { .. } => "Scene",
+                        PaneKind::Color(_) => "Color",
                     })
                     .width(100.0)
                     .show_ui(ui, |ui| {
-                        // Show all available cameras
-                        let camera_count = crate::context::query_entities(context, crate::context::CAMERA).len();
-                        for i in 0..camera_count {
-                            let is_selected = matches!(pane.kind, PaneKind::Camera { index } if index == i);
-                            if ui.selectable_label(is_selected, format!("Camera {}", i + 1)).clicked() {
-                                pane.kind = PaneKind::Camera { index: i };
-                            }
+                        // Show Scene option
+                        let is_scene = matches!(pane.kind, PaneKind::Scene { .. });
+                        if ui.selectable_label(is_scene, "Scene").clicked() {
+                            pane.kind = PaneKind::Scene { active_camera_index: 0 };
                         }
 
+                        // Show Color option
                         let is_color = matches!(pane.kind, PaneKind::Color(_));
                         if ui.selectable_label(is_color, "Color").clicked() {
                             pane.kind = PaneKind::Color(egui::Color32::from_gray(200));
                         }
                     });
 
+                if let PaneKind::Scene { active_camera_index } = &mut pane.kind {
+                    ui.add_space(4.0);
+                    
+                    let camera_count = crate::context::query_entities(context, crate::context::CAMERA).len();
+                    egui::ComboBox::new(format!("camera_{}", tile_id.0), "")
+                        .selected_text(format!("Camera {}", *active_camera_index + 1))
+                        .width(100.0)
+                        .show_ui(ui, |ui| {
+                            for i in 0..camera_count {
+                                if ui.selectable_label(*active_camera_index == i, format!("Camera {}", i + 1)).clicked() {
+                                    *active_camera_index = i;
+                                }
+                            }
+                        });
+                }
+
                 if let PaneKind::Color(ref mut color) = pane.kind {
                     ui.add_space(4.0);
                     ui.color_edit_button_srgba(color);
                 }
-            },
-        );
-
-        let _content_response = ui.allocate_ui_with_layout(
-            content_rect.size(),
-            egui::Layout::centered_and_justified(egui::Direction::TopDown),
-            |ui| {
-                let consistent_id = self.tile_mapping.get(&tile_id).unwrap_or(&0);
-                ui.label(format!("Tile {}", consistent_id));
             },
         );
 
@@ -251,13 +254,13 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
             .get(&selected_tile)
         {
             match pane_kind {
-                PaneKind::Camera { index } => {
+                PaneKind::Scene { active_camera_index } => {
                     // Get total number of cameras
                     let camera_count = crate::context::query_entities(context, crate::context::CAMERA).len();
                     
                     // Only try to select camera if index is valid
-                    if *index < camera_count {
-                        if let Some(camera_entity) = crate::context::query_nth_camera(context, *index) {
+                    if *active_camera_index < camera_count {
+                        if let Some(camera_entity) = crate::context::query_nth_camera(context, *active_camera_index) {
                             context.resources.active_camera_entity = Some(camera_entity);
                         }
                     }

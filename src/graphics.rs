@@ -207,9 +207,9 @@ fn update_panes_system(context: &mut crate::context::Context) {
         // Find which viewport was clicked
         for (kind, viewport) in &viewports {
             if viewport.contains(egui::pos2(mouse_pos.x as f32, mouse_pos.y as f32)) {
-                if let crate::ui::PaneKind::Camera { index } = kind {
+                if let crate::ui::PaneKind::Scene { active_camera_index } = kind {
                     // If we clicked a camera viewport, select its entity
-                    if let Some(camera_entity) = query_nth_camera(context, *index) {
+                    if let Some(camera_entity) = query_nth_camera(context, *active_camera_index) {
                         context.resources.user_interface.selected_entity = Some(camera_entity);
                     }
                 }
@@ -221,8 +221,8 @@ fn update_panes_system(context: &mut crate::context::Context) {
     // Pre-collect camera matrices with viewport-specific aspect ratios
     let mut camera_matrices = Vec::new();
     for (kind, viewport) in &viewports {
-        let matrices = if let crate::ui::PaneKind::Camera { index } = kind {
-            if let Some(camera_entity) = query_nth_camera(context, *index) {
+        let matrices = if let crate::ui::PaneKind::Scene { active_camera_index } = kind {
+            if let Some(camera_entity) = query_nth_camera(context, *active_camera_index) {
                 if let Some(_camera) = get_component::<Camera>(context, camera_entity, CAMERA) {
                     if let Some(transform) = get_component::<GlobalTransform>(context, camera_entity, GLOBAL_TRANSFORM) {
                         let view = nalgebra_glm::inverse(&transform.0);
@@ -333,12 +333,12 @@ fn update_panes_system(context: &mut crate::context::Context) {
     };
 
     // Update each viewport
-    for ((target, (kind, viewport)), matrices) in renderer.targets.iter_mut()
+    for ((target, (kind, _viewport)), matrices) in renderer.targets.iter_mut()
         .zip(viewports.iter())
         .zip(camera_matrices.iter())
     {
         match kind {
-            crate::ui::PaneKind::Camera { .. } => {
+            crate::ui::PaneKind::Scene { active_camera_index: _ } => {
                 if let Some(matrices) = matrices {
                     update_grid(matrices, &renderer.gpu.queue, &target.grid);
                     update_sky(matrices, &renderer.gpu.queue, &target.sky);
@@ -544,7 +544,7 @@ fn render_pane(
     viewport_size: (u32, u32),
 ) {
     let clear_color = match pane_kind {
-        crate::ui::PaneKind::Camera { index: _ } => wgpu::Color::BLACK,
+        crate::ui::PaneKind::Scene { .. } => wgpu::Color::BLACK,
         crate::ui::PaneKind::Color(color) => wgpu::Color {
             r: (color.r() as f64 / 255.0),
             g: (color.g() as f64 / 255.0),
@@ -584,7 +584,7 @@ fn render_pane(
         0.0, 1.0
     );
 
-    if matches!(pane_kind, crate::ui::PaneKind::Camera { index: _ }) {
+    if matches!(pane_kind, crate::ui::PaneKind::Scene { .. }) {
         render_sky(&mut render_pass, &target.sky);
         render_lines(&mut render_pass, &target.lines);
         render_quads(&mut render_pass, &target.quads);
