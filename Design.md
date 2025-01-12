@@ -1,51 +1,47 @@
-# Design
+# Nightshade Engine Design
 
-(rough notes, wip)
+## Architecture Overview
 
-run.rs is entry point, has start() function and step() main loop
+Nightshade follows Data-Oriented Design principles rather than traditional OOP. The core architecture consists of:
 
-window.rs has winit supporting code 
+### Entry Points & Core Flow
 
-logic for particular domain goes in related module
+- `run.rs` is entry point, has `start()` function and `step()` main loop
+- `window.rs` has winit supporting code 
+- Logic for particular domain goes in related module
 
-adds structs that are used either as `Component`s
-or grouping return data / input args for `Queries`
-
-structs top of file, followed by systems, queries
-
-private implementation goes in with systems and queries, typically to support systems or help them reuse logic
-
----
-
-Engine Architecture:
-
-State:
-- Components
-- Resources
-
-Logic:
-- Systems
-- Queries
-- Commands
-- 
-
-----
-
-Engine Context:
-
+### Engine Context
+k
 - Declared as an entity component system 
 - Contains components that any entity can have
 - Contains resources that contains all shared state
 
-components:
+State:
 
-- Custom plain data struct or a Newtype wrapping a plain data structs
+- Components
+- Resources
+
+Logic:
+
+- Systems
+- Queries
+- Commands
+- Events
+
+## Component Design
+
+Components are:
+
+- Custom plain data struct or a Newtype wrapping plain data structs
   - Newtype used to wrap types declared outside the crate like u32, nalgebra_glm::Mat4, etc
 - Required derives:
-    - #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-- Listed in the ecs component list in the `ecs!` macro.
-- May have `impl {}` but *only* for a constructor `pub fn new(/*args*/) -> Self` 
-  or for read-only operations. These are like immutable queries, but at the struct-level.
+  - `#[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]`
+- Listed in the ecs component list in the `ecs!` macro
+- May have `impl {}` but *only* for:
+  - Constructor `pub fn new(/*args*/) -> Self`
+  - Read-only operations (like immutable queries at struct-level)
+
+Example Components:
 
 ```rust
 // A newtype wrapping a type we didn't create
@@ -61,15 +57,18 @@ pub struct LocalTransform {
 }
 ```
 
-systems:
+## Systems
 
-stateless free functions that take the `Context`
-access / update resources and entity components
+Systems are stateless free functions that take the `Context` and access/update resources and entity components.
 
-- stateless because systems take in the `Context` only, not `self`
-- may use ecs query_entities() with a component mask set to find and mutate entities
-- may iterate over the ecs Context entity tables and checks component masks
-- suffixed with `system_` (arbitrary but helpful)
+Characteristics:
+
+- Stateless (take `Context` only, not `self`)
+- May use ecs query_entities() with component mask
+- May iterate over Context entity tables and check component masks
+- Suffixed with `_system` (arbitrary but helpful)
+
+Example System:
 
 ```rust
 /// A basic system
@@ -78,8 +77,6 @@ pub fn camera_system(context: &mut crate::Context) {
         .into_iter()
         .for_each(|entity| {
             let (local_transform_matrix, _, right, up) = {
-                // Ensure that the type and mask match
-                // LOCAL_TRANSFORM is the mask for the LocalTransform type
                 let Some(local_transform) =
                     get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
                 else {
@@ -91,33 +88,29 @@ pub fn camera_system(context: &mut crate::Context) {
 }
 ```
 
-Also, `query_entities` ensures that the entity has the components specified in the mask. 
-Our mask was here was `LOCAL_TRANSFORM`, so `.unwrap()` is safe to use for getting the components
-rather than early returns.
+Note: When using `query_entities`, component access is safe:
 
 ```rust
-/// A basic system
 pub fn camera_system(context: &mut crate::Context) {
     query_entities(context, ACTIVE | CAMERA | LOCAL_TRANSFORM)
         .into_iter()
         .for_each(|entity| {
-                // Ensure that the type and mask match
-                // LOCAL_TRANSFORM is the mask for the LocalTransform type
                 let _local_transform = get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM).unwrap();
-                // ...
+                // Safe to unwrap as query_entities ensures components exist
         })
 ```
 
-queries:
+## Queries
 
-stateless free functions that take the `Context` and arbitrary input args,
-*read* resources and entity components, then return some result.
+Queries are stateless functions that:
 
-- Queries do *not* mutate the world
-- prefixed with `query_` (arbitrary but helpful)
+- Take `Context` and input args
+- *Read* resources and entity components
+- Return some result
+- Do *not* mutate the world
+- Prefixed with `query_` (arbitrary but helpful)
 
-
-Example:
+Example Query:
 
 ```rust
 /// Queries for root nodes by looking for entities that do not have a Parent component
@@ -138,77 +131,59 @@ pub fn query_root_nodes(context: &Context) -> Vec<EntityId> {
 }
 ```
 
-commands:
+## Commands & Events
 
-stateless free functions that take in a `Context` and arbitrary input args,
-*mutate* resources and entity components, and do *not* return a result.
+Commands:
 
-Commands are meant to be queuable, dispatchable single-shot world modifications.
+- Stateless functions taking `Context` and args
+- *Mutate* resources and components
+- Do *not* return results
+- Meant to be queuable, dispatchable single-shot world modifications
 
-events:
+Events:
 
-stateless free functions that take in a `Context` and an `winit::event::WindowEvent`
-These update world resources in response to events from the main event loop.
-This would update the resources for things like the mouse state, keyboard state, etc.
+- Take `Context` and `winit::event::WindowEvent`
+- Update world resources in response to window events
+- Handle mouse state, keyboard state, etc.
 
-Notes:
+## Safety Notes
 
-- 2 unsafe lines are used for get_component and get_component_mut, and are verifiably safe as long as the component mask and provided type match
+The ECS uses only 2 unsafe lines for get_component and get_component_mut, which are safe when:
 
-`Good` example (the unsafe line in get_component is valid): `get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)` because `LOCAL_TRANSFORM` is the mask for `LocalTransform`
+- Component mask and provided type match
 
-`Bad` example (the unsafe line in get_component is valid): `get_component_mut::<Name>(context, entity, LOCAL_TRANSFORM)` because `Name` is not the correct type to use with `LOCAL_TRANSFORM`
+Good example (safe):
 
-## Help:
+```rust
+get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
+```
 
-- I want to X
+Bad example (unsafe):
 
-## Ecs Explanation
+```rust
+get_component_mut::<Name>(context, entity, LOCAL_TRANSFORM)
+```
 
-TODO
+## Data-Oriented Design Philosophy
 
-### Philosophy
-
-Data Oriented Design:
+Key resources:
 
 - [Mike Acton - Data Oriented Design and C++](https://www.youtube.com/watch?v=rX0ItVEVjHc)
 - [Games from Within - Data Oriented Design](https://gamesfromwithin.com/data-oriented-design)
 - [The Data Oriented Design Book](https://www.dataorienteddesign.com/dodmain/dodmain.html)
 
-Essentially, we avoid adding abstractions to prevent the software architecture becoming a rube-goldberg machine of discrete logical abstractions. Systems can become difficult to reason about with traditional object oriented programming, even when done correctly.
+Core principles:
 
-Instead of classes from object oriented programming, state is instead just plain data structures that may be composed, and stateless free functions that operate on them
+- Avoid unnecessary abstractions
+- State as plain data structures
+- Logic as stateless functions
+- Performance through data layout
+- Archetype component tables for ECS
+- All state in Components and Resources
+- All logic in Systems, Queries, Commands, and Events
 
-Nightshade uses a custom entity component system that allows access to all entities, their components, and all resources (state not owned by entities). It is referred to as `Context`, and it contains all state in Nightshade.
+The custom ECS implementation is based on the [freecs](https://crates.io/crates/freecs) crate, inlined with no modifications.
 
-For performance, the ecs is using archetype component tables. The design is a ~500 line rust macro. I made an open-source crate named `[freecs](https://crates.io/crates/freecs)` for a reusable implementation. It is inlined in Nightshade, with not changes made.
+---
 
-All state is declared in components and resources plain data structs
- - Components are state owned by an entity
- - Resources are shared state
- - Both Components and Resources are available to systems, queries, commands, and events
-
-All logic is declared in systems, queries, commands, and events which all have their own helper logic.
- - All logic is in stateless free functions
-
-
-Examples:
-    Ecs:
-
-    Components:
-
-    Resources:
-
-    Systems:
-    
-    Queries:
-
-    Events:
-
-    Commands:
-
-
-
---
-
-systems don't have to be public, they can be supporting another system
+This is a living document and will be updated as the engine evolves
