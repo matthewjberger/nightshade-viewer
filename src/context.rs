@@ -9,6 +9,7 @@ crate::ecs! {
         quads: Quads => QUADS,
         name: Name => NAME,
         parent: Parent => PARENT,
+        scene: Scene => SCENE,
     }
     Resources {
         window: window::Window,
@@ -518,4 +519,25 @@ pub fn update_global_transforms_system(context: &mut Context) {
                 get_component_mut::<GlobalTransform>(context, entity, GLOBAL_TRANSFORM).unwrap();
             *global_transform = GlobalTransform(new_global_transform);
         });
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Scene {
+    pub name: String,
+    pub active: bool,
+}
+
+pub fn create_scene(context: &mut Context) -> EntityId {
+    let scene_entity = spawn_entities(context, SCENE, 1)[0];
+    if let Some(scene) = get_component_mut::<Scene>(context, scene_entity, SCENE) {
+        *scene = Scene {
+            name: format!("Scene {}", scene_entity.id),
+            active: true,
+        };
+    }
+    scene_entity
+}
+
+pub fn query_scenes(context: &Context) -> Vec<EntityId> {
+    query_entities(context, SCENE)
 }

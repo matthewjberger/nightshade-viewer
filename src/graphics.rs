@@ -1,5 +1,3 @@
-use crate::prelude::MouseState;
-
 /// A resource for graphics state
 #[derive(Default)]
 pub struct Graphics {
@@ -191,7 +189,6 @@ pub fn resize_renderer(context: &mut crate::context::Context, width: u32, height
 fn update_panes_system(context: &mut crate::context::Context) {
     use crate::context::*;
 
-    // Get viewports first since we need them for camera collection
     let viewports = context
         .resources
         .user_interface
@@ -201,39 +198,29 @@ fn update_panes_system(context: &mut crate::context::Context) {
         .copied()
         .collect::<Vec<_>>();
 
-    // Check for viewport clicks and handle camera selection
-    if context.resources.input.mouse.state.contains(MouseState::LEFT_CLICKED) {
-        let mouse_pos = context.resources.input.mouse.position;
-        // Find which viewport was clicked
-        for (kind, viewport) in &viewports {
-            if viewport.contains(egui::pos2(mouse_pos.x as f32, mouse_pos.y as f32)) {
-                if let crate::ui::PaneKind::Scene { active_camera_index } = kind {
-                    // If we clicked a camera viewport, select its entity
-                    if let Some(camera_entity) = query_nth_camera(context, *active_camera_index) {
-                        context.resources.user_interface.selected_entity = Some(camera_entity);
-                    }
-                }
-                break;
-            }
-        }
-    }
-
-    // Pre-collect camera matrices with viewport-specific aspect ratios
     let mut camera_matrices = Vec::new();
     for (kind, viewport) in &viewports {
-        let matrices = if let crate::ui::PaneKind::Scene { active_camera_index } = kind {
-            if let Some(camera_entity) = query_nth_camera(context, *active_camera_index) {
-                if let Some(_camera) = get_component::<Camera>(context, camera_entity, CAMERA) {
-                    if let Some(transform) = get_component::<GlobalTransform>(context, camera_entity, GLOBAL_TRANSFORM) {
+        let matrices = if let crate::ui::PaneKind::Scene {
+            scene_index: _,
+            active_camera_index,
+        } = kind
+        {
+            let cameras = query_entities(context, CAMERA);
+
+            if let Some(camera_entity) = cameras.get(*active_camera_index) {
+                if let Some(_camera) = get_component::<Camera>(context, *camera_entity, CAMERA) {
+                    if let Some(transform) =
+                        get_component::<GlobalTransform>(context, *camera_entity, GLOBAL_TRANSFORM)
+                    {
                         let view = nalgebra_glm::inverse(&transform.0);
                         let projection = nalgebra_glm::perspective_fov(
                             45.0_f32.to_radians(),
                             viewport.width(),
                             viewport.height(),
                             0.1,
-                            1000.0
+                            1000.0,
                         );
-                        
+
                         Some(CameraMatrices {
                             view,
                             projection,
@@ -254,7 +241,6 @@ fn update_panes_system(context: &mut crate::context::Context) {
         camera_matrices.push(matrices);
     }
 
-    // Get all lines and quads data
     let lines: Vec<_> = query_entities(context, LINES | GLOBAL_TRANSFORM)
         .into_iter()
         .filter_map(|entity| {
@@ -266,7 +252,6 @@ fn update_panes_system(context: &mut crate::context::Context) {
                 lines
                     .iter()
                     .map(|line| {
-                        // Transform start and end points by the global transform
                         let start_world = (global_transform.0
                             * nalgebra_glm::vec4(line.start.x, line.start.y, line.start.z, 1.0))
                         .xyz();
@@ -301,13 +286,11 @@ fn update_panes_system(context: &mut crate::context::Context) {
                 quads
                     .iter()
                     .map(|quad| {
-                        // Create scaling matrix for the quad size
                         let scale = nalgebra_glm::scaling(&nalgebra_glm::vec3(
                             quad.size.x,
                             quad.size.y,
                             1.0,
                         ));
-                        // Create translation matrix for the offset
                         let offset = nalgebra_glm::translation(&nalgebra_glm::vec3(
                             quad.offset.x,
                             quad.offset.y,
@@ -332,23 +315,37 @@ fn update_panes_system(context: &mut crate::context::Context) {
         return;
     };
 
-    // Update each viewport
-    for ((target, (kind, _viewport)), matrices) in renderer.targets.iter_mut()
+    for ((target, (kind, _viewport)), matrices) in renderer
+        .targets
+        .iter_mut()
         .zip(viewports.iter())
         .zip(camera_matrices.iter())
     {
         match kind {
-            crate::ui::PaneKind::Scene { active_camera_index: _ } => {
+            crate::ui::PaneKind::Scene {
+                scene_index: _,
+                active_camera_index: _,
+            } => {
                 if let Some(matrices) = matrices {
                     update_grid(matrices, &renderer.gpu.queue, &target.grid);
                     update_sky(matrices, &renderer.gpu.queue, &target.sky);
-                    update_lines_uniform(matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.lines, lines.to_vec());
-                    update_quads_uniform(matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.quads, quads.to_vec());
+                    update_lines_uniform(
+                        matrices,
+                        &renderer.gpu.device,
+                        &renderer.gpu.queue,
+                        &mut target.lines,
+                        lines.to_vec(),
+                    );
+                    update_quads_uniform(
+                        matrices,
+                        &renderer.gpu.device,
+                        &renderer.gpu.queue,
+                        &mut target.quads,
+                        quads.to_vec(),
+                    );
                 }
             }
-            crate::ui::PaneKind::Color(_) => {
-                //
-            }
+            crate::ui::PaneKind::Color(_) => {}
         }
     }
 }
@@ -371,9 +368,11 @@ pub fn render_frame_system(context: &mut crate::context::Context) {
     else {
         return;
     };
+
     let Some(window_handle) = context.resources.window.handle.as_ref() else {
         return;
     };
+
     let screen_descriptor = {
         let (width, height) = context.resources.graphics.viewport_size;
         egui_wgpu::ScreenDescriptor {
@@ -382,7 +381,6 @@ pub fn render_frame_system(context: &mut crate::context::Context) {
         }
     };
 
-    // Ensure we have enough render targets to support the number of viewports
     ensure_viewports(context, viewports.len());
 
     let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
@@ -422,20 +420,8 @@ pub fn render_frame_system(context: &mut crate::context::Context) {
 
     let surface_texture_view = surface_texture
         .texture
-        .create_view(&wgpu::TextureViewDescriptor {
-            label: wgpu::Label::default(),
-            aspect: wgpu::TextureAspect::default(),
-            format: Some(renderer.gpu.surface_config.format),
-            dimension: None,
-            base_mip_level: 0,
-            mip_level_count: None,
-            base_array_layer: 0,
-            array_layer_count: None,
-        });
+        .create_view(&wgpu::TextureViewDescriptor::default());
 
-    encoder.insert_debug_marker("Main Render Pass");
-
-    // Clear the surface texture
     {
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Clear Pass"),
@@ -469,13 +455,9 @@ pub fn render_frame_system(context: &mut crate::context::Context) {
         .iter()
         .zip(renderer.targets.iter())
         .for_each(|((kind, viewport), target)| {
-            let viewport_size = (
-                viewport.width() as u32,
-                viewport.height() as u32
-            );
+            let viewport_size = (viewport.width() as u32, viewport.height() as u32);
             render_pane(&mut encoder, kind, target, viewport_size);
 
-            // Copy with scaling to match viewport size
             let source_origin = wgpu::Origin3d { x: 0, y: 0, z: 0 };
             let destination_origin = wgpu::Origin3d {
                 x: viewport.min.x as u32,
@@ -577,11 +559,22 @@ fn render_pane(
     });
 
     // Set viewport to match pane size
+    let viewport = egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(viewport_size.0 as f32, viewport_size.1 as f32),
+    );
+
+    if viewport.width() <= 0.0 || viewport.height() <= 0.0 {
+        return;
+    }
+
     render_pass.set_viewport(
-        0.0, 0.0,
-        viewport_size.0 as f32,
-        viewport_size.1 as f32,
-        0.0, 1.0
+        viewport.min.x,
+        viewport.min.y,
+        viewport.width().max(1.0),
+        viewport.height().max(1.0),
+        0.0,
+        1.0,
     );
 
     if matches!(pane_kind, crate::ui::PaneKind::Scene { .. }) {
