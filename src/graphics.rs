@@ -218,22 +218,41 @@ fn update_panes_system(context: &mut crate::context::Context) {
         }
     }
 
-    let main_camera = query_nth_camera_matrices(context, 0);
-    let secondary_camera = query_nth_camera_matrices(context, 1);
-    
-    // Pre-collect all other camera matrices
-    let other_cameras: Vec<_> = viewports.iter()
-        .filter_map(|(kind, _)| {
-            if let crate::ui::PaneKind::Camera { index } = kind {
-                if index > &1 {  // Skip main and secondary which we already have
-                    if let Some(camera_entity) = query_nth_camera(context, *index) {
-                        return query_camera_matrices(context, camera_entity);
+    // Pre-collect camera matrices with viewport-specific aspect ratios
+    let mut camera_matrices = Vec::new();
+    for (kind, viewport) in &viewports {
+        let matrices = if let crate::ui::PaneKind::Camera { index } = kind {
+            if let Some(camera_entity) = query_nth_camera(context, *index) {
+                if let Some(camera) = get_component::<Camera>(context, camera_entity, CAMERA) {
+                    if let Some(transform) = get_component::<GlobalTransform>(context, camera_entity, GLOBAL_TRANSFORM) {
+                        let view = nalgebra_glm::inverse(&transform.0);
+                        let projection = nalgebra_glm::perspective_fov(
+                            45.0_f32.to_radians(),
+                            viewport.width(),
+                            viewport.height(),
+                            0.1,
+                            1000.0
+                        );
+                        
+                        Some(CameraMatrices {
+                            view,
+                            projection,
+                            camera_position: transform.0.column(3).xyz(),
+                        })
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
+            } else {
+                None
             }
+        } else {
             None
-        })
-        .collect();
+        };
+        camera_matrices.push(matrices);
+    }
 
     // Get all lines and quads data
     let lines: Vec<_> = query_entities(context, LINES | GLOBAL_TRANSFORM)
@@ -313,33 +332,19 @@ fn update_panes_system(context: &mut crate::context::Context) {
         return;
     };
 
-    let mut other_camera_idx = 0;
-    for (target, (kind, _viewport)) in renderer.targets.iter_mut().zip(viewports.iter()) {
+    // Update each viewport
+    for ((target, (kind, viewport)), matrices) in renderer.targets.iter_mut()
+        .zip(viewports.iter())
+        .zip(camera_matrices.iter())
+    {
         match kind {
-            crate::ui::PaneKind::Camera { index: 0 } => {
-                if let Some(matrices) = main_camera {
-                    update_grid(&matrices, &renderer.gpu.queue, &target.grid);
-                    update_sky(&matrices, &renderer.gpu.queue, &target.sky);
-                    update_lines_uniform(&matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.lines, lines.to_vec());
-                    update_quads_uniform(&matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.quads, quads.to_vec());
-                }
-            }
-            crate::ui::PaneKind::Camera { index: 1 } => {
-                if let Some(matrices) = secondary_camera {
-                    update_grid(&matrices, &renderer.gpu.queue, &target.grid);
-                    update_sky(&matrices, &renderer.gpu.queue, &target.sky);
-                    update_lines_uniform(&matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.lines, lines.to_vec());
-                    update_quads_uniform(&matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.quads, quads.to_vec());
-                }
-            }
-            crate::ui::PaneKind::Camera { index: _ } => {
-                if let Some(matrices) = other_cameras.get(other_camera_idx) {
+            crate::ui::PaneKind::Camera { .. } => {
+                if let Some(matrices) = matrices {
                     update_grid(matrices, &renderer.gpu.queue, &target.grid);
                     update_sky(matrices, &renderer.gpu.queue, &target.sky);
                     update_lines_uniform(matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.lines, lines.to_vec());
                     update_quads_uniform(matrices, &renderer.gpu.device, &renderer.gpu.queue, &mut target.quads, quads.to_vec());
                 }
-                other_camera_idx += 1;
             }
             crate::ui::PaneKind::Color(_) => {
                 //
@@ -463,46 +468,41 @@ pub fn render_frame_system(context: &mut crate::context::Context) {
     viewports
         .iter()
         .zip(renderer.targets.iter())
-        .for_each(|((pane_kind, _viewport), target)| {
-            render_pane(&mut encoder, pane_kind, target);
-        });
+        .for_each(|((kind, viewport), target)| {
+            let viewport_size = (
+                viewport.width() as u32,
+                viewport.height() as u32
+            );
+            render_pane(&mut encoder, kind, target, viewport_size);
 
-    // Composite all viewports by copying them into the color texture
-    {
-        viewports.iter().zip(renderer.targets.iter()).for_each(
-            |((_pane_kind, viewport), target)| {
-                let source_origin = wgpu::Origin3d { x: 0, y: 0, z: 0 };
+            // Copy with scaling to match viewport size
+            let source_origin = wgpu::Origin3d { x: 0, y: 0, z: 0 };
+            let destination_origin = wgpu::Origin3d {
+                x: viewport.min.x as u32,
+                y: viewport.min.y as u32,
+                z: 0,
+            };
 
-                let destination_origin = wgpu::Origin3d {
-                    x: viewport.min.x as u32,
-                    y: viewport.min.y as u32,
-                    z: 0,
-                };
-
-                let size = wgpu::Extent3d {
-                    width: viewport.width() as u32,
-                    height: viewport.height() as u32,
+            encoder.copy_texture_to_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &target.color_texture,
+                    mip_level: 0,
+                    origin: source_origin,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::ImageCopyTexture {
+                    texture: &surface_texture.texture,
+                    mip_level: 0,
+                    origin: destination_origin,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: viewport_size.0,
+                    height: viewport_size.1,
                     depth_or_array_layers: 1,
-                };
-
-                encoder.copy_texture_to_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: &target.color_texture,
-                        mip_level: 0,
-                        origin: source_origin,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::ImageCopyTexture {
-                        texture: &surface_texture.texture,
-                        mip_level: 0,
-                        origin: destination_origin,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    size,
-                );
-            },
-        );
-    }
+                },
+            );
+        });
 
     {
         let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -541,6 +541,7 @@ fn render_pane(
     encoder: &mut wgpu::CommandEncoder,
     pane_kind: &crate::prelude::PaneKind,
     target: &RenderTarget,
+    viewport_size: (u32, u32),
 ) {
     let clear_color = match pane_kind {
         crate::ui::PaneKind::Camera { index: _ } => wgpu::Color::BLACK,
@@ -551,6 +552,8 @@ fn render_pane(
             a: 1.0,
         },
     };
+
+    // Create viewport-sized render pass
     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Viewport Render Pass"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -572,6 +575,14 @@ fn render_pane(
         timestamp_writes: None,
         occlusion_query_set: None,
     });
+
+    // Set viewport to match pane size
+    render_pass.set_viewport(
+        0.0, 0.0,
+        viewport_size.0 as f32,
+        viewport_size.1 as f32,
+        0.0, 1.0
+    );
 
     if matches!(pane_kind, crate::ui::PaneKind::Camera { index: _ }) {
         render_sky(&mut render_pass, &target.sky);
