@@ -1,4 +1,7 @@
-use crate::{api::{execute_command, Command, EntityCommand}, paint::{paint_cube_scene, paint_entity}};
+use crate::{
+    api::{execute_command, Command, EntityCommand},
+    paint::{paint_cube_scene, paint_entity},
+};
 
 #[derive(Default)]
 pub struct UserInterface {
@@ -28,18 +31,18 @@ pub struct TileTreeContext {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum PaneKind {
-    Scene { 
+    Scene {
         scene_index: usize,
-        active_camera_index: usize 
+        active_camera_index: usize,
     },
     Color(egui::Color32),
 }
 
 impl Default for PaneKind {
     fn default() -> Self {
-        Self::Scene { 
+        Self::Scene {
             scene_index: 0,
-            active_camera_index: 0 
+            active_camera_index: 0,
         }
     }
 }
@@ -75,7 +78,10 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
     fn tab_title_for_pane(&mut self, pane: &crate::ui::Pane) -> egui::WidgetText {
         match pane.kind {
-            PaneKind::Scene { scene_index: _, active_camera_index: _ } => "Scene".into(),
+            PaneKind::Scene {
+                scene_index: _,
+                active_camera_index: _,
+            } => "Scene".into(),
             PaneKind::Color(_) => "Color".into(),
         }
     }
@@ -106,10 +112,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         let rect = ui.max_rect();
         self.tile_rects.insert(tile_id, rect);
 
-        if matches!(
-            pane.kind,
-            PaneKind::Scene { .. } | PaneKind::Color(_)
-        ) {
+        if matches!(pane.kind, PaneKind::Scene { .. } | PaneKind::Color(_)) {
             self.viewport_tiles.insert(tile_id, (pane.kind, rect));
         }
 
@@ -128,7 +131,10 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         }
 
         match pane.kind {
-            PaneKind::Scene { active_camera_index: _, scene_index: _ } => {
+            PaneKind::Scene {
+                active_camera_index: _,
+                scene_index: _,
+            } => {
                 // Empty - we'll render the camera view elsewhere
             }
             PaneKind::Color(_) => {
@@ -158,9 +164,9 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                         // Show Scene option
                         let is_scene = matches!(pane.kind, PaneKind::Scene { .. });
                         if ui.selectable_label(is_scene, "Scene").clicked() {
-                            pane.kind = PaneKind::Scene { 
+                            pane.kind = PaneKind::Scene {
                                 scene_index: 0,
-                                active_camera_index: 0 
+                                active_camera_index: 0,
                             };
                         }
 
@@ -171,16 +177,27 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                         }
                     });
 
-                if let PaneKind::Scene { active_camera_index, scene_index: _ } = &mut pane.kind {
+                if let PaneKind::Scene {
+                    active_camera_index,
+                    scene_index: _,
+                } = &mut pane.kind
+                {
                     ui.add_space(4.0);
-                    
-                    let camera_count = crate::context::query_entities(context, crate::context::CAMERA).len();
+
+                    let camera_count =
+                        crate::context::query_entities(context, crate::context::CAMERA).len();
                     egui::ComboBox::new(format!("camera_{}", tile_id.0), "")
                         .selected_text(format!("Camera {}", *active_camera_index + 1))
                         .width(100.0)
                         .show_ui(ui, |ui| {
                             for i in 0..camera_count {
-                                if ui.selectable_label(*active_camera_index == i, format!("Camera {}", i + 1)).clicked() {
+                                if ui
+                                    .selectable_label(
+                                        *active_camera_index == i,
+                                        format!("Camera {}", i + 1),
+                                    )
+                                    .clicked()
+                                {
                                     *active_camera_index = i;
                                 }
                             }
@@ -263,13 +280,19 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
             .get(&selected_tile)
         {
             match pane_kind {
-                PaneKind::Scene { active_camera_index, scene_index: _ } => {
+                PaneKind::Scene {
+                    active_camera_index,
+                    scene_index: _,
+                } => {
                     // Get total number of cameras
-                    let camera_count = crate::context::query_entities(context, crate::context::CAMERA).len();
-                    
+                    let camera_count =
+                        crate::context::query_entities(context, crate::context::CAMERA).len();
+
                     // Only try to select camera if index is valid
                     if *active_camera_index < camera_count {
-                        if let Some(camera_entity) = crate::context::query_nth_camera(context, *active_camera_index) {
+                        if let Some(camera_entity) =
+                            crate::context::query_nth_camera(context, *active_camera_index)
+                        {
                             context.resources.active_camera_entity = Some(camera_entity);
                         }
                     }
@@ -650,13 +673,15 @@ fn camera_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui)
 
     ui.group(|ui| {
         ui.label("Camera");
-        if let Some(_camera) = get_component_mut::<Camera>(context, selected_entity, CAMERA) {
+        if let Some(camera) = get_component_mut::<Camera>(context, selected_entity, CAMERA) {
+            ui.horizontal(|ui| {
+                ui.label("FOV:");
+                ui.add(egui::Slider::new(&mut camera.fov, 1.0..=120.0).suffix("°"));
+            });
+
             if ui.button("Remove").clicked() {
                 remove_components(context, selected_entity, CAMERA);
-                context.resources.user_interface.selected_entity = None;
             }
-        } else if ui.button("Add").clicked() {
-            add_components(context, selected_entity, CAMERA);
         }
     });
 }
@@ -695,11 +720,10 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
 
                 ui.separator();
             });
-        
-        // Add command panel
+
         ui.group(|ui| {
             ui.label("Commands");
-            
+
             if ui.button("Spawn Cube").clicked() {
                 let command = Command::Entity(EntityCommand::SpawnCube {
                     position: nalgebra_glm::vec3(0.0, 0.0, 0.0),

@@ -208,18 +208,12 @@ fn update_panes_system(context: &mut crate::context::Context) {
             let cameras = query_entities(context, CAMERA);
 
             if let Some(camera_entity) = cameras.get(*active_camera_index) {
-                if let Some(_camera) = get_component::<Camera>(context, *camera_entity, CAMERA) {
+                if let Some(camera) = get_component::<Camera>(context, *camera_entity, CAMERA) {
                     if let Some(transform) =
                         get_component::<GlobalTransform>(context, *camera_entity, GLOBAL_TRANSFORM)
                     {
                         let view = nalgebra_glm::inverse(&transform.0);
-                        let projection = nalgebra_glm::perspective_fov(
-                            45.0_f32.to_radians(),
-                            viewport.width(),
-                            viewport.height(),
-                            0.1,
-                            1000.0,
-                        );
+                        let projection = camera.projection_matrix(viewport.width() / viewport.height());
 
                         Some(CameraMatrices {
                             view,

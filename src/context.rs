@@ -115,15 +115,29 @@ pub struct Quad {
     pub color: nalgebra_glm::Vec4,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Camera {
     pub projection: Projection,
+    pub fov: f32,
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            projection: Projection::Perspective(PerspectiveCamera::default()),
+            fov: 45.0,
+        }
+    }
 }
 
 impl Camera {
     pub fn projection_matrix(&self, aspect_ratio: f32) -> nalgebra_glm::Mat4 {
         match &self.projection {
-            Projection::Perspective(camera) => camera.matrix(aspect_ratio),
+            Projection::Perspective(camera) => {
+                let mut camera = camera.clone();
+                camera.y_fov_rad = self.fov.to_radians();
+                camera.matrix(aspect_ratio)
+            }
             Projection::Orthographic(camera) => camera.matrix(),
         }
     }
@@ -313,27 +327,26 @@ pub fn query_nth_camera(context: &Context, index: usize) -> Option<EntityId> {
 
 /// Initializes a camera with proper transform settings
 pub fn initialize_camera_transform(context: &mut Context, camera_entity: EntityId) {
-    if let Some(local_transform) = 
-        get_component_mut::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM) 
+    if let Some(local_transform) =
+        get_component_mut::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM)
     {
         // Set a default position offset from origin
         local_transform.translation = nalgebra_glm::vec3(0.0, 4.0, 5.0);
-        
+
         // Ensure rotation is looking at origin with proper up vector
         let camera_pos = local_transform.translation;
         let target = nalgebra_glm::Vec3::zeros();
         let up = nalgebra_glm::Vec3::y();
-        
+
         // Calculate rotation to look at target
         let forward = nalgebra_glm::normalize(&(target - camera_pos));
         let right = nalgebra_glm::normalize(&nalgebra_glm::cross(&up, &forward));
         let new_up = nalgebra_glm::cross(&forward, &right);
-        
+
         // Convert to quaternion
         let rotation_mat = nalgebra_glm::mat3(
-            right.x, new_up.x, -forward.x,
-            right.y, new_up.y, -forward.y, 
-            right.z, new_up.z, -forward.z
+            right.x, new_up.x, -forward.x, right.y, new_up.y, -forward.y, right.z, new_up.z,
+            -forward.z,
         );
         local_transform.rotation = nalgebra_glm::mat3_to_quat(&rotation_mat);
     }
@@ -343,9 +356,11 @@ pub fn initialize_camera_transform(context: &mut Context, camera_entity: EntityI
 pub fn ensure_cameras_initialized_system(context: &mut Context) {
     let camera_entities: Vec<_> = query_entities(context, CAMERA)
         .into_iter()
-        .filter(|entity| !get_component::<LocalTransform>(context, *entity, LOCAL_TRANSFORM).is_some())
+        .filter(|entity| {
+            !get_component::<LocalTransform>(context, *entity, LOCAL_TRANSFORM).is_some()
+        })
         .collect();
-        
+
     for entity in camera_entities {
         add_components(context, entity, LOCAL_TRANSFORM);
         initialize_camera_transform(context, entity);
