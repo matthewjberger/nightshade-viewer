@@ -1,5 +1,5 @@
 use crate::{
-    api::{queue_command, Command, EntityCommand},
+    api::{queue_command, Command, EntityCommand, RequestCommand},
     paint::{paint_cube_scene, paint_entity},
 };
 
@@ -742,6 +742,13 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                         position: nalgebra_glm::vec3(0.0, 0.0, 5.0),
                         name: "Camera".to_string(),
                     }),
+                );
+            }
+
+            if ui.button("List Cameras").clicked() {
+                queue_command(
+                    context,
+                    Command::Request(RequestCommand::RequestCameraEntities),
                 );
             }
         });

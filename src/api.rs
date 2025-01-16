@@ -2,14 +2,22 @@ use crate::prelude::*;
 
 /// Engine outputs
 #[derive(Debug, Clone)]
-pub enum EngineEvent {
+pub enum Event {
     EntityCreated(EntityId),
+    Report(Report),
+}
+
+/// Emitted in response to queries
+#[derive(Debug, Clone)]
+pub enum Report {
+    Cameras(Vec<EntityId>),
 }
 
 /// Inputs to the engine
 #[derive(Debug, Clone)]
 pub enum Command {
     Entity(EntityCommand),
+    Request(RequestCommand),
 }
 
 #[derive(Debug, Clone)]
@@ -25,13 +33,19 @@ pub enum EntityCommand {
     },
 }
 
+/// Commands that request information from the engine
+#[derive(Debug, Clone)]
+pub enum RequestCommand {
+    RequestCameraEntities,
+}
+
 /// Queue a command to be executed by the command system
 pub fn queue_command(context: &mut Context, command: Command) {
     context.resources.commands.push(command);
 }
 
 /// Push an event to be processed by event handlers
-pub fn push_event(context: &mut Context, event: EngineEvent) {
+pub fn push_event(context: &mut Context, event: Event) {
     context.resources.events.push(event);
 }
 
@@ -45,8 +59,24 @@ pub fn execute_commands_system(context: &mut Context) {
             Command::Entity(command) => {
                 execute_entity_command(context, command);
             }
+            Command::Request(command) => {
+                execute_query_command(context, command);
+            }
         }
     }
+}
+
+fn execute_query_command(context: &mut Context, command: RequestCommand) {
+    match command {
+        RequestCommand::RequestCameraEntities => {
+            report_cameras(context);
+        }
+    }
+}
+
+fn report_cameras(context: &mut Context) {
+    let cameras = query_entities(context, CAMERA);
+    push_event(context, Event::Report(Report::Cameras(cameras)));
 }
 
 fn execute_entity_command(context: &mut Context, command: EntityCommand) {
@@ -87,25 +117,17 @@ fn spawn_camera(context: &mut Context, position: nalgebra_glm::Vec3, name: Strin
         context.resources.active_camera_entity = Some(entity);
     }
 
-    push_event(context, EngineEvent::EntityCreated(entity));
+    push_event(context, Event::EntityCreated(entity));
 
     entity
 }
 
 /// System that processes any pending events in the event queue
-pub fn process_events_system(context: &mut Context) {
+pub fn dequeue_events_system(context: &mut Context) {
     let events = std::mem::take(&mut context.resources.events);
-
     for event in events {
-        match event {
-            EngineEvent::EntityCreated(entity) => {
-                if let Some(name) = get_component::<Name>(context, entity, NAME) {
-                    log::info!("[Event] Entity created: {} ({})", name.0, entity);
-                } else {
-                    log::info!("[Event] Entity created: {}", entity);
-                }
-            }
-        }
+        log::info!("[Event] {event:?}");
+        // TODO: custom event handling
     }
 }
 
@@ -143,7 +165,7 @@ fn spawn_cube(
     );
     paint_entity(context, entity, painting);
 
-    push_event(context, EngineEvent::EntityCreated(entity));
+    push_event(context, Event::EntityCreated(entity));
 
     entity
 }

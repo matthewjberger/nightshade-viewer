@@ -24,7 +24,7 @@ pub(crate) fn step(context: &mut context::Context, event: &winit::event::WindowE
     match event {
         winit::event::WindowEvent::RedrawRequested => {
             window::update_frame_timing_system(context);
-            api::process_events_system(context);
+            api::dequeue_events_system(context);
             api::execute_commands_system(context);
             context::ensure_main_camera_system(context);
             context::ensure_cameras_initialized_system(context);
