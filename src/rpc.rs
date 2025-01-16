@@ -1,52 +1,50 @@
 use crate::prelude::*;
 
+// Remote Procedure Calls
 #[derive(Default)]
-pub struct Network {
+pub struct Rpc {
     pub sender: Option<ewebsock::WsSender>,
     pub receiver: Option<ewebsock::WsReceiver>,
-    pub commands: Vec<NetworkCommand>,
     pub is_connected: bool,
 }
 
 #[derive(Debug, Clone)]
-pub enum NetworkCommand {
+pub enum RpcCommand {
     Connect { url: String },
     Disconnect,
-    Send { message: NetworkMessage },
+    Send { message: RpcMessage },
 }
 
 #[derive(Debug, Clone)]
-pub enum NetworkMessage {
+pub enum RpcMessage {
     Text { string: String },
     Binary { bytes: Vec<u8> },
 }
 
 #[derive(Debug, Clone)]
-pub enum NetworkEvent {
+pub enum RpcEvent {
     ConnectionAttemptSucceeded,
     ConnectionAttemptStarted,
     Disconnected,
-    Message { message: NetworkMessage },
-    Error { error: NetworkError },
+    Message { message: RpcMessage },
+    Error { error: RpcError },
 }
 
 #[derive(Debug, Clone)]
-pub enum NetworkError {
+pub enum RpcError {
     ConnectionFailed { url: String },
     Server { error: String },
-    SendFailed { message: NetworkMessage },
+    SendFailed { message: RpcMessage },
 }
 
-pub fn receive_network_events_system(context: &mut Context) {
-    dequeue_websocket_events(context)
-        .into_iter()
-        .for_each(|event| {
-            receive_websocket_events(context, event);
-        });
+pub fn receive_rpc_events_system(context: &mut Context) {
+    dequeue_rpc_events(context).into_iter().for_each(|event| {
+        receive_rpc_event(context, event);
+    });
 }
 
-fn dequeue_websocket_events(context: &mut Context) -> Vec<ewebsock::WsEvent> {
-    let Some(receiver) = context.resources.network.receiver.as_mut() else {
+fn dequeue_rpc_events(context: &mut Context) -> Vec<ewebsock::WsEvent> {
+    let Some(receiver) = context.resources.rpc.receiver.as_mut() else {
         return Vec::new();
     };
     let mut events = Vec::new();
@@ -56,14 +54,14 @@ fn dequeue_websocket_events(context: &mut Context) -> Vec<ewebsock::WsEvent> {
     events
 }
 
-fn receive_websocket_events(context: &mut Context, event: ewebsock::WsEvent) {
+fn receive_rpc_event(context: &mut Context, event: ewebsock::WsEvent) {
     match event {
         ewebsock::WsEvent::Opened => {
-            context.resources.network.is_connected = true;
+            context.resources.rpc.is_connected = true;
             push_event(
                 context,
-                Event::Network {
-                    event: NetworkEvent::ConnectionAttemptStarted,
+                Event::Rpc {
+                    event: RpcEvent::ConnectionAttemptStarted,
                 },
             );
         }
@@ -71,9 +69,9 @@ fn receive_websocket_events(context: &mut Context, event: ewebsock::WsEvent) {
             ewebsock::WsMessage::Text(text) => {
                 push_event(
                     context,
-                    Event::Network {
-                        event: NetworkEvent::Message {
-                            message: NetworkMessage::Text { string: text },
+                    Event::Rpc {
+                        event: RpcEvent::Message {
+                            message: RpcMessage::Text { string: text },
                         },
                     },
                 );
@@ -81,9 +79,9 @@ fn receive_websocket_events(context: &mut Context, event: ewebsock::WsEvent) {
             ewebsock::WsMessage::Binary(bytes) => {
                 push_event(
                     context,
-                    Event::Network {
-                        event: NetworkEvent::Message {
-                            message: NetworkMessage::Binary { bytes },
+                    Event::Rpc {
+                        event: RpcEvent::Message {
+                            message: RpcMessage::Binary { bytes },
                         },
                     },
                 );
@@ -91,12 +89,12 @@ fn receive_websocket_events(context: &mut Context, event: ewebsock::WsEvent) {
             _ => {}
         },
         ewebsock::WsEvent::Error(error) => {
-            context.resources.network.is_connected = false;
+            context.resources.rpc.is_connected = false;
             push_event(
                 context,
-                Event::Network {
-                    event: NetworkEvent::Error {
-                        error: NetworkError::Server {
+                Event::Rpc {
+                    event: RpcEvent::Error {
+                        error: RpcError::Server {
                             error: error.to_string(),
                         },
                     },
@@ -104,26 +102,26 @@ fn receive_websocket_events(context: &mut Context, event: ewebsock::WsEvent) {
             );
         }
         ewebsock::WsEvent::Closed => {
-            context.resources.network.is_connected = false;
+            context.resources.rpc.is_connected = false;
             push_event(
                 context,
-                Event::Network {
-                    event: NetworkEvent::Disconnected,
+                Event::Rpc {
+                    event: RpcEvent::Disconnected,
                 },
             );
         }
     }
 }
 
-pub fn execute_network_command(context: &mut Context, command: NetworkCommand) {
+pub fn execute_rpc_command(context: &mut Context, command: RpcCommand) {
     match command {
-        NetworkCommand::Connect { url } => {
+        RpcCommand::Connect { url } => {
             connect(context, &url);
         }
-        NetworkCommand::Disconnect => {
+        RpcCommand::Disconnect => {
             disconnect(context);
         }
-        NetworkCommand::Send { message } => {
+        RpcCommand::Send { message } => {
             send(context, message);
         }
     }
@@ -133,21 +131,21 @@ fn connect(context: &mut Context, url: &str) {
     if let Ok((sender, receiver)) =
         ewebsock::connect(format!("ws://{url}"), ewebsock::Options::default())
     {
-        context.resources.network.sender = Some(sender);
-        context.resources.network.receiver = Some(receiver);
+        context.resources.rpc.sender = Some(sender);
+        context.resources.rpc.receiver = Some(receiver);
         push_event(
             context,
-            Event::Network {
-                event: NetworkEvent::ConnectionAttemptStarted,
+            Event::Rpc {
+                event: RpcEvent::ConnectionAttemptStarted,
             },
         );
     } else {
         log::error!("Failed to connect to websocket server");
         push_event(
             context,
-            Event::Network {
-                event: NetworkEvent::Error {
-                    error: NetworkError::ConnectionFailed {
+            Event::Rpc {
+                event: RpcEvent::Error {
+                    error: RpcError::ConnectionFailed {
                         url: url.to_string(),
                     },
                 },
@@ -157,17 +155,17 @@ fn connect(context: &mut Context, url: &str) {
 }
 
 fn disconnect(context: &mut Context) {
-    context.resources.network.is_connected = false;
-    context.resources.network.sender.take();
+    context.resources.rpc.is_connected = false;
+    context.resources.rpc.sender.take();
 }
 
-fn send(context: &mut Context, message: NetworkMessage) {
-    if let Some(sender) = context.resources.network.sender.as_mut() {
+fn send(context: &mut Context, message: RpcMessage) {
+    if let Some(sender) = context.resources.rpc.sender.as_mut() {
         match message {
-            NetworkMessage::Text { string: message } => {
+            RpcMessage::Text { string: message } => {
                 sender.send(ewebsock::WsMessage::Text(message));
             }
-            NetworkMessage::Binary { bytes } => {
+            RpcMessage::Binary { bytes } => {
                 sender.send(ewebsock::WsMessage::Binary(bytes));
             }
         }
@@ -175,9 +173,9 @@ fn send(context: &mut Context, message: NetworkMessage) {
         log::error!("Attempted to send message but websocket is not connected");
         push_event(
             context,
-            Event::Network {
-                event: NetworkEvent::Error {
-                    error: NetworkError::SendFailed { message },
+            Event::Rpc {
+                event: RpcEvent::Error {
+                    error: RpcError::SendFailed { message },
                 },
             },
         );

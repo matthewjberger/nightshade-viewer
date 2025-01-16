@@ -1,7 +1,7 @@
 use crate::{
     api::{push_command, Command, EntityCommand, RequestCommand},
-    network::{NetworkCommand, NetworkMessage},
     paint::{paint_cube_scene, paint_entity},
+    rpc::{RpcCommand, RpcMessage},
 };
 
 #[derive(Default)]
@@ -761,7 +761,7 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
             }
 
             ui.group(|ui| {
-                let network_connected = context.resources.network.is_connected;
+                let network_connected = context.resources.rpc.is_connected;
                 if ui
                     .add_enabled(!network_connected, egui::Button::new("Connect Websocket"))
                     .clicked()
@@ -773,8 +773,8 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                         .to_string();
                     push_command(
                         context,
-                        Command::Network {
-                            command: NetworkCommand::Connect { url },
+                        Command::Rpc {
+                            command: RpcCommand::Connect { url },
                         },
                     );
                 }
@@ -794,16 +794,16 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
 
             if ui
                 .add_enabled(
-                    context.resources.network.is_connected,
+                    context.resources.rpc.is_connected,
                     egui::Button::new("Publish Message"),
                 )
                 .clicked()
             {
                 push_command(
                     context,
-                    Command::Network {
-                        command: NetworkCommand::Send {
-                            message: NetworkMessage::Text {
+                    Command::Rpc {
+                        command: RpcCommand::Send {
+                            message: RpcMessage::Text {
                                 string: "Hello, from the nightshade frontend!".to_string(),
                             },
                         },
@@ -813,15 +813,15 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
 
             if ui
                 .add_enabled(
-                    context.resources.network.is_connected,
+                    context.resources.rpc.is_connected,
                     egui::Button::new("Disconnect"),
                 )
                 .clicked()
             {
                 push_command(
                     context,
-                    Command::Network {
-                        command: NetworkCommand::Disconnect,
+                    Command::Rpc {
+                        command: RpcCommand::Disconnect,
                     },
                 );
             }

@@ -753,9 +753,6 @@ async fn create_gpu_async(
                     label: Some("WGPU Device"),
                     memory_hints: wgpu::MemoryHints::default(),
                     required_features: adapter.features(),
-                    #[cfg(not(target_arch = "wasm32"))]
-                    required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-                    #[cfg(all(target_arch = "wasm32"))]
                     required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                 },
                 None,

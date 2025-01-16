@@ -1,4 +1,4 @@
-use crate::{api, context, graphics, input, network, ui, window};
+use crate::{api, context, graphics, input, rpc, ui, window};
 
 /// This is the entry point for the engine
 pub fn run_frontend() {
@@ -31,7 +31,7 @@ pub(crate) fn step(context: &mut context::Context, event: &winit::event::WindowE
             window::update_frame_timing_system(context);
 
             // external network events
-            network::receive_network_events_system(context);
+            rpc::receive_rpc_events_system(context);
 
             // route queued engine events to their domains
             api::route_events_system(context);

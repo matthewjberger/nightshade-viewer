@@ -15,7 +15,7 @@ crate::ecs! {
     Resources {
         window: window::Window,
         graphics: graphics::Graphics,
-        network: network::Network,
+        rpc: rpc::Rpc,
         input: input::Input,
         user_interface: ui::UserInterface,
         active_camera_entity: Option<EntityId>,

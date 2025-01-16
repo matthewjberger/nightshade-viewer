@@ -5,7 +5,7 @@ use crate::prelude::*;
 pub enum Event {
     EntityCreated { entity_id: EntityId },
     Report { report: Report },
-    Network { event: NetworkEvent },
+    Rpc { event: RpcEvent },
 }
 
 /// Emitted in response to queries
@@ -19,7 +19,7 @@ pub enum Report {
 pub enum Command {
     Entity { command: EntityCommand },
     Request { command: RequestCommand },
-    Network { command: NetworkCommand },
+    Rpc { command: RpcCommand },
 }
 
 #[derive(Debug, Clone)]
@@ -64,8 +64,8 @@ pub fn execute_commands_system(context: &mut Context) {
             Command::Request { command } => {
                 execute_query_command(context, command);
             }
-            Command::Network { command } => {
-                execute_network_command(context, command);
+            Command::Rpc { command } => {
+                execute_rpc_command(context, command);
             }
         }
     }

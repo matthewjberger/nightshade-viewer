@@ -3,8 +3,8 @@ mod context;
 mod ecs;
 mod graphics;
 mod input;
-mod network;
 mod paint;
+mod rpc;
 mod run;
 mod ui;
 mod window;
@@ -20,8 +20,8 @@ pub mod prelude {
     pub use crate::api::*;
     pub use crate::context::*;
     pub use crate::input::*;
-    pub use crate::network::*;
     pub use crate::paint::*;
+    pub use crate::rpc::*;
     pub use crate::ui::*;
     pub use crate::window::*;
 }
