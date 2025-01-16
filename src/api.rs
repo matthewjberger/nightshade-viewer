@@ -21,7 +21,11 @@ pub enum EntityCommand {
 pub fn execute_command(context: &mut Context, command: Command) {
     match command {
         Command::Entity(entity_cmd) => match entity_cmd {
-            EntityCommand::SpawnCube { position, size, name } => {
+            EntityCommand::SpawnCube {
+                position,
+                size,
+                name,
+            } => {
                 // Spawn entity with required components
                 let entity = spawn_entities(
                     context,
@@ -35,7 +39,8 @@ pub fn execute_command(context: &mut Context, command: Command) {
                 }
 
                 // Set transform
-                if let Some(transform) = get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
+                if let Some(transform) =
+                    get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
                 {
                     transform.translation = position;
                     transform.scale = nalgebra_glm::vec3(1.0, 1.0, 1.0);
@@ -64,7 +69,8 @@ pub fn execute_command(context: &mut Context, command: Command) {
                 }
 
                 // Set transform
-                if let Some(transform) = get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
+                if let Some(transform) =
+                    get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
                 {
                     transform.translation = position;
                     transform.scale = nalgebra_glm::vec3(1.0, 1.0, 1.0);
@@ -77,4 +83,4 @@ pub fn execute_command(context: &mut Context, command: Command) {
             }
         },
     }
-} 
+}

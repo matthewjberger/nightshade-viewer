@@ -213,7 +213,8 @@ fn update_panes_system(context: &mut crate::context::Context) {
                         get_component::<GlobalTransform>(context, *camera_entity, GLOBAL_TRANSFORM)
                     {
                         let view = nalgebra_glm::inverse(&transform.0);
-                        let projection = camera.projection_matrix(viewport.width() / viewport.height());
+                        let projection =
+                            camera.projection_matrix(viewport.width() / viewport.height());
 
                         Some(CameraMatrices {
                             view,
