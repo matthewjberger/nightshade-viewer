@@ -1,9 +1,8 @@
-#  Nightshade
+# Nightshade
 
  <img src="./src/icon/nightshade.png" alt="drawing" width="100"/>
 
 `Nightshade` is a portable graphics engine, written in rust
-
 
 ## Quickstart
 
@@ -98,4 +97,65 @@ set your laptop's resolution to it's highest possible option.
 
 On a `Macbook M2 Air`:
 
-`Option + F2` -> `Show All Resolutions` -> `2880 x 1864` (highest resolution) 
+`Option + F2` -> `Show All Resolutions` -> `2880 x 1864` (highest resolution)
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Engine["Engine"]
+        Context
+        
+        subgraph State["State"]
+            subgraph Resources["Resources"]
+                Window["Window"]
+                Graphics["Graphics"]
+                Input["Input"]
+                RPC["RPC Client"]
+            end
+
+            subgraph Components["Components"]
+                Transform["Transform"]
+                Camera["Camera"]
+                Name["Name"]
+            end
+        end
+        
+        subgraph Behavior["Behavior"]
+            subgraph Systems["Systems"]
+                UpdateTransforms["update_global_transforms_system"]
+                RenderFrame["render_frame_system"]
+            end
+
+            subgraph Queries["Queries"]
+                QueryEntities["query_entities"]
+                QueryRootNodes["query_root_nodes"]
+                QueryChildren["query_children"]
+            end
+
+            subgraph Commands["Commands"]
+                EntityCommands["spawn_entities"]
+                RequestCommands["request_cameras"]
+            end
+        end
+    end
+
+    subgraph Frontend["Frontend"]
+        Desktop["Desktop App"]
+        Web["Web Browser"]
+    end
+
+    subgraph Backend["Backend"]
+        Server["Server Mode"]
+    end
+
+    Desktop --> Engine
+    Web --> Engine
+    Behavior --> Context
+    Context --> State
+    RPC -.-> Server
+
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:2px;
+    classDef core fill:#e1f3d8,stroke:#333,stroke-width:2px;
+    classDef platform fill:#dae8fc,stroke:#333,stroke-width:2px;
+```
