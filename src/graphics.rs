@@ -755,7 +755,7 @@ async fn create_gpu_async(
                     required_features: adapter.features(),
                     #[cfg(not(target_arch = "wasm32"))]
                     required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-                    #[cfg(all(target_arch = "wasm32", feature = "webgpu"))]
+                    #[cfg(all(target_arch = "wasm32"))]
                     required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                 },
                 None,

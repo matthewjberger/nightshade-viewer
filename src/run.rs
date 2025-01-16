@@ -1,11 +1,15 @@
 use crate::{api, context, graphics, input, network, ui, window};
 
 /// This is the entry point for the engine
-pub fn start() -> Result<(), winit::error::EventLoopError> {
-    let event_loop = winit::event_loop::EventLoop::builder().build()?;
+pub fn run_frontend() {
+    let Ok(event_loop) = winit::event_loop::EventLoop::builder().build() else {
+        eprintln!("Failed to create event loop!");
+        return;
+    };
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-    event_loop.run_app(&mut context::Context::default())?;
-    Ok(())
+    if let Err(error) = event_loop.run_app(&mut context::Context::default()) {
+        eprintln!("Failed to run app: {error}");
+    }
 }
 
 /// This is the main loop, driven by winit window events.

@@ -73,8 +73,8 @@ lint:
     cargo clippy --all --tests -- -D warnings
 
 # Run the desktop app in release mode
-run:
-    cargo run -r
+run *args:
+    cargo run -r -- {{args}}
 
 # Serve the app with wgpu + WebGPU
 run-web:

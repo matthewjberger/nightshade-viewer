@@ -9,8 +9,12 @@ mod run;
 mod ui;
 mod window;
 
+// The backend daemon cannot be run in a browser
+#[cfg(not(target_arch = "wasm32"))]
+pub mod server;
+
 pub use context::Context;
-pub use run::start;
+pub use run::run_frontend;
 
 pub mod prelude {
     pub use crate::api::*;
