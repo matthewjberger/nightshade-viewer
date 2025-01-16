@@ -1,5 +1,6 @@
 use crate::{
-    api::{queue_command, Command, EntityCommand, RequestCommand},
+    api::{push_command, Command, EntityCommand, RequestCommand},
+    network::{NetworkCommand, NetworkMessage},
     paint::{paint_cube_scene, paint_entity},
 };
 
@@ -16,6 +17,7 @@ pub struct UserInterface {
     pub consumed_event: bool,
     pub selected_entity: Option<crate::context::EntityId>,
     pub timeline_state: TimelineState,
+    pub backend_websocket_address: String,
 }
 
 /// A context shared between all the panes in the tile tree
@@ -337,7 +339,7 @@ pub fn ensure_tile_tree_system(context: &mut crate::context::Context) {
 
 /// Creates the UI for the frame and
 /// emits the resources needed for rendering
-pub fn render_ui_system(context: &mut crate::context::Context) {
+pub fn create_ui_system(context: &mut crate::context::Context) {
     update_timeline_system(context);
 
     // Set the context pointer before any UI work
@@ -725,30 +727,102 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
             ui.label("Commands");
 
             if ui.button("Spawn Cube").clicked() {
-                queue_command(
+                push_command(
                     context,
-                    Command::Entity(EntityCommand::SpawnCube {
-                        position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                        size: 1.0,
-                        name: "Cube".to_string(),
-                    }),
+                    Command::Entity {
+                        command: EntityCommand::SpawnCube {
+                            position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                            size: 1.0,
+                            name: "Cube".to_string(),
+                        },
+                    },
                 );
             }
 
             if ui.button("Spawn Camera").clicked() {
-                queue_command(
+                push_command(
                     context,
-                    Command::Entity(EntityCommand::SpawnCamera {
-                        position: nalgebra_glm::vec3(0.0, 0.0, 5.0),
-                        name: "Camera".to_string(),
-                    }),
+                    Command::Entity {
+                        command: EntityCommand::SpawnCamera {
+                            position: nalgebra_glm::vec3(0.0, 0.0, 5.0),
+                            name: "Camera".to_string(),
+                        },
+                    },
                 );
             }
 
             if ui.button("List Cameras").clicked() {
-                queue_command(
+                push_command(
                     context,
-                    Command::Request(RequestCommand::RequestCameraEntities),
+                    Command::Request {
+                        command: RequestCommand::RequestCameraEntities,
+                    },
+                );
+            }
+
+            ui.group(|ui| {
+                let network_connected = context.resources.network.is_connected;
+                if ui
+                    .add_enabled(!network_connected, egui::Button::new("Connect Websocket"))
+                    .clicked()
+                {
+                    let url = context
+                        .resources
+                        .user_interface
+                        .backend_websocket_address
+                        .to_string();
+                    push_command(
+                        context,
+                        Command::Network {
+                            command: NetworkCommand::Connect { url },
+                        },
+                    );
+                }
+                if context
+                    .resources
+                    .user_interface
+                    .backend_websocket_address
+                    .is_empty()
+                {
+                    context.resources.user_interface.backend_websocket_address =
+                        "127.0.0.1:9001".to_string();
+                }
+                ui.text_edit_singleline(
+                    &mut context.resources.user_interface.backend_websocket_address,
+                );
+            });
+
+            if ui
+                .add_enabled(
+                    context.resources.network.is_connected,
+                    egui::Button::new("Publish Message"),
+                )
+                .clicked()
+            {
+                push_command(
+                    context,
+                    Command::Network {
+                        command: NetworkCommand::Send {
+                            message: NetworkMessage::Text {
+                                string: "Hello, from the nightshade frontend!".to_string(),
+                            },
+                        },
+                    },
+                );
+            }
+
+            if ui
+                .add_enabled(
+                    context.resources.network.is_connected,
+                    egui::Button::new("Disconnect"),
+                )
+                .clicked()
+            {
+                push_command(
+                    context,
+                    Command::Network {
+                        command: NetworkCommand::Disconnect,
+                    },
                 );
             }
         });

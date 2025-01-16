@@ -59,10 +59,15 @@ pub fn reset_input_system(context: &mut crate::context::Context) {
     mouse.state.set(crate::input::MouseState::MOVED, false);
 }
 
-pub fn receive_keyboard_event(
+pub fn receive_input_event(
     context: &mut crate::context::Context,
     event: &winit::event::WindowEvent,
 ) {
+    receive_winit_keyboard_events(context, event);
+    receive_winit_mouse_events(context, event);
+}
+
+fn receive_winit_keyboard_events(context: &mut crate::Context, event: &winit::event::WindowEvent) {
     let winit::event::WindowEvent::KeyboardInput {
         event:
             winit::event::KeyEvent {
@@ -84,10 +89,7 @@ pub fn receive_keyboard_event(
         .or_insert(*state) = *state;
 }
 
-pub fn receive_mouse_event(
-    context: &mut crate::context::Context,
-    event: &winit::event::WindowEvent,
-) {
+fn receive_winit_mouse_events(context: &mut crate::Context, event: &winit::event::WindowEvent) {
     let mouse = &mut context.resources.input.mouse;
     match event {
         winit::event::WindowEvent::MouseInput { button, state, .. } => {

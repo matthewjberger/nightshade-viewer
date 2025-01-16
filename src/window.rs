@@ -170,7 +170,7 @@ pub fn initialize(context: &mut crate::context::Context) {
     context.resources.window.last_frame_start_instant = Some(web_time::Instant::now());
 }
 
-pub fn receive_resize_event(
+pub fn receive_window_event(
     context: &mut crate::context::Context,
     event: &winit::event::WindowEvent,
 ) {

@@ -3,6 +3,7 @@ mod context;
 mod ecs;
 mod graphics;
 mod input;
+mod network;
 mod paint;
 mod run;
 mod ui;
@@ -15,6 +16,7 @@ pub mod prelude {
     pub use crate::api::*;
     pub use crate::context::*;
     pub use crate::input::*;
+    pub use crate::network::*;
     pub use crate::paint::*;
     pub use crate::ui::*;
     pub use crate::window::*;

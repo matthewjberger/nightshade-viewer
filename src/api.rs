@@ -3,21 +3,23 @@ use crate::prelude::*;
 /// Engine outputs
 #[derive(Debug, Clone)]
 pub enum Event {
-    EntityCreated(EntityId),
-    Report(Report),
+    EntityCreated { entity_id: EntityId },
+    Report { report: Report },
+    Network { event: NetworkEvent },
 }
 
 /// Emitted in response to queries
 #[derive(Debug, Clone)]
 pub enum Report {
-    Cameras(Vec<EntityId>),
+    Cameras { entity_ids: Vec<EntityId> },
 }
 
 /// Inputs to the engine
 #[derive(Debug, Clone)]
 pub enum Command {
-    Entity(EntityCommand),
-    Request(RequestCommand),
+    Entity { command: EntityCommand },
+    Request { command: RequestCommand },
+    Network { command: NetworkCommand },
 }
 
 #[derive(Debug, Clone)]
@@ -39,8 +41,8 @@ pub enum RequestCommand {
     RequestCameraEntities,
 }
 
-/// Queue a command to be executed by the command system
-pub fn queue_command(context: &mut Context, command: Command) {
+/// Push a command to be executed by the command system
+pub fn push_command(context: &mut Context, command: Command) {
     context.resources.commands.push(command);
 }
 
@@ -56,11 +58,14 @@ pub fn execute_commands_system(context: &mut Context) {
     for command in commands {
         log::info!("[Command] Executing command: {command:?}");
         match command {
-            Command::Entity(command) => {
+            Command::Entity { command } => {
                 execute_entity_command(context, command);
             }
-            Command::Request(command) => {
+            Command::Request { command } => {
                 execute_query_command(context, command);
+            }
+            Command::Network { command } => {
+                execute_network_command(context, command);
             }
         }
     }
@@ -76,7 +81,14 @@ fn execute_query_command(context: &mut Context, command: RequestCommand) {
 
 fn report_cameras(context: &mut Context) {
     let cameras = query_entities(context, CAMERA);
-    push_event(context, Event::Report(Report::Cameras(cameras)));
+    push_event(
+        context,
+        Event::Report {
+            report: Report::Cameras {
+                entity_ids: cameras,
+            },
+        },
+    );
 }
 
 fn execute_entity_command(context: &mut Context, command: EntityCommand) {
@@ -117,17 +129,16 @@ fn spawn_camera(context: &mut Context, position: nalgebra_glm::Vec3, name: Strin
         context.resources.active_camera_entity = Some(entity);
     }
 
-    push_event(context, Event::EntityCreated(entity));
+    push_event(context, Event::EntityCreated { entity_id: entity });
 
     entity
 }
 
-/// System that processes any pending events in the event queue
-pub fn dequeue_events_system(context: &mut Context) {
+/// Route events to the appropriate domains
+pub fn route_events_system(context: &mut Context) {
     let events = std::mem::take(&mut context.resources.events);
     for event in events {
         log::info!("[Event] {event:?}");
-        // TODO: custom event handling
     }
 }
 
@@ -165,7 +176,7 @@ fn spawn_cube(
     );
     paint_entity(context, entity, painting);
 
-    push_event(context, Event::EntityCreated(entity));
+    push_event(context, Event::EntityCreated { entity_id: entity });
 
     entity
 }

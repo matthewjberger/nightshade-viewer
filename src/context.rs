@@ -15,6 +15,7 @@ crate::ecs! {
     Resources {
         window: window::Window,
         graphics: graphics::Graphics,
+        network: network::Network,
         input: input::Input,
         user_interface: ui::UserInterface,
         active_camera_entity: Option<EntityId>,
@@ -356,11 +357,11 @@ pub fn initialize_camera_transform(context: &mut Context, camera_entity: EntityI
 }
 
 /// System that ensures all cameras have proper initialization
-pub fn ensure_cameras_initialized_system(context: &mut Context) {
+pub fn ensure_camera_transform_system(context: &mut Context) {
     let camera_entities: Vec<_> = query_entities(context, CAMERA)
         .into_iter()
         .filter(|entity| {
-            !get_component::<LocalTransform>(context, *entity, LOCAL_TRANSFORM).is_some()
+            get_component::<LocalTransform>(context, *entity, LOCAL_TRANSFORM).is_none()
         })
         .collect();
 
