@@ -50,7 +50,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::Run) | None => nightshade_core::run_frontend(),
         Some(Command::Server { port }) => {
             env_logger::init();
-            nightshade_core::server::listen(port).await;
+            nightshade_core::server::listen_for_rpc(port).await;
         }
     }
     Ok(())
