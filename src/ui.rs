@@ -1,5 +1,5 @@
 use crate::{
-    api::{execute_command, Command, EntityCommand},
+    api::{queue_command, Command, EntityCommand},
     paint::{paint_cube_scene, paint_entity},
 };
 
@@ -725,20 +725,24 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
             ui.label("Commands");
 
             if ui.button("Spawn Cube").clicked() {
-                let command = Command::Entity(EntityCommand::SpawnCube {
-                    position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                    size: 1.0,
-                    name: "Cube".to_string(),
-                });
-                execute_command(context, command);
+                queue_command(
+                    context,
+                    Command::Entity(EntityCommand::SpawnCube {
+                        position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                        size: 1.0,
+                        name: "Cube".to_string(),
+                    }),
+                );
             }
 
             if ui.button("Spawn Camera").clicked() {
-                let command = Command::Entity(EntityCommand::SpawnCamera {
-                    position: nalgebra_glm::vec3(0.0, 0.0, 5.0),
-                    name: "Camera".to_string(),
-                });
-                execute_command(context, command);
+                queue_command(
+                    context,
+                    Command::Entity(EntityCommand::SpawnCamera {
+                        position: nalgebra_glm::vec3(0.0, 0.0, 5.0),
+                        name: "Camera".to_string(),
+                    }),
+                );
             }
         });
     });

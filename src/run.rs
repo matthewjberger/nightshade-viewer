@@ -1,4 +1,4 @@
-use crate::{context, graphics, input, ui, window};
+use crate::{api, context, graphics, input, ui, window};
 
 /// This is the entry point for the engine
 pub fn start() -> Result<(), winit::error::EventLoopError> {
@@ -22,11 +22,12 @@ pub(crate) fn step(context: &mut context::Context, event: &winit::event::WindowE
     }
 
     match event {
-        // Update every frame
         winit::event::WindowEvent::RedrawRequested => {
+            window::update_frame_timing_system(context);
+            api::process_events_system(context);
+            api::execute_commands_system(context);
             context::ensure_main_camera_system(context);
             context::ensure_cameras_initialized_system(context);
-            window::update_frame_timing_system(context);
             ui::ensure_tile_tree_system(context);
             input::escape_key_exit_system(context);
             context::look_camera_system(context);

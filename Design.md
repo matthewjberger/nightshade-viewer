@@ -77,7 +77,7 @@ Systems can:
 - Access shared resources
 - Modify world state through the Context
 
-There is no trait-based system or dependency management - just plain functions that take `&mut Context`.
+There are no trait-based system and no dependency management - just plain functions that take `&mut Context`.
 
 ## Commands
 
@@ -172,11 +172,11 @@ Functions follow these naming patterns to indicate their purpose:
   pub fn query_root_nodes(context: &Context) -> Vec<EntityId>
   ```
 
-- **Commands**: Suffix with `_command`
+- **Commands**: Direct function names that describe the action
 
   ```rust
-  pub fn spawn_main_camera_command(context: &mut Context) -> EntityId
-  pub fn create_scene_command(context: &mut Context) -> EntityId
+  pub fn spawn_main_camera(context: &mut Context) -> EntityId
+  pub fn create_scene(context: &mut Context) -> EntityId
   ```
 
 ## API Categories
@@ -187,7 +187,7 @@ The engine's functionality is organized into these key categories:
 |----------|---------|---------|---------|
 | Systems | Frame-by-frame world updates | Functions that modify world state | Update transforms, handle input |
 | Queries | Data inspection | Pure functions that read state | Find entities, get hierarchies |
-| Commands | World modification | Functions that make structural changes | Create entities, modify scenes |
+| Commands | World modification | Direct functions or queueable enums | Spawn entities, modify scenes |
 | Components | Core data | Plain data structures | Transform, Camera, Name |
 | Resources | Global state | Shared data accessible to all systems | Window, Input, Graphics |
 
@@ -211,10 +211,10 @@ Each category follows specific patterns:
 
 **Commands**
 
-- Take Context, modify world structure
-- Create/destroy entities
-- Modify component layouts
-- Examples: spawning, scene loading
+- Can be immediate functions or queueable data
+- Handle world mutations in a structured way
+- Follow clear patterns for world modification
+- Examples: spawn_cube, SpawnCamera
 
 **Components**
 

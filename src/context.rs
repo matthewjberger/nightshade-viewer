@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use crate::*;
 
 crate::ecs! {
@@ -17,6 +18,8 @@ crate::ecs! {
         input: input::Input,
         user_interface: ui::UserInterface,
         active_camera_entity: Option<EntityId>,
+        commands: Vec<Command>,
+        events: Vec<EngineEvent>,
     }
 }
 
