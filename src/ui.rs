@@ -677,14 +677,21 @@ fn camera_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui)
 
     ui.group(|ui| {
         ui.label("Camera");
-        if let Some(camera) = get_component_mut::<Camera>(context, selected_entity, CAMERA) {
-            ui.horizontal(|ui| {
-                ui.label("FOV:");
-                ui.add(egui::Slider::new(&mut camera.fov, 1.0..=120.0).suffix("°"));
-            });
+        match get_component_mut::<Camera>(context, selected_entity, CAMERA) {
+            Some(camera) => {
+                ui.horizontal(|ui| {
+                    ui.label("FOV:");
+                    ui.add(egui::Slider::new(&mut camera.fov, 1.0..=120.0).suffix("°"));
+                });
 
-            if ui.button("Remove").clicked() {
-                remove_components(context, selected_entity, CAMERA);
+                if ui.button("Remove Component").clicked() {
+                    remove_components(context, selected_entity, CAMERA);
+                }
+            }
+            None => {
+                if ui.button("Add Camera").clicked() {
+                    add_components(context, selected_entity, CAMERA);
+                }
             }
         }
     });
