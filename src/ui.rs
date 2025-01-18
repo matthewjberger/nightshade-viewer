@@ -1,5 +1,6 @@
 use crate::{
     api::{push_command, Command, EntityCommand, RequestCommand},
+    has_components,
     paint::{paint_cube_scene, paint_entity},
     rpc::{RpcCommand, RpcMessage},
 };
@@ -442,16 +443,103 @@ fn right_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
         ui.label("Properties");
         ui.separator();
         ui.available_width();
-        local_transform_inspector_ui(context, ui);
-        camera_inspector_ui(context, ui);
-        lines_inspector_ui(context, ui);
-        quads_inspector_ui(context, ui);
-        let time = context.resources.window.uptime_milliseconds;
-        if let Some(selected_entity) = context.resources.user_interface.selected_entity {
-            if ui.button("Paint").clicked() {
-                let mut painting = crate::paint::Painting::default();
-                paint_cube_scene(time as _, &mut painting);
-                paint_entity(context, selected_entity, painting);
+
+        if let Some(entity) = context.resources.user_interface.selected_entity {
+            entity_inspector_ui(context, ui, entity);
+        } else {
+            ui.label("No entity selected");
+        }
+    });
+}
+
+fn entity_inspector_ui(
+    context: &mut crate::context::Context,
+    ui: &mut egui::Ui,
+    entity: crate::context::EntityId,
+) {
+    use crate::context::*;
+
+    // Add Component Dropdown
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            ui.label("Add Component:");
+            egui::ComboBox::new("add_component", "Select component...").show_ui(ui, |ui| {
+                if get_component::<LocalTransform>(context, entity, LOCAL_TRANSFORM).is_none()
+                    && ui.button("Transform").clicked()
+                {
+                    add_components(context, entity, LOCAL_TRANSFORM);
+                }
+                if get_component::<Camera>(context, entity, CAMERA).is_none()
+                    && ui.button("Camera").clicked()
+                {
+                    add_components(context, entity, CAMERA);
+                }
+                if get_component::<Lines>(context, entity, LINES).is_none()
+                    && ui.button("Lines").clicked()
+                {
+                    add_components(context, entity, LINES);
+                }
+                if get_component::<Quads>(context, entity, QUADS).is_none()
+                    && ui.button("Quads").clicked()
+                {
+                    add_components(context, entity, QUADS);
+                }
+                if get_component::<Scene>(context, entity, SCENE).is_none()
+                    && ui.button("Scene").clicked()
+                {
+                    add_components(context, entity, SCENE);
+                }
+            });
+        });
+    });
+
+    ui.separator();
+
+    // Show existing components
+    if get_component::<Name>(context, entity, NAME).is_some() {
+        name_inspector_ui(context, ui, entity);
+        ui.separator();
+    }
+
+    if get_component::<LocalTransform>(context, entity, LOCAL_TRANSFORM).is_some() {
+        local_transform_inspector_ui(context, ui, entity);
+        ui.separator();
+    }
+
+    if get_component::<Camera>(context, entity, CAMERA).is_some() {
+        camera_inspector_ui(context, ui, entity);
+        ui.separator();
+    }
+
+    if get_component::<Lines>(context, entity, LINES).is_some() {
+        lines_inspector_ui(context, ui, entity);
+        ui.separator();
+    }
+
+    if get_component::<Quads>(context, entity, QUADS).is_some() {
+        quads_inspector_ui(context, ui, entity);
+        ui.separator();
+    }
+
+    if get_component::<Scene>(context, entity, SCENE).is_some() {
+        scene_inspector_ui(context, ui, entity);
+        ui.separator();
+    }
+}
+
+fn name_inspector_ui(
+    context: &mut crate::context::Context,
+    ui: &mut egui::Ui,
+    entity: crate::context::EntityId,
+) {
+    use crate::context::*;
+
+    ui.group(|ui| {
+        ui.label("Name");
+        if let Some(Name(name)) = get_component_mut::<Name>(context, entity, NAME) {
+            ui.text_edit_singleline(name);
+            if ui.button("Remove Component").clicked() {
+                remove_components(context, entity, NAME);
             }
         }
     });
@@ -471,227 +559,243 @@ fn bottom_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     }
 }
 
-fn lines_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
+fn lines_inspector_ui(
+    context: &mut crate::context::Context,
+    ui: &mut egui::Ui,
+    entity: crate::context::EntityId,
+) {
     use crate::context::*;
-
-    let Some(entity) = context.resources.user_interface.selected_entity else {
-        return;
-    };
 
     ui.group(|ui| {
         ui.label("Lines");
-        match get_component_mut::<Lines>(context, entity, LINES) {
-            Some(Lines(lines)) => {
-                let mut lines_to_remove = Vec::new();
-                for (index, line) in lines.iter_mut().enumerate() {
+        if let Some(Lines(lines)) = get_component_mut::<Lines>(context, entity, LINES) {
+            let mut lines_to_remove = Vec::new();
+            for (index, line) in lines.iter_mut().enumerate() {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Line {}", index));
+                        if ui.button("Remove").clicked() {
+                            lines_to_remove.push(index);
+                        }
+                    });
+
                     ui.group(|ui| {
                         ui.horizontal(|ui| {
-                            ui.label(format!("Line {}", index));
-                            if ui.button("Remove").clicked() {
-                                lines_to_remove.push(index);
+                            ui.label("Start:");
+                            ui.label("x");
+                            ui.add(egui::DragValue::new(&mut line.start.x).speed(0.1));
+                            ui.label("y");
+                            ui.add(egui::DragValue::new(&mut line.start.y).speed(0.1));
+                            ui.label("z");
+                            ui.add(egui::DragValue::new(&mut line.start.z).speed(0.1));
+                        });
+                    });
+
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("End:");
+                            ui.label("x");
+                            ui.add(egui::DragValue::new(&mut line.end.x).speed(0.1));
+                            ui.label("y");
+                            ui.add(egui::DragValue::new(&mut line.end.y).speed(0.1));
+                            ui.label("z");
+                            ui.add(egui::DragValue::new(&mut line.end.z).speed(0.1));
+                        });
+                    });
+
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Color:");
+                            let mut color = egui::Color32::from_rgba_unmultiplied(
+                                (line.color.x * 255.0) as u8,
+                                (line.color.y * 255.0) as u8,
+                                (line.color.z * 255.0) as u8,
+                                (line.color.w * 255.0) as u8,
+                            );
+                            if ui.color_edit_button_srgba(&mut color).changed() {
+                                line.color.x = color.r() as f32 / 255.0;
+                                line.color.y = color.g() as f32 / 255.0;
+                                line.color.z = color.b() as f32 / 255.0;
+                                line.color.w = color.a() as f32 / 255.0;
                             }
                         });
-
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Start:");
-                                ui.label("x");
-                                ui.add(egui::DragValue::new(&mut line.start.x).speed(0.1));
-                                ui.label("y");
-                                ui.add(egui::DragValue::new(&mut line.start.y).speed(0.1));
-                                ui.label("z");
-                                ui.add(egui::DragValue::new(&mut line.start.z).speed(0.1));
-                            });
-                        });
-
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("End:");
-                                ui.label("x");
-                                ui.add(egui::DragValue::new(&mut line.end.x).speed(0.1));
-                                ui.label("y");
-                                ui.add(egui::DragValue::new(&mut line.end.y).speed(0.1));
-                                ui.label("z");
-                                ui.add(egui::DragValue::new(&mut line.end.z).speed(0.1));
-                            });
-                        });
-
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Color:");
-                                let mut color = egui::Color32::from_rgba_unmultiplied(
-                                    (line.color.x * 255.0) as u8,
-                                    (line.color.y * 255.0) as u8,
-                                    (line.color.z * 255.0) as u8,
-                                    (line.color.w * 255.0) as u8,
-                                );
-                                if ui.color_edit_button_srgba(&mut color).changed() {
-                                    line.color.x = color.r() as f32 / 255.0;
-                                    line.color.y = color.g() as f32 / 255.0;
-                                    line.color.z = color.b() as f32 / 255.0;
-                                    line.color.w = color.a() as f32 / 255.0;
-                                }
-                            });
-                        });
                     });
-                }
-
-                // Remove any lines marked for deletion (in reverse order to maintain indices)
-                for index in lines_to_remove.into_iter().rev() {
-                    lines.remove(index);
-                }
-
-                // Add new line button
-                if ui.button("Add Line").clicked() {
-                    lines.push(Line {
-                        start: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                        end: nalgebra_glm::vec3(1.0, 1.0, 1.0),
-                        color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
-                    });
-                }
-
-                if ui.button("Remove").clicked() {
-                    remove_components(context, entity, LINES);
-                }
+                });
             }
-            None => {
-                if ui.button("Add Lines").clicked() {
-                    add_components(context, entity, LINES);
-                    if let Some(Lines(lines)) = get_component_mut::<Lines>(context, entity, LINES) {
-                        *lines = vec![Line {
-                            start: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                            end: nalgebra_glm::vec3(1.0, 1.0, 1.0),
-                            color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
-                        }];
-                    }
-                }
+
+            // Remove any lines marked for deletion (in reverse order to maintain indices)
+            for index in lines_to_remove.into_iter().rev() {
+                lines.remove(index);
+            }
+
+            // Add new line button
+            if ui.button("Add Line").clicked() {
+                lines.push(Line {
+                    start: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                    end: nalgebra_glm::vec3(1.0, 1.0, 1.0),
+                    color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
+                });
+            }
+
+            if ui.button("Remove").clicked() {
+                remove_components(context, entity, LINES);
             }
         }
     });
 }
 
-pub fn quads_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
+pub fn quads_inspector_ui(
+    context: &mut crate::context::Context,
+    ui: &mut egui::Ui,
+    entity: crate::context::EntityId,
+) {
     use crate::context::*;
-
-    let Some(entity) = context.resources.user_interface.selected_entity else {
-        return;
-    };
 
     ui.group(|ui| {
         ui.label("Quads");
-        match get_component_mut::<Quads>(context, entity, QUADS) {
-            Some(Quads(quads)) => {
-                // Show existing quads with edit/delete capabilities
-                let mut quads_to_remove = Vec::new();
-                for (index, quad) in quads.iter_mut().enumerate() {
+        if let Some(Quads(quads)) = get_component_mut::<Quads>(context, entity, QUADS) {
+            // Show existing quads with edit/delete capabilities
+            let mut quads_to_remove = Vec::new();
+            for (index, quad) in quads.iter_mut().enumerate() {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Quad {}", index));
+                        if ui.button("Remove").clicked() {
+                            quads_to_remove.push(index);
+                        }
+                    });
+
                     ui.group(|ui| {
                         ui.horizontal(|ui| {
-                            ui.label(format!("Quad {}", index));
-                            if ui.button("Remove").clicked() {
-                                quads_to_remove.push(index);
+                            ui.label("Size:");
+                            ui.label("width");
+                            ui.add(egui::DragValue::new(&mut quad.size.x).speed(0.1));
+                            ui.label("height");
+                            ui.add(egui::DragValue::new(&mut quad.size.y).speed(0.1));
+                        });
+                    });
+
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Offset:");
+                            ui.label("x");
+                            ui.add(egui::DragValue::new(&mut quad.offset.x).speed(0.1));
+                            ui.label("y");
+                            ui.add(egui::DragValue::new(&mut quad.offset.y).speed(0.1));
+                            ui.label("z");
+                            ui.add(egui::DragValue::new(&mut quad.offset.z).speed(0.1));
+                        });
+                    });
+
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Color:");
+                            let mut color = egui::Color32::from_rgba_unmultiplied(
+                                (quad.color.x * 255.0) as u8,
+                                (quad.color.y * 255.0) as u8,
+                                (quad.color.z * 255.0) as u8,
+                                (quad.color.w * 255.0) as u8,
+                            );
+                            if ui.color_edit_button_srgba(&mut color).changed() {
+                                quad.color.x = color.r() as f32 / 255.0;
+                                quad.color.y = color.g() as f32 / 255.0;
+                                quad.color.z = color.b() as f32 / 255.0;
+                                quad.color.w = color.a() as f32 / 255.0;
                             }
                         });
-
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Size:");
-                                ui.label("width");
-                                ui.add(egui::DragValue::new(&mut quad.size.x).speed(0.1));
-                                ui.label("height");
-                                ui.add(egui::DragValue::new(&mut quad.size.y).speed(0.1));
-                            });
-                        });
-
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Offset:");
-                                ui.label("x");
-                                ui.add(egui::DragValue::new(&mut quad.offset.x).speed(0.1));
-                                ui.label("y");
-                                ui.add(egui::DragValue::new(&mut quad.offset.y).speed(0.1));
-                                ui.label("z");
-                                ui.add(egui::DragValue::new(&mut quad.offset.z).speed(0.1));
-                            });
-                        });
-
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Color:");
-                                let mut color = egui::Color32::from_rgba_unmultiplied(
-                                    (quad.color.x * 255.0) as u8,
-                                    (quad.color.y * 255.0) as u8,
-                                    (quad.color.z * 255.0) as u8,
-                                    (quad.color.w * 255.0) as u8,
-                                );
-                                if ui.color_edit_button_srgba(&mut color).changed() {
-                                    quad.color.x = color.r() as f32 / 255.0;
-                                    quad.color.y = color.g() as f32 / 255.0;
-                                    quad.color.z = color.b() as f32 / 255.0;
-                                    quad.color.w = color.a() as f32 / 255.0;
-                                }
-                            });
-                        });
                     });
-                }
-
-                // Remove any quads marked for deletion (in reverse order to maintain indices)
-                for index in quads_to_remove.into_iter().rev() {
-                    quads.remove(index);
-                }
-
-                // Add new quad button
-                if ui.button("Add Quad").clicked() {
-                    quads.push(Quad {
-                        size: nalgebra_glm::vec2(1.0, 1.0),
-                        offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                        color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
-                    });
-                }
-
-                if ui.button("Remove Component").clicked() {
-                    remove_components(context, entity, QUADS);
-                }
+                });
             }
-            None => {
-                if ui.button("Add Quads").clicked() {
-                    add_components(context, entity, QUADS);
-                    if let Some(Quads(quads)) = get_component_mut::<Quads>(context, entity, QUADS) {
-                        *quads = vec![Quad {
-                            size: nalgebra_glm::vec2(1.0, 1.0),
-                            offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                            color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
-                        }];
-                    }
-                }
+
+            // Remove any quads marked for deletion (in reverse order to maintain indices)
+            for index in quads_to_remove.into_iter().rev() {
+                quads.remove(index);
+            }
+
+            // Add new quad button
+            if ui.button("Add Quad").clicked() {
+                quads.push(Quad {
+                    size: nalgebra_glm::vec2(1.0, 1.0),
+                    offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                    color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
+                });
+            }
+
+            if ui.button("Remove Component").clicked() {
+                remove_components(context, entity, QUADS);
             }
         }
     });
 }
 
-fn camera_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
+fn camera_inspector_ui(
+    context: &mut crate::context::Context,
+    ui: &mut egui::Ui,
+    entity: crate::context::EntityId,
+) {
     use crate::context::*;
-
-    let Some(selected_entity) = context.resources.user_interface.selected_entity else {
-        return;
-    };
 
     ui.group(|ui| {
         ui.label("Camera");
-        match get_component_mut::<Camera>(context, selected_entity, CAMERA) {
-            Some(camera) => {
-                ui.horizontal(|ui| {
-                    ui.label("FOV:");
-                    ui.add(egui::Slider::new(&mut camera.fov, 1.0..=120.0).suffix("°"));
-                });
+        if let Some(camera) = get_component_mut::<Camera>(context, entity, CAMERA) {
+            // Projection type selector
+            ui.horizontal(|ui| {
+                ui.label("Projection:");
+                let mut is_perspective = matches!(camera.projection, Projection::Perspective(_));
+                if ui
+                    .radio_value(&mut is_perspective, true, "Perspective")
+                    .clicked()
+                {
+                    camera.projection = Projection::Perspective(PerspectiveCamera::default());
+                }
+                if ui
+                    .radio_value(&mut is_perspective, false, "Orthographic")
+                    .clicked()
+                {
+                    camera.projection = Projection::Orthographic(OrthographicCamera::default());
+                }
+            });
 
-                if ui.button("Remove Component").clicked() {
-                    remove_components(context, selected_entity, CAMERA);
+            // Projection-specific settings
+            match &mut camera.projection {
+                Projection::Perspective(perspective) => {
+                    ui.horizontal(|ui| {
+                        ui.label("FOV:");
+                        ui.add(egui::Slider::new(&mut camera.fov, 1.0..=120.0).suffix("°"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Near:");
+                        ui.add(egui::DragValue::new(&mut perspective.z_near).speed(0.1));
+                    });
+                    if let Some(far) = &mut perspective.z_far {
+                        ui.horizontal(|ui| {
+                            ui.label("Far:");
+                            ui.add(egui::DragValue::new(far).speed(0.1));
+                        });
+                    }
+                }
+                Projection::Orthographic(ortho) => {
+                    ui.horizontal(|ui| {
+                        ui.label("Width:");
+                        ui.add(egui::DragValue::new(&mut ortho.x_mag).speed(0.1));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Height:");
+                        ui.add(egui::DragValue::new(&mut ortho.y_mag).speed(0.1));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Near:");
+                        ui.add(egui::DragValue::new(&mut ortho.z_near).speed(0.1));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Far:");
+                        ui.add(egui::DragValue::new(&mut ortho.z_far).speed(0.1));
+                    });
                 }
             }
-            None => {
-                if ui.button("Add Camera").clicked() {
-                    add_components(context, selected_entity, CAMERA);
-                }
+
+            if ui.button("Remove Component").clicked() {
+                remove_components(context, entity, CAMERA);
             }
         }
     });
@@ -885,8 +989,16 @@ fn entity_tree_ui(
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
             ui.horizontal(|ui| {
-                let prefix = "🔵".to_string();
-                let response = ui.selectable_label(selected, format!("{prefix}{name}"));
+                // Choose prefix based on components
+                let prefix = if get_component::<Scene>(context, entity, SCENE).is_some() {
+                    "🎬"
+                } else if get_component::<Camera>(context, entity, CAMERA).is_some() {
+                    "📷"
+                } else {
+                    "🔵"
+                };
+
+                let response = ui.selectable_label(selected, format!("{prefix} {name}"));
 
                 if response.clicked() {
                     context.resources.user_interface.selected_entity = Some(entity);
@@ -923,81 +1035,72 @@ fn entity_tree_ui(
         });
 }
 
-fn local_transform_inspector_ui(context: &mut crate::context::Context, ui: &mut egui::Ui) {
+fn local_transform_inspector_ui(
+    context: &mut crate::context::Context,
+    ui: &mut egui::Ui,
+    entity: crate::context::EntityId,
+) {
     use crate::context::*;
-    let Some(selected_entity) = context.resources.user_interface.selected_entity else {
-        return;
-    };
     let mut uniform_scaling = context.resources.user_interface.uniform_scaling;
+
     ui.group(|ui| {
-        match get_component_mut::<LocalTransform>(context, selected_entity, LOCAL_TRANSFORM) {
-            Some(local_transform) => {
-                ui.group(|ui| {
-                    ui.label("Translation");
-                    ui.horizontal(|ui| {
-                        ui.label("x");
-                        ui.add(egui::DragValue::new(&mut local_transform.translation.x).speed(0.1));
-                        ui.label("y");
-                        ui.add(egui::DragValue::new(&mut local_transform.translation.y).speed(0.1));
-                        ui.label("z");
-                        ui.add(egui::DragValue::new(&mut local_transform.translation.z).speed(0.1));
-                    });
+        ui.label("Transform");
+        if let Some(local_transform) =
+            get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM)
+        {
+            // Translation
+            ui.group(|ui| {
+                ui.label("Position");
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(&mut local_transform.translation.x).speed(0.1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut local_transform.translation.y).speed(0.1));
+                    ui.label("Z");
+                    ui.add(egui::DragValue::new(&mut local_transform.translation.z).speed(0.1));
                 });
-                ui.group(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Scale");
-                        ui.label("X");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut local_transform.scale.x)
-                                    .speed(0.1)
-                                    .range(0..=usize::MAX),
-                            )
-                            .changed()
-                            && uniform_scaling
-                        {
-                            local_transform.scale.y = local_transform.scale.x;
-                            local_transform.scale.z = local_transform.scale.x;
-                        }
-                        ui.label("Y");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut local_transform.scale.y)
-                                    .speed(0.1)
-                                    .range(0..=usize::MAX),
-                            )
-                            .changed()
-                            && uniform_scaling
-                        {
-                            local_transform.scale.x = local_transform.scale.y;
-                            local_transform.scale.z = local_transform.scale.y;
-                        }
-                        ui.label("Z");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut local_transform.scale.z)
-                                    .speed(0.1)
-                                    .range(0..=usize::MAX),
-                            )
-                            .changed()
-                            && uniform_scaling
-                        {
-                            local_transform.scale.x = local_transform.scale.z;
-                            local_transform.scale.y = local_transform.scale.z;
-                        }
-                        ui.separator();
-                        ui.checkbox(&mut uniform_scaling, "Uniform");
-                    });
+            });
+
+            // Scale
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Scale");
+                    ui.checkbox(&mut uniform_scaling, "Uniform");
                 });
-                ui.separator();
-                if ui.button("Remove").clicked() {
-                    remove_components(context, selected_entity, LOCAL_TRANSFORM);
-                }
-            }
-            None => {
-                if ui.button("Add Transform").clicked() {
-                    add_components(context, selected_entity, LOCAL_TRANSFORM);
-                }
+
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    if ui
+                        .add(egui::DragValue::new(&mut local_transform.scale.x).speed(0.1))
+                        .changed()
+                        && uniform_scaling
+                    {
+                        local_transform.scale.y = local_transform.scale.x;
+                        local_transform.scale.z = local_transform.scale.x;
+                    }
+                    ui.label("Y");
+                    if ui
+                        .add(egui::DragValue::new(&mut local_transform.scale.y).speed(0.1))
+                        .changed()
+                        && uniform_scaling
+                    {
+                        local_transform.scale.x = local_transform.scale.y;
+                        local_transform.scale.z = local_transform.scale.y;
+                    }
+                    ui.label("Z");
+                    if ui
+                        .add(egui::DragValue::new(&mut local_transform.scale.z).speed(0.1))
+                        .changed()
+                        && uniform_scaling
+                    {
+                        local_transform.scale.x = local_transform.scale.z;
+                        local_transform.scale.y = local_transform.scale.z;
+                    }
+                });
+            });
+
+            if ui.button("Remove Component").clicked() {
+                remove_components(context, entity, LOCAL_TRANSFORM);
             }
         }
     });
@@ -1153,4 +1256,21 @@ mod timeline {
         let ms = (seconds.fract() * 1000.0) as i32;
         format!("{:02}:{:02}.{:03}", minutes, secs, ms)
     }
+}
+
+fn scene_inspector_ui(
+    context: &mut crate::context::Context,
+    ui: &mut egui::Ui,
+    entity: crate::context::EntityId,
+) {
+    use crate::context::*;
+
+    ui.group(|ui| {
+        ui.label("Scene");
+        if let Some(_) = get_component::<Scene>(context, entity, SCENE) {
+            if ui.button("Remove Component").clicked() {
+                remove_components(context, entity, SCENE);
+            }
+        }
+    });
 }
