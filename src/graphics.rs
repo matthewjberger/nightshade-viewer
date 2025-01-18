@@ -1,3 +1,5 @@
+use crate::prelude::*;
+
 /// A resource for graphics state
 #[derive(Default)]
 pub struct Graphics {
@@ -27,8 +29,8 @@ pub struct RenderTarget {
     pub depth_texture_view: wgpu::TextureView,
     pub grid: Grid,
     pub sky: Sky,
-    pub lines: Lines,
-    pub quads: Quads,
+    pub lines: LineRender,
+    pub quads: QuadRender,
 }
 
 /// Low-level wgpu handles
@@ -580,7 +582,7 @@ fn render_pane(
     }
 }
 
-fn ensure_viewports(context: &mut crate::Context, viewport_count: usize) {
+fn ensure_viewports(context: &mut Context, viewport_count: usize) {
     let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
         return;
     };
@@ -746,7 +748,7 @@ async fn create_gpu_async(
         .await
         .expect("Failed to request adapter!");
     let (device, queue) = {
-        log::info!("WGPU Adapter Features: {:#?}", adapter.features());
+        log::debug!("WGPU Adapter Features: {:#?}", adapter.features());
         adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
@@ -1301,7 +1303,7 @@ pub use lines::*;
 mod lines {
     use super::*;
 
-    pub struct Lines {
+    pub struct LineRender {
         pub vertex_buffer: wgpu::Buffer,
         pub instance_buffer: wgpu::Buffer,
         pub uniform_buffer: wgpu::Buffer,
@@ -1329,7 +1331,7 @@ mod lines {
         pub view_proj: nalgebra_glm::Mat4,
     }
 
-    pub fn create_line_renderer(device: &wgpu::Device, format: wgpu::TextureFormat) -> Lines {
+    pub fn create_line_renderer(device: &wgpu::Device, format: wgpu::TextureFormat) -> LineRender {
         let vertices = [
             LineVertex {
                 position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
@@ -1455,7 +1457,7 @@ mod lines {
             cache: None,
         });
 
-        Lines {
+        LineRender {
             vertex_buffer,
             instance_buffer,
             uniform_buffer,
@@ -1468,7 +1470,7 @@ mod lines {
         matrices: &crate::context::CameraMatrices,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        lines: &mut Lines,
+        lines: &mut LineRender,
         instances: Vec<LineInstance>,
     ) {
         // Create the data that will be sent to the GPU
@@ -1499,7 +1501,7 @@ mod lines {
         );
     }
 
-    pub fn render_lines(render_pass: &mut wgpu::RenderPass, lines: &Lines) {
+    pub fn render_lines(render_pass: &mut wgpu::RenderPass, lines: &LineRender) {
         let instance_size = std::mem::size_of::<LineInstance>();
         let debug_line_instance_count =
             (lines.instance_buffer.size() as usize / instance_size) as u32;
@@ -1517,7 +1519,7 @@ pub use quads::*;
 mod quads {
     use wgpu::util::DeviceExt as _;
 
-    pub struct Quads {
+    pub struct QuadRender {
         pub vertex_buffer: wgpu::Buffer,
         pub index_buffer: wgpu::Buffer,
         pub instance_buffer: wgpu::Buffer,
@@ -1552,7 +1554,7 @@ mod quads {
         device: &wgpu::Device,
         surface_format: wgpu::TextureFormat,
         depth_format: wgpu::TextureFormat,
-    ) -> Quads {
+    ) -> QuadRender {
         // Create a unit quad centered at origin in XY plane
         let vertices = [
             QuadVertex {
@@ -1697,7 +1699,7 @@ mod quads {
             cache: None,
         });
 
-        Quads {
+        QuadRender {
             vertex_buffer,
             index_buffer,
             instance_buffer,
@@ -1711,7 +1713,7 @@ mod quads {
         matrices: &crate::context::CameraMatrices,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        quads: &mut Quads,
+        quads: &mut QuadRender,
         instances: Vec<QuadInstance>,
     ) {
         let uniform = QuadUniform {
@@ -1741,7 +1743,7 @@ mod quads {
         });
     }
 
-    pub fn render_quads(render_pass: &mut wgpu::RenderPass, quads: &Quads) {
+    pub fn render_quads(render_pass: &mut wgpu::RenderPass, quads: &QuadRender) {
         let instance_size = std::mem::size_of::<QuadInstance>();
         let instance_count = (quads.instance_buffer.size() as usize / instance_size) as u32;
         if instance_count > 0 {

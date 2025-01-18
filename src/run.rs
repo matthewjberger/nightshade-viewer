@@ -30,6 +30,10 @@ pub(crate) fn step(context: &mut context::Context, event: &winit::event::WindowE
             // start of frame, must come first
             window::update_frame_timing_system(context);
 
+            // process IPC commands first
+            #[cfg(not(target_arch = "wasm32"))]
+            crate::ipc::process_ipc_commands_system(context);
+
             // external network events
             rpc::receive_rpc_events_system(context);
 
@@ -76,5 +80,17 @@ pub(crate) fn step(context: &mut context::Context, event: &winit::event::WindowE
             window::receive_window_event(context, event);
             input::receive_input_event(context, event);
         }
+    }
+}
+
+/// Entry point for the engine with a pre-configured context
+pub fn run_frontend_with_context(mut context: context::Context) {
+    let Ok(event_loop) = winit::event_loop::EventLoop::builder().build() else {
+        eprintln!("Failed to create event loop!");
+        return;
+    };
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    if let Err(error) = event_loop.run_app(&mut context) {
+        eprintln!("Failed to run app: {error}");
     }
 }

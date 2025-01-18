@@ -6,9 +6,7 @@ macro_rules! ecs {
         $context:ident {
             $($name:ident: $type:ty => $mask:ident),* $(,)?
         }
-        $resources:ident {
-            $($(#[$attr:meta])*  $resource_name:ident: $resource_type:ty),* $(,)?
-        }
+        $resources:ident,
     ) => {
 
         /// Component masks
@@ -36,7 +34,7 @@ macro_rules! ecs {
         pub const COMPONENT_COUNT: usize = { Component::All as usize };
 
         /// Entity ID, an index into storage and a generation counter to prevent stale references
-        #[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Hash)]
+        #[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
         pub struct EntityId {
             pub id: u32,
             pub generation: u32,
@@ -78,12 +76,6 @@ macro_rules! ecs {
             pub allocator: EntityAllocator,
             pub resources: $resources,
             table_edges: Vec<TableEdges>,
-        }
-
-        /// Resources
-        #[derive(Default)]
-        pub struct $resources {
-            $($(#[$attr])* pub $resource_name: $resource_type,)*
         }
 
         /// Component Table

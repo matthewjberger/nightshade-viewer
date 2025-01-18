@@ -12,16 +12,23 @@ crate::ecs! {
         parent: Parent => PARENT,
         scene: Scene => SCENE,
     }
-    Resources {
-        window: window::Window,
-        graphics: graphics::Graphics,
-        rpc: rpc::Rpc,
-        input: input::Input,
-        user_interface: ui::UserInterface,
-        active_camera_entity: Option<EntityId>,
-        commands: Vec<Command>,
-        events: Vec<Event>,
-    }
+    Resources,
+}
+
+#[derive(Default)]
+pub struct Resources {
+    pub window: window::Window,
+    pub graphics: graphics::Graphics,
+    pub rpc: rpc::Rpc,
+    pub input: input::Input,
+    pub user_interface: ui::UserInterface,
+    pub active_camera_entity: Option<crate::context::EntityId>,
+    pub commands: Vec<Command>,
+    pub events: Vec<Event>,
+    pub command_state: api::CommandState,
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub ipc: ipc::Ipc,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -371,11 +378,7 @@ pub fn ensure_camera_transform_system(context: &mut Context) {
     }
 }
 
-pub fn query_nth_camera_matrices(
-    context: &mut crate::Context,
-    index: usize,
-) -> Option<crate::prelude::CameraMatrices> {
-    use crate::context::*;
+pub fn query_nth_camera_matrices(context: &mut Context, index: usize) -> Option<CameraMatrices> {
     let camera_entity = query_nth_camera(context, index)?;
     let matrices = query_camera_matrices(context, camera_entity)?;
     Some(matrices)

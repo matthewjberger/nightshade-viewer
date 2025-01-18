@@ -32,7 +32,7 @@ mod cli {
             #[structopt(
                 short,
                 long,
-                default_value = "9003",
+                default_value = "9123",
                 help = "The port the server will listen on"
             )]
             port: u16,
@@ -45,12 +45,21 @@ mod cli {
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use cli::Command;
     use structopt::StructOpt;
+    env_logger::init();
     let Options { command } = Options::from_args();
     match command {
-        Some(Command::Run) | None => nightshade_core::run_frontend(),
+        // Run the frontend
+        Some(Command::Run) | None => {
+            // Spawn IPC backend in a separate thread
+            tokio::spawn(nightshade_engine::prelude::run_python_ipc_backend(9124));
+
+            // Run frontend in main thread
+            nightshade_engine::prelude::run_frontend()
+        }
+
+        // Run the RPC backend - fulfills requests from the frontend
         Some(Command::Server { port }) => {
-            env_logger::init();
-            nightshade_core::server::listen_for_rpc(port).await;
+            nightshade_engine::prelude::run_rpc_backend(port).await;
         }
     }
     Ok(())
@@ -58,5 +67,5 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    nightshade_core::run_frontend();
+    nightshade_engine::prelude::run_frontend();
 }

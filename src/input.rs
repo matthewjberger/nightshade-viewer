@@ -1,3 +1,5 @@
+use crate::prelude::*;
+
 /// Contains all input state
 #[derive(Default)]
 pub struct Input {
@@ -67,7 +69,7 @@ pub fn receive_input_event(
     receive_winit_mouse_events(context, event);
 }
 
-fn receive_winit_keyboard_events(context: &mut crate::Context, event: &winit::event::WindowEvent) {
+fn receive_winit_keyboard_events(context: &mut Context, event: &winit::event::WindowEvent) {
     let winit::event::WindowEvent::KeyboardInput {
         event:
             winit::event::KeyEvent {
@@ -89,7 +91,7 @@ fn receive_winit_keyboard_events(context: &mut crate::Context, event: &winit::ev
         .or_insert(*state) = *state;
 }
 
-fn receive_winit_mouse_events(context: &mut crate::Context, event: &winit::event::WindowEvent) {
+fn receive_winit_mouse_events(context: &mut Context, event: &winit::event::WindowEvent) {
     let mouse = &mut context.resources.input.mouse;
     match event {
         winit::event::WindowEvent::MouseInput { button, state, .. } => {

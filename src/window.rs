@@ -138,7 +138,6 @@ pub fn initialize(context: &mut crate::context::Context) {
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        env_logger::init();
         let renderer = pollster::block_on(async move {
             crate::graphics::create_renderer_async(window_handle.clone(), width, height).await
         });
@@ -152,7 +151,7 @@ pub fn initialize(context: &mut crate::context::Context) {
         std::panic::set_hook(Box::new(console_error_panic_hook::hook));
         console_log::init().expect("Failed to initialize logger!");
         let (canvas_width, canvas_height) = context.resources.graphics.viewport_size;
-        log::info!("Canvas dimensions: ({canvas_width} x {canvas_height})");
+        log::debug!("Canvas dimensions: ({canvas_width} x {canvas_height})");
         wasm_bindgen_futures::spawn_local(async move {
             let renderer = crate::graphics::create_renderer_async(
                 window_handle.clone(),

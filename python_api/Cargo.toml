@@ -8,5 +8,6 @@ name = "nightshade"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.23.3"
+pyo3 = { version = "0.23.4", features = ["extension-module"] }
 nightshade = { path = "../" }
+url = "2.5.0"
