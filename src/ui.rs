@@ -1,7 +1,5 @@
 use crate::{
     api::{push_command, Command, EntityCommand, RequestCommand},
-    has_components,
-    paint::{paint_cube_scene, paint_entity},
     rpc::{RpcCommand, RpcMessage},
 };
 
@@ -126,6 +124,18 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                 border_rounding,
                 egui::Stroke::new(border_width, border_color),
             );
+
+            // When a viewport is selected, also select its camera
+            if let PaneKind::Scene {
+                active_camera_index,
+            } = pane.kind
+            {
+                if let Some(camera_entity) =
+                    crate::context::query_nth_camera(context, active_camera_index)
+                {
+                    context.resources.user_interface.selected_entity = Some(camera_entity);
+                }
+            }
         }
 
         match pane.kind {
@@ -377,7 +387,6 @@ pub fn create_ui_system(context: &mut crate::context::Context) {
 fn create_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     top_panel_ui(context, ui);
     left_panel_ui(context, ui);
-    right_panel_ui(context, ui);
     central_panel_ui(context, ui);
     bottom_panel_ui(context, ui);
 }
@@ -435,23 +444,6 @@ fn central_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
         });
 }
 
-fn right_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
-    if !context.resources.user_interface.show_right_panel {
-        return;
-    }
-    egui::SidePanel::right("right").show(ui, |ui| {
-        ui.label("Properties");
-        ui.separator();
-        ui.available_width();
-
-        if let Some(entity) = context.resources.user_interface.selected_entity {
-            entity_inspector_ui(context, ui, entity);
-        } else {
-            ui.label("No entity selected");
-        }
-    });
-}
-
 fn entity_inspector_ui(
     context: &mut crate::context::Context,
     ui: &mut egui::Ui,
@@ -463,7 +455,7 @@ fn entity_inspector_ui(
     ui.group(|ui| {
         ui.horizontal(|ui| {
             ui.label("Add Component:");
-            egui::ComboBox::new("add_component", "Select component...").show_ui(ui, |ui| {
+            egui::ComboBox::new("add_component", "").show_ui(ui, |ui| {
                 if get_component::<LocalTransform>(context, entity, LOCAL_TRANSFORM).is_none()
                     && ui.button("Transform").clicked()
                 {
@@ -806,166 +798,191 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
         return;
     }
     egui::SidePanel::left("left").show(ui, |ui| {
-        ui.label("Scene");
-        ui.separator();
         ui.available_width();
         egui::ScrollArea::vertical()
-            .id_salt(ui.next_auto_id())
+            .id_salt("left_panel_scroll")
             .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt(ui.next_auto_id())
-                    .show(ui, |ui| {
-                        ui.group(|ui| {
-                            if ui.button("Add Entity").clicked() {
-                                let entity = crate::context::spawn_entities(
-                                    context,
-                                    crate::context::LOCAL_TRANSFORM
-                                        | crate::context::GLOBAL_TRANSFORM,
-                                    1,
-                                )[0];
-                                context.resources.user_interface.selected_entity = Some(entity);
-                            }
-                            crate::context::query_root_nodes(context)
-                                .into_iter()
-                                .for_each(|entity| {
-                                    entity_tree_ui(context, ui, entity);
-                                });
-                        });
-                    });
-
-                ui.separator();
-            });
-
-        ui.group(|ui| {
-            ui.label("Commands");
-
-            if ui.button("Spawn Cube").clicked() {
-                push_command(
-                    context,
-                    Command::Entity {
-                        command: EntityCommand::SpawnCube {
-                            position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                            size: 1.0,
-                            name: "Cube".to_string(),
-                        },
-                    },
-                );
-            }
-
-            if ui.button("Spawn Camera").clicked() {
-                push_command(
-                    context,
-                    Command::Entity {
-                        command: EntityCommand::SpawnCamera {
-                            position: nalgebra_glm::vec3(0.0, 0.0, 5.0),
-                            name: "Camera".to_string(),
-                        },
-                    },
-                );
-            }
-
-            if ui.button("List Cameras").clicked() {
-                push_command(
-                    context,
-                    Command::Request {
-                        command: RequestCommand::RequestCameraEntities,
-                    },
-                );
-            }
-
-            ui.group(|ui| {
-                let network_connected = context.resources.rpc.is_connected;
+                // Scene Tree Section
                 if ui
-                    .add_enabled(!network_connected, egui::Button::new("Connect Websocket"))
+                    .collapsing("Scene", |ui| {
+                        if ui.button("Add Entity").clicked() {
+                            let entity = crate::context::spawn_entities(
+                                context,
+                                crate::context::LOCAL_TRANSFORM | crate::context::GLOBAL_TRANSFORM,
+                                1,
+                            )[0];
+                            context.resources.user_interface.selected_entity = Some(entity);
+                        }
+                        crate::context::query_root_nodes(context)
+                            .into_iter()
+                            .for_each(|entity| {
+                                entity_tree_ui(context, ui, entity);
+                            });
+                    })
+                    .header_response
                     .clicked()
                 {
-                    let url = context
-                        .resources
-                        .user_interface
-                        .backend_websocket_address
-                        .to_string();
-                    push_command(
-                        context,
-                        Command::Rpc {
-                            command: RpcCommand::Connect { url },
-                        },
-                    );
+                    // Optional: handle header click
                 }
-                if context
-                    .resources
-                    .user_interface
-                    .backend_websocket_address
-                    .is_empty()
+
+                ui.separator();
+
+                // Inspector Section
+                if ui
+                    .collapsing("Components", |ui| {
+                        if let Some(entity) = context.resources.user_interface.selected_entity {
+                            entity_inspector_ui(context, ui, entity);
+                        } else {
+                            ui.label("No entity selected");
+                        }
+                    })
+                    .header_response
+                    .clicked()
                 {
-                    context.resources.user_interface.backend_websocket_address =
-                        "127.0.0.1:9001".to_string();
+                    // Optional: handle header click
                 }
-                ui.text_edit_singleline(
-                    &mut context.resources.user_interface.backend_websocket_address,
-                );
+
+                ui.separator();
+
+                // Commands Section
+                if ui
+                    .collapsing("Commands", |ui| {
+                        if ui.button("Spawn Cube").clicked() {
+                            push_command(
+                                context,
+                                Command::Entity {
+                                    command: EntityCommand::SpawnCube {
+                                        position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                                        size: 1.0,
+                                        name: "Cube".to_string(),
+                                    },
+                                },
+                            );
+                        }
+
+                        if ui.button("Spawn Camera").clicked() {
+                            push_command(
+                                context,
+                                Command::Entity {
+                                    command: EntityCommand::SpawnCamera {
+                                        position: nalgebra_glm::vec3(0.0, 0.0, 5.0),
+                                        name: "Camera".to_string(),
+                                    },
+                                },
+                            );
+                        }
+
+                        if ui.button("List Cameras").clicked() {
+                            push_command(
+                                context,
+                                Command::Request {
+                                    command: RequestCommand::RequestCameraEntities,
+                                },
+                            );
+                        }
+
+                        ui.group(|ui| {
+                            let network_connected = context.resources.rpc.is_connected;
+                            if ui
+                                .add_enabled(
+                                    !network_connected,
+                                    egui::Button::new("Connect Websocket"),
+                                )
+                                .clicked()
+                            {
+                                let url = context
+                                    .resources
+                                    .user_interface
+                                    .backend_websocket_address
+                                    .to_string();
+                                push_command(
+                                    context,
+                                    Command::Rpc {
+                                        command: RpcCommand::Connect { url },
+                                    },
+                                );
+                            }
+                            if context
+                                .resources
+                                .user_interface
+                                .backend_websocket_address
+                                .is_empty()
+                            {
+                                context.resources.user_interface.backend_websocket_address =
+                                    "127.0.0.1:9001".to_string();
+                            }
+                            ui.text_edit_singleline(
+                                &mut context.resources.user_interface.backend_websocket_address,
+                            );
+                        });
+
+                        if ui
+                            .add_enabled(
+                                context.resources.rpc.is_connected,
+                                egui::Button::new("Publish Message"),
+                            )
+                            .clicked()
+                        {
+                            push_command(
+                                context,
+                                Command::Rpc {
+                                    command: RpcCommand::Send {
+                                        message: RpcMessage::Text {
+                                            string: "Hello, from the nightshade frontend!"
+                                                .to_string(),
+                                        },
+                                    },
+                                },
+                            );
+                        }
+
+                        if ui
+                            .add_enabled(
+                                context.resources.rpc.is_connected,
+                                egui::Button::new("Disconnect"),
+                            )
+                            .clicked()
+                        {
+                            push_command(
+                                context,
+                                Command::Rpc {
+                                    command: RpcCommand::Disconnect,
+                                },
+                            );
+                        }
+                    })
+                    .header_response
+                    .clicked()
+                {
+                    // Optional: handle header click
+                }
             });
-
-            if ui
-                .add_enabled(
-                    context.resources.rpc.is_connected,
-                    egui::Button::new("Publish Message"),
-                )
-                .clicked()
-            {
-                push_command(
-                    context,
-                    Command::Rpc {
-                        command: RpcCommand::Send {
-                            message: RpcMessage::Text {
-                                string: "Hello, from the nightshade frontend!".to_string(),
-                            },
-                        },
-                    },
-                );
-            }
-
-            if ui
-                .add_enabled(
-                    context.resources.rpc.is_connected,
-                    egui::Button::new("Disconnect"),
-                )
-                .clicked()
-            {
-                push_command(
-                    context,
-                    Command::Rpc {
-                        command: RpcCommand::Disconnect,
-                    },
-                );
-            }
-        });
     });
 }
 
 fn top_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     egui::TopBottomPanel::top("menu").show(ui, |ui| {
         egui::menu::bar(ui, |ui| {
+            // Theme switch and panel toggles on the left
             egui::global_theme_preference_switch(ui);
             ui.separator();
-            ui.label(format!(
-                "FPS: {}",
-                context.resources.window.frames_per_second
-            ));
-            ui.separator();
-            ui.label("Panels:");
             ui.checkbox(
                 &mut context.resources.user_interface.show_left_panel,
-                "Left",
-            );
-            ui.checkbox(
-                &mut context.resources.user_interface.show_right_panel,
-                "Right",
+                "Left Panel",
             );
             ui.checkbox(
                 &mut context.resources.user_interface.show_bottom_panel,
-                "Bottom",
+                "Timeline",
             );
             ui.separator();
+
+            // Push FPS counter to the far right using spring
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(format!(
+                    "FPS: {}",
+                    context.resources.window.frames_per_second
+                ));
+            });
         });
     });
 }
@@ -1014,6 +1031,21 @@ fn entity_tree_ui(
                         }
                         ui.close_menu();
                     }
+
+                    // Add "Make Scene" option if entity doesn't have Scene component
+                    if get_component::<Scene>(context, entity, SCENE).is_none() {
+                        if ui.button("Make Scene").clicked() {
+                            add_components(context, entity, SCENE);
+                            ui.close_menu();
+                        }
+                    } else {
+                        // Add "Remove Scene" option if entity has Scene component
+                        if ui.button("Remove Scene").clicked() {
+                            remove_components(context, entity, SCENE);
+                            ui.close_menu();
+                        }
+                    }
+
                     if ui.button("Remove").clicked() {
                         despawn_entities(context, &[entity]);
                         let descendents = query_descendents(context, entity);
