@@ -1,3 +1,7 @@
+use crate::prelude::{get_component, EntityId, Parent, PARENT};
+
+use crate::graphics::{lines::Lines as RendererLines, quads::Quads as RendererQuads};
+
 /// A resource for graphics state
 #[derive(Default)]
 pub struct Graphics {
@@ -27,8 +31,8 @@ pub struct RenderTarget {
     pub depth_texture_view: wgpu::TextureView,
     pub grid: Grid,
     pub sky: Sky,
-    pub lines: Lines,
-    pub quads: Quads,
+    pub lines: RendererLines,
+    pub quads: RendererQuads,
 }
 
 /// Low-level wgpu handles
@@ -189,6 +193,7 @@ pub fn resize_renderer(context: &mut crate::context::Context, width: u32, height
 fn update_panes_system(context: &mut crate::context::Context) {
     use crate::context::*;
 
+    // First collect all viewport and camera data
     let viewports = context
         .resources
         .user_interface
@@ -198,15 +203,12 @@ fn update_panes_system(context: &mut crate::context::Context) {
         .copied()
         .collect::<Vec<_>>();
 
+    // Collect camera matrices
     let mut camera_matrices = Vec::new();
     for (kind, viewport) in &viewports {
-        let matrices = if let crate::ui::PaneKind::Scene {
-            active_camera_index,
-        } = kind
-        {
-            let cameras = query_entities(context, CAMERA);
-
-            if let Some(camera_entity) = cameras.get(*active_camera_index) {
+        let matrices = if let crate::ui::PaneKind::Scene { camera_entity, .. } = kind {
+            // Use the camera entity directly if we have one
+            if let Some(camera_entity) = camera_entity {
                 if let Some(camera) = get_component::<Camera>(context, *camera_entity, CAMERA) {
                     if let Some(transform) =
                         get_component::<GlobalTransform>(context, *camera_entity, GLOBAL_TRANSFORM)
@@ -235,110 +237,183 @@ fn update_panes_system(context: &mut crate::context::Context) {
         camera_matrices.push(matrices);
     }
 
-    let lines: Vec<_> = query_entities(context, LINES | GLOBAL_TRANSFORM)
-        .into_iter()
-        .filter_map(|entity| {
-            let Lines(lines) = get_component::<Lines>(context, entity, LINES)?;
-            let global_transform =
-                get_component::<GlobalTransform>(context, entity, GLOBAL_TRANSFORM)?;
-
-            Some(
-                lines
-                    .iter()
-                    .map(|line| {
-                        let start_world = (global_transform.0
-                            * nalgebra_glm::vec4(line.start.x, line.start.y, line.start.z, 1.0))
-                        .xyz();
-                        let end_world = (global_transform.0
-                            * nalgebra_glm::vec4(line.end.x, line.end.y, line.end.z, 1.0))
-                        .xyz();
-
-                        LineInstance {
-                            start: nalgebra_glm::vec4(
-                                start_world.x,
-                                start_world.y,
-                                start_world.z,
-                                1.0,
-                            ),
-                            end: nalgebra_glm::vec4(end_world.x, end_world.y, end_world.z, 1.0),
-                            color: line.color,
+    // Collect scene data for each viewport
+    let scene_data: Vec<_> = viewports
+        .iter()
+        .map(|(kind, _)| {
+            if let crate::ui::PaneKind::Scene {
+                scene_entity,
+                camera_entity,
+            } = kind
+            {
+                // Find the scene this camera belongs to by traversing up
+                let actual_scene = if let Some(camera) = camera_entity {
+                    let mut current = *camera;
+                    let mut found_scene = None;
+                    // Keep traversing up until we find a root node
+                    while let Some(Parent(parent)) =
+                        get_component::<Parent>(context, current, PARENT)
+                    {
+                        current = *parent;
+                        // If current is a root node (no parent), this is our scene
+                        if get_component::<Parent>(context, current, PARENT).is_none() {
+                            found_scene = Some(current);
+                            break;
                         }
-                    })
-                    .collect::<Vec<_>>(),
-            )
+                    }
+                    found_scene
+                } else {
+                    None
+                };
+
+                // Use the actual scene entity for rendering
+                if let Some(actual_scene) = actual_scene {
+                    // Get all entities in this scene's hierarchy
+                    let scene_entities = query_entities(context, LOCAL_TRANSFORM)
+                        .into_iter()
+                        .filter(|entity| is_descendant_of(context, *entity, actual_scene))
+                        .collect::<Vec<_>>();
+
+                    // Process lines for this scene's entities only
+                    let scene_lines: Vec<_> = scene_entities
+                        .iter()
+                        .filter_map(|entity| {
+                            let Lines(lines) = get_component::<Lines>(context, *entity, LINES)?;
+                            let global_transform = get_component::<GlobalTransform>(
+                                context,
+                                *entity,
+                                GLOBAL_TRANSFORM,
+                            )?;
+
+                            Some(
+                                lines
+                                    .iter()
+                                    .map(|line| {
+                                        // Transform line to world space
+                                        let start_world = (global_transform.0
+                                            * nalgebra_glm::vec4(
+                                                line.start.x,
+                                                line.start.y,
+                                                line.start.z,
+                                                1.0,
+                                            ))
+                                        .xyz();
+                                        let end_world = (global_transform.0
+                                            * nalgebra_glm::vec4(
+                                                line.end.x, line.end.y, line.end.z, 1.0,
+                                            ))
+                                        .xyz();
+
+                                        LineInstance {
+                                            start: nalgebra_glm::vec4(
+                                                start_world.x,
+                                                start_world.y,
+                                                start_world.z,
+                                                1.0,
+                                            ),
+                                            end: nalgebra_glm::vec4(
+                                                end_world.x,
+                                                end_world.y,
+                                                end_world.z,
+                                                1.0,
+                                            ),
+                                            color: line.color,
+                                        }
+                                    })
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .flatten()
+                        .collect();
+
+                    // Process quads for this scene's entities only
+                    let scene_quads: Vec<_> = scene_entities
+                        .iter()
+                        .filter_map(|entity| {
+                            let Quads(quads) = get_component::<Quads>(context, *entity, QUADS)?;
+                            let global_transform = get_component::<GlobalTransform>(
+                                context,
+                                *entity,
+                                GLOBAL_TRANSFORM,
+                            )?;
+                            Some(
+                                quads
+                                    .iter()
+                                    .map(|quad| {
+                                        let scale = nalgebra_glm::scaling(&nalgebra_glm::vec3(
+                                            quad.size.x,
+                                            quad.size.y,
+                                            1.0,
+                                        ));
+                                        let offset =
+                                            nalgebra_glm::translation(&nalgebra_glm::vec3(
+                                                quad.offset.x,
+                                                quad.offset.y,
+                                                quad.offset.z,
+                                            ));
+                                        let final_transform = global_transform.0 * offset * scale;
+                                        QuadInstance {
+                                            model_matrix_0: final_transform.column(0).into(),
+                                            model_matrix_1: final_transform.column(1).into(),
+                                            model_matrix_2: final_transform.column(2).into(),
+                                            model_matrix_3: final_transform.column(3).into(),
+                                            color: quad.color,
+                                        }
+                                    })
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .flatten()
+                        .collect();
+
+                    Some((scene_lines, scene_quads))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         })
-        .flatten()
         .collect();
 
-    let quads: Vec<_> = query_entities(context, QUADS | GLOBAL_TRANSFORM)
-        .into_iter()
-        .filter_map(|entity| {
-            let Quads(quads) = get_component::<Quads>(context, entity, QUADS)?;
-            let global_transform =
-                get_component::<GlobalTransform>(context, entity, GLOBAL_TRANSFORM)?;
-            Some(
-                quads
-                    .iter()
-                    .map(|quad| {
-                        let scale = nalgebra_glm::scaling(&nalgebra_glm::vec3(
-                            quad.size.x,
-                            quad.size.y,
-                            1.0,
-                        ));
-                        let offset = nalgebra_glm::translation(&nalgebra_glm::vec3(
-                            quad.offset.x,
-                            quad.offset.y,
-                            quad.offset.z,
-                        ));
-                        let final_transform = global_transform.0 * offset * scale;
-                        QuadInstance {
-                            model_matrix_0: final_transform.column(0).into(),
-                            model_matrix_1: final_transform.column(1).into(),
-                            model_matrix_2: final_transform.column(2).into(),
-                            model_matrix_3: final_transform.column(3).into(),
-                            color: quad.color,
-                        }
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .flatten()
-        .collect();
-
+    // Now update renderer with collected data
     let Some(renderer) = context.resources.graphics.renderer.as_mut() else {
         return;
     };
 
-    for ((target, (kind, _viewport)), matrices) in renderer
+    for (((target, (kind, _)), matrices), scene_data) in renderer
         .targets
         .iter_mut()
         .zip(viewports.iter())
         .zip(camera_matrices.iter())
+        .zip(scene_data.iter())
     {
         match kind {
-            crate::ui::PaneKind::Scene {
-                active_camera_index: _,
-            } => {
+            crate::ui::PaneKind::Scene { .. } => {
                 if let Some(matrices) = matrices {
                     update_grid(matrices, &renderer.gpu.queue, &target.grid);
                     update_sky(matrices, &renderer.gpu.queue, &target.sky);
-                    update_lines_uniform(
-                        matrices,
-                        &renderer.gpu.device,
-                        &renderer.gpu.queue,
-                        &mut target.lines,
-                        lines.to_vec(),
-                    );
-                    update_quads_uniform(
-                        matrices,
-                        &renderer.gpu.device,
-                        &renderer.gpu.queue,
-                        &mut target.quads,
-                        quads.to_vec(),
-                    );
+
+                    if let Some((scene_lines, scene_quads)) = scene_data {
+                        update_lines_uniform(
+                            matrices,
+                            &renderer.gpu.device,
+                            &renderer.gpu.queue,
+                            &mut target.lines,
+                            scene_lines.clone(),
+                        );
+                        update_quads_uniform(
+                            matrices,
+                            &renderer.gpu.device,
+                            &renderer.gpu.queue,
+                            &mut target.quads,
+                            scene_quads.clone(),
+                        );
+                    }
                 }
             }
             crate::ui::PaneKind::Color(_) => {}
+            crate::ui::PaneKind::Unassigned => {}
         }
     }
 }
@@ -524,6 +599,12 @@ fn render_pane(
             r: (color.r() as f64 / 255.0),
             g: (color.g() as f64 / 255.0),
             b: (color.b() as f64 / 255.0),
+            a: 1.0,
+        },
+        crate::ui::PaneKind::Unassigned => wgpu::Color {
+            r: 32.0 / 255.0,
+            g: 32.0 / 255.0,
+            b: 32.0 / 255.0,
             a: 1.0,
         },
     };
@@ -1751,4 +1832,24 @@ mod quads {
             render_pass.draw_indexed(0..6, 0, 0..instance_count);
         }
     }
+}
+
+// Add helper function to check if an entity is a descendant of another
+fn is_descendant_of(
+    context: &crate::context::Context,
+    entity: EntityId,
+    ancestor: EntityId,
+) -> bool {
+    if entity == ancestor {
+        return true;
+    }
+
+    let mut current = entity;
+    while let Some(Parent(parent)) = get_component::<Parent>(context, current, PARENT) {
+        if *parent == ancestor {
+            return true;
+        }
+        current = *parent;
+    }
+    false
 }

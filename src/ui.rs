@@ -1,5 +1,6 @@
 use crate::{
     api::{push_command, Command, EntityCommand, RequestCommand},
+    prelude::*,
     rpc::{RpcCommand, RpcMessage},
 };
 
@@ -32,15 +33,17 @@ pub struct TileTreeContext {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum PaneKind {
-    Scene { active_camera_index: usize },
+    Scene {
+        scene_entity: EntityId,
+        camera_entity: Option<EntityId>,
+    },
     Color(egui::Color32),
+    Unassigned,
 }
 
 impl Default for PaneKind {
     fn default() -> Self {
-        Self::Scene {
-            active_camera_index: 0,
-        }
+        Self::Unassigned
     }
 }
 
@@ -76,9 +79,18 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
     fn tab_title_for_pane(&mut self, pane: &crate::ui::Pane) -> egui::WidgetText {
         match pane.kind {
             PaneKind::Scene {
-                active_camera_index: _,
-            } => "Scene".into(),
+                scene_entity,
+                camera_entity: _,
+            } => {
+                if let Some(context) = self.context.and_then(|ctx| unsafe { ctx.as_ref() }) {
+                    if let Some(Name(name)) = get_component::<Name>(context, scene_entity, NAME) {
+                        return format!("Scene: {}", name).into();
+                    }
+                }
+                "Scene".into()
+            }
             PaneKind::Color(_) => "Color".into(),
+            PaneKind::Unassigned => "Unassigned".into(),
         }
     }
 
@@ -101,10 +113,6 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         tile_id: egui_tiles::TileId,
         pane: &mut crate::ui::Pane,
     ) -> egui_tiles::UiResponse {
-        let Some(Some(context)) = self.context.as_mut().map(|ctx| unsafe { ctx.as_mut() }) else {
-            return egui_tiles::UiResponse::None;
-        };
-
         let rect = ui.max_rect();
         self.tile_rects.insert(tile_id, rect);
 
@@ -112,134 +120,247 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
             self.viewport_tiles.insert(tile_id, (pane.kind, rect));
         }
 
-        // Draw selection border only for selected tile
-        if self.selected_tile == Some(tile_id) {
-            let border_color = egui::Color32::from_rgb(251, 146, 60);
-            let border_width = 8.0;
-            let border_rounding = 6.0;
+        if let Some(Some(context)) = self.context.as_mut().map(|ctx| unsafe { ctx.as_mut() }) {
+            // Add viewport controls at the top
+            let controls_height = 28.0;
+            let (controls_rect, viewport_rect) =
+                rect.split_top_bottom_at_y(rect.min.y + controls_height);
 
-            let border_rect = rect.shrink(1.0);
-            ui.painter().rect_stroke(
-                border_rect,
-                border_rounding,
-                egui::Stroke::new(border_width, border_color),
-            );
+            // Draw background and warning text for unassigned/no-camera cases
+            match pane.kind {
+                PaneKind::Unassigned => {
+                    // Draw dark background for entire pane area
+                    let bg_color = egui::Color32::from_gray(32);
+                    ui.painter().rect_filled(
+                        rect, // Use full pane rect
+                        0.0,  // No rounding
+                        bg_color,
+                    );
 
-            // When a viewport is selected, also select its camera
-            if let PaneKind::Scene {
-                active_camera_index,
-            } = pane.kind
-            {
-                if let Some(camera_entity) =
-                    crate::context::query_nth_camera(context, active_camera_index)
-                {
-                    context.resources.user_interface.selected_entity = Some(camera_entity);
+                    // Show unassigned message
+                    let text = "Unassigned Pane\n\nSelect a visual type from the dropdown above.";
+                    let text_color = egui::Color32::from_rgb(220, 130, 0); // Same orange as warning
+                    let galley = ui.painter().layout_no_wrap(
+                        text.into(),
+                        egui::FontId::proportional(14.0),
+                        text_color,
+                    );
+
+                    let text_rect = galley.rect;
+                    let center = viewport_rect.center();
+                    let text_pos = center - text_rect.size() * 0.5;
+                    ui.painter().galley(text_pos, galley, text_color);
                 }
-            }
-        }
+                PaneKind::Scene { camera_entity, .. } => {
+                    // Check if there are any cameras in the world
+                    let cameras_exist = !query_entities(context, CAMERA).is_empty();
 
-        match pane.kind {
-            PaneKind::Scene {
-                active_camera_index,
-            } => {
-                // Get total number of cameras
-                let camera_count =
-                    crate::context::query_entities(context, crate::context::CAMERA).len();
+                    if !cameras_exist || camera_entity.is_none() {
+                        // Draw dark background for entire pane area including controls
+                        let bg_color = egui::Color32::from_gray(32);
+                        ui.painter().rect_filled(
+                            rect, // Use full pane rect
+                            0.0,  // No rounding
+                            bg_color,
+                        );
 
-                // Only try to select camera if index is valid
-                if active_camera_index < camera_count {
-                    if let Some(camera_entity) =
-                        crate::context::query_nth_camera(context, active_camera_index)
-                    {
-                        context.resources.active_camera_entity = Some(camera_entity);
+                        // Show warning about missing camera
+                        let warning_text = if !cameras_exist {
+                            "No Cameras Available\n\nAdd a camera component to an entity in the scene tree."
+                        } else {
+                            "No Camera Selected\n\nSelect a camera from the dropdown above."
+                        };
+
+                        let warning_color = egui::Color32::from_rgb(220, 130, 0);
+                        let galley = ui.painter().layout_no_wrap(
+                            warning_text.into(),
+                            egui::FontId::proportional(14.0),
+                            warning_color,
+                        );
+
+                        let text_rect = galley.rect;
+                        let center = viewport_rect.center();
+                        let text_pos = center - text_rect.size() * 0.5;
+                        ui.painter().galley(text_pos, galley, warning_color);
                     }
                 }
+                _ => {}
             }
-            PaneKind::Color(_color32) => {
-                //
-            }
-        }
 
-        let mut drag_response = egui_tiles::UiResponse::None;
+            // Add controls UI after background
+            let _child_response = ui.allocate_rect(controls_rect, egui::Sense::hover());
+            let mut child_ui = ui.child_ui(
+                controls_rect,
+                egui::Layout::left_to_right(egui::Align::Center),
+                None,
+            );
 
-        let controls_height = 28.0;
-        let (controls_rect, content_rect) =
-            rect.split_top_bottom_at_y(rect.min.y + controls_height);
+            child_ui.horizontal(|ui| {
+                ui.add_space(8.0);
 
-        let controls_response = ui.allocate_ui_with_layout(
-            controls_rect.size(),
-            egui::Layout::top_down(egui::Align::Center),
-            |ui| {
-                ui.add_space(4.0);
-
-                egui::ComboBox::new(format!("background_{}", tile_id.0), "")
+                // Scene/Color/Unassigned type selector
+                egui::ComboBox::new(format!("type_{}", tile_id.0), "")
                     .selected_text(match pane.kind {
                         PaneKind::Scene { .. } => "Scene",
                         PaneKind::Color(_) => "Color",
+                        PaneKind::Unassigned => "Unassigned",
                     })
-                    .width(100.0)
                     .show_ui(ui, |ui| {
-                        // Show Scene option
                         let is_scene = matches!(pane.kind, PaneKind::Scene { .. });
-                        if ui.selectable_label(is_scene, "Scene").clicked() {
-                            pane.kind = PaneKind::Scene {
-                                active_camera_index: 0,
-                            };
+                        if ui.selectable_label(is_scene, "Scene").clicked() && !is_scene {
+                            // When switching to Scene, use existing root node if available
+                            if let Some(existing_scene) = query_entities(context, LOCAL_TRANSFORM)
+                                .into_iter()
+                                .find(|e| get_component::<Parent>(context, *e, PARENT).is_none())
+                            {
+                                // Get the camera for this scene
+                                let camera = query_children(context, existing_scene)
+                                    .into_iter()
+                                    .find(|e| {
+                                        get_component::<Camera>(context, *e, CAMERA).is_some()
+                                    });
+
+                                pane.kind = PaneKind::Scene {
+                                    scene_entity: existing_scene,
+                                    camera_entity: camera,
+                                };
+                            } else {
+                                // Create new root node if none exists
+                                pane.kind = create_scene_pane(context).kind;
+                            }
                         }
 
-                        // Show Color option
                         let is_color = matches!(pane.kind, PaneKind::Color(_));
-                        if ui.selectable_label(is_color, "Color").clicked() {
+                        if ui.selectable_label(is_color, "Color").clicked() && !is_color {
                             pane.kind = PaneKind::Color(egui::Color32::from_gray(200));
+                        }
+
+                        let is_unassigned = matches!(pane.kind, PaneKind::Unassigned);
+                        if ui.selectable_label(is_unassigned, "Unassigned").clicked()
+                            && !is_unassigned
+                        {
+                            pane.kind = PaneKind::Unassigned;
                         }
                     });
 
+                // Camera selector for Scene panes
                 if let PaneKind::Scene {
-                    active_camera_index,
+                    scene_entity: _,
+                    camera_entity,
                 } = &mut pane.kind
                 {
-                    ui.add_space(4.0);
-
-                    let camera_count =
-                        crate::context::query_entities(context, crate::context::CAMERA).len();
-                    egui::ComboBox::new(format!("camera_{}", tile_id.0), "")
-                        .selected_text(format!("Camera {}", *active_camera_index + 1))
-                        .width(100.0)
-                        .show_ui(ui, |ui| {
-                            for i in 0..camera_count {
-                                if ui
-                                    .selectable_label(
-                                        *active_camera_index == i,
-                                        format!("Camera {}", i + 1),
-                                    )
-                                    .clicked()
-                                {
-                                    *active_camera_index = i;
+                    // Get all cameras in the world
+                    let all_cameras: Vec<_> = query_entities(context, CAMERA)
+                        .into_iter()
+                        .map(|camera| {
+                            // Get camera's parent scene name
+                            let scene_name = if let Some(Parent(parent)) =
+                                get_component::<Parent>(context, camera, PARENT)
+                            {
+                                if get_component::<Parent>(context, *parent, PARENT).is_none() {
+                                    if let Some(Name(name)) =
+                                        get_component::<Name>(context, *parent, NAME)
+                                    {
+                                        format!(" ({})", name)
+                                    } else {
+                                        format!(" (Scene {})", parent.id)
+                                    }
+                                } else {
+                                    String::new()
                                 }
-                            }
-                        });
+                            } else {
+                                " (No Scene)".to_string()
+                            };
+
+                            // Get camera name
+                            let camera_name = if let Some(Name(name)) =
+                                get_component::<Name>(context, camera, NAME)
+                            {
+                                format!("{}{}", name, scene_name)
+                            } else {
+                                format!("Camera {}{}", camera.id, scene_name)
+                            };
+
+                            (camera, camera_name)
+                        })
+                        .collect();
+
+                    if !all_cameras.is_empty() {
+                        egui::ComboBox::new(format!("camera_{}", tile_id.0), "")
+                            .selected_text(if let Some(cam) = camera_entity {
+                                all_cameras
+                                    .iter()
+                                    .find(|(c, _)| *c == *cam)
+                                    .map(|(_, name)| name.clone())
+                                    .unwrap_or_else(|| "Select Camera".to_string())
+                            } else {
+                                "Select Camera".to_string()
+                            })
+                            .show_ui(ui, |ui| {
+                                for (camera, label) in &all_cameras {
+                                    if ui
+                                        .selectable_label(*camera_entity == Some(*camera), label)
+                                        .clicked()
+                                    {
+                                        *camera_entity = Some(*camera);
+                                        context.resources.active_camera_entity = Some(*camera);
+                                    }
+                                }
+                            });
+                    }
                 }
+            });
 
-                if let PaneKind::Color(ref mut color) = pane.kind {
-                    ui.add_space(4.0);
-                    ui.color_edit_button_srgba(color);
+            // Draw selection border
+            if self.selected_tile == Some(tile_id) {
+                let border_color = egui::Color32::from_rgb(251, 146, 60); // Orange color
+                let border_width = 2.0;
+                let border_rounding = 4.0;
+
+                let border_rect = rect.shrink(1.0);
+                ui.painter().rect_stroke(
+                    border_rect,
+                    border_rounding,
+                    egui::Stroke::new(border_width, border_color),
+                );
+            }
+
+            // Handle viewport interaction
+            let viewport_response = ui.allocate_rect(viewport_rect, egui::Sense::click());
+            if viewport_response.clicked() {
+                self.selected_tile = Some(tile_id);
+                if let PaneKind::Scene {
+                    camera_entity: Some(camera),
+                    ..
+                } = pane.kind
+                {
+                    context.resources.active_camera_entity = Some(camera);
+                    context.resources.user_interface.selected_entity = Some(camera);
                 }
-            },
-        );
-
-        let shift_pressed = ui.input(|i| i.modifiers.shift);
-        if shift_pressed && !controls_response.response.hovered() {
-            let cursor = egui::CursorIcon::Move;
-            let response = ui
-                .allocate_rect(content_rect, egui::Sense::click_and_drag())
-                .on_hover_cursor(cursor);
-
-            if response.dragged() {
-                drag_response = egui_tiles::UiResponse::DragStarted;
             }
         }
 
-        drag_response
+        egui_tiles::UiResponse::None
+    }
+
+    fn on_tab_close(
+        &mut self,
+        tiles: &mut egui_tiles::Tiles<crate::ui::Pane>,
+        tile_id: egui_tiles::TileId,
+    ) -> bool {
+        // Remove the tile and its associated data
+        if let Some(egui_tiles::Tile::Pane(_)) = tiles.remove(tile_id) {
+            // Clean up any viewport data for this tile
+            self.viewport_tiles.remove(&tile_id);
+            self.tile_rects.remove(&tile_id);
+            self.tile_mapping.remove(&tile_id);
+            if self.selected_tile == Some(tile_id) {
+                self.selected_tile = None;
+            }
+            true // Indicate the tab was successfully closed
+        } else {
+            false // Indicate the tab wasn't closed
+        }
     }
 }
 
@@ -297,24 +418,17 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
         {
             match pane_kind {
                 PaneKind::Scene {
-                    active_camera_index,
+                    scene_entity: _,
+                    camera_entity,
                 } => {
-                    // Get total number of cameras
-                    let camera_count =
-                        crate::context::query_entities(context, crate::context::CAMERA).len();
-
-                    // Only try to select camera if index is valid
-                    if *active_camera_index < camera_count {
-                        if let Some(camera_entity) =
-                            crate::context::query_nth_camera(context, *active_camera_index)
-                        {
-                            context.resources.active_camera_entity = Some(camera_entity);
-                        }
+                    if let Some(camera) = camera_entity {
+                        // Set both selected and active camera
+                        context.resources.user_interface.selected_entity = Some(*camera);
+                        context.resources.active_camera_entity = Some(*camera);
                     }
                 }
-                PaneKind::Color(_color32) => {
-                    //
-                }
+                PaneKind::Color(_) => {}
+                PaneKind::Unassigned => {}
             }
         }
     }
@@ -342,7 +456,9 @@ pub fn ensure_tile_tree_system(context: &mut crate::context::Context) {
     }
     let mut tiles = egui_tiles::Tiles::default();
     let mut tab_tiles = vec![];
-    let tab_tile_child = tiles.insert_pane(crate::ui::Pane::default());
+
+    // Create initial scene pane on startup
+    let tab_tile_child = tiles.insert_pane(create_scene_pane(context));
     let tab_tile = tiles.insert_tab_tile(vec![tab_tile_child]);
     tab_tiles.push(tab_tile);
     let root = tiles.insert_tab_tile(tab_tiles);
@@ -431,14 +547,24 @@ fn central_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
             tile_tree.ui(tile_tree_context, ui);
 
             if let Some(parent) = tile_tree_context.add_child_to.take() {
-                let new_child = tile_tree.tiles.insert_pane(Pane {
-                    kind: PaneKind::Color(egui::Color32::from_rgb(200, 200, 200)),
-                });
-                if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
-                    tile_tree.tiles.get_mut(parent)
+                if let Some(Some(context)) = tile_tree_context
+                    .context
+                    .as_mut()
+                    .map(|ctx| unsafe { ctx.as_mut() })
                 {
-                    tabs.add_child(new_child);
-                    tabs.set_active(new_child);
+                    // Create new unassigned pane by default
+                    let new_pane = Pane {
+                        kind: PaneKind::Unassigned,
+                    };
+
+                    let new_child = tile_tree.tiles.insert_pane(new_pane);
+
+                    if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
+                        tile_tree.tiles.get_mut(parent)
+                    {
+                        tabs.add_child(new_child);
+                        tabs.set_active(new_child);
+                    }
                 }
             }
         });
@@ -476,11 +602,6 @@ fn entity_inspector_ui(
                 {
                     add_components(context, entity, QUADS);
                 }
-                if get_component::<Scene>(context, entity, SCENE).is_none()
-                    && ui.button("Scene").clicked()
-                {
-                    add_components(context, entity, SCENE);
-                }
             });
         });
     });
@@ -510,11 +631,6 @@ fn entity_inspector_ui(
 
     if get_component::<Quads>(context, entity, QUADS).is_some() {
         quads_inspector_ui(context, ui, entity);
-        ui.separator();
-    }
-
-    if get_component::<Scene>(context, entity, SCENE).is_some() {
-        scene_inspector_ui(context, ui, entity);
         ui.separator();
     }
 }
@@ -803,27 +919,59 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
             .id_salt("left_panel_scroll")
             .show(ui, |ui| {
                 // Scene Tree Section
-                if ui
-                    .collapsing("Scene", |ui| {
-                        if ui.button("Add Entity").clicked() {
-                            let entity = crate::context::spawn_entities(
-                                context,
-                                crate::context::LOCAL_TRANSFORM | crate::context::GLOBAL_TRANSFORM,
-                                1,
-                            )[0];
-                            context.resources.user_interface.selected_entity = Some(entity);
-                        }
-                        crate::context::query_root_nodes(context)
+                ui.collapsing("Scene Tree", |ui| {
+                    // Add Scene button at top level
+                    if ui.button("Add Scene").clicked() {
+                        // Count existing root nodes for scene numbering
+                        let scene_count = query_entities(context, LOCAL_TRANSFORM)
                             .into_iter()
-                            .for_each(|entity| {
-                                entity_tree_ui(context, ui, entity);
-                            });
-                    })
-                    .header_response
-                    .clicked()
-                {
-                    // Optional: handle header click
-                }
+                            .filter(|e| get_component::<Parent>(context, *e, PARENT).is_none())
+                            .count();
+
+                        let scene =
+                            spawn_entities(context, NAME | LOCAL_TRANSFORM | GLOBAL_TRANSFORM, 1)
+                                [0];
+
+                        if let Some(name) = get_component_mut::<Name>(context, scene, NAME) {
+                            *name = Name(format!("Scene {}", scene_count + 1));
+                        }
+
+                        // Create camera as child
+                        let camera = spawn_entities(
+                            context,
+                            CAMERA | LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME | PARENT,
+                            1,
+                        )[0];
+
+                        if let Some(name) = get_component_mut::<Name>(context, camera, NAME) {
+                            *name = Name(format!("Camera {}", scene_count + 1));
+                        }
+
+                        // Set up camera transform
+                        initialize_camera_transform(context, camera);
+
+                        // Parent camera to scene
+                        if let Some(parent) = get_component_mut::<Parent>(context, camera, PARENT) {
+                            *parent = Parent(scene);
+                        }
+
+                        context.resources.active_camera_entity = Some(camera);
+                        context.resources.user_interface.selected_entity = Some(scene);
+                    }
+
+                    // Only show scene entities at root level
+                    let root_scenes: Vec<_> = query_entities(context, LOCAL_TRANSFORM)
+                        .into_iter()
+                        .filter(|entity| {
+                            get_component::<Parent>(context, *entity, PARENT).is_none()
+                        })
+                        .collect();
+
+                    // Show each scene hierarchy
+                    for scene in root_scenes {
+                        entity_tree_ui(context, ui, scene);
+                    }
+                });
 
                 ui.separator();
 
@@ -968,7 +1116,7 @@ fn top_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
             ui.separator();
             ui.checkbox(
                 &mut context.resources.user_interface.show_left_panel,
-                "Left Panel",
+                "Hierarchy",
             );
             ui.checkbox(
                 &mut context.resources.user_interface.show_bottom_panel,
@@ -995,56 +1143,112 @@ fn entity_tree_ui(
 ) {
     use crate::context::*;
 
-    let name = match crate::context::get_component::<Name>(context, entity, NAME) {
-        Some(Name(name)) if !name.is_empty() => name.to_string(),
-        _ => "Entity".to_string(),
+    let name = if let Some(Name(name)) = get_component::<Name>(context, entity, NAME) {
+        name.to_string()
+    } else {
+        format!("Entity {}", entity.id)
     };
 
     let selected = context.resources.user_interface.selected_entity == Some(entity);
+    let is_scene = get_component::<Parent>(context, entity, PARENT).is_none();
+    let is_camera = get_component::<Camera>(context, entity, CAMERA).is_some();
 
-    let id = ui.make_persistent_id(ui.next_auto_id());
+    let id = ui.make_persistent_id(entity.id);
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
             ui.horizontal(|ui| {
-                // Choose prefix based on components
-                let prefix = if get_component::<Scene>(context, entity, SCENE).is_some() {
-                    "🎬"
-                } else if get_component::<Camera>(context, entity, CAMERA).is_some() {
-                    "📷"
+                // Choose prefix based on type
+                let prefix = if is_scene {
+                    "🎬" // Film clapper for scene
+                } else if is_camera {
+                    "📷" // Camera for camera entities
                 } else {
-                    "🔵"
+                    "🔵" // Blue circle for other entities
                 };
 
                 let response = ui.selectable_label(selected, format!("{prefix} {name}"));
-
                 if response.clicked() {
                     context.resources.user_interface.selected_entity = Some(entity);
+                    if is_camera {
+                        context.resources.active_camera_entity = Some(entity);
+                    }
                 }
 
+                // Context menu
                 response.context_menu(|ui| {
-                    if ui.button("Add Child").clicked() {
-                        let child =
-                            spawn_entities(context, PARENT | LOCAL_TRANSFORM | GLOBAL_TRANSFORM, 1)
+                    // Add "Add Entity" option for scenes (root nodes)
+                    if is_scene && ui.button("Add Entity").clicked() {
+                        let new_entity =
+                            spawn_entities(context, LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME, 1)
                                 [0];
-                        if let Some(parent) = get_component_mut::<Parent>(context, child, PARENT) {
+
+                        // Set name
+                        if let Some(name) = get_component_mut::<Name>(context, new_entity, NAME) {
+                            *name = Name(format!("Entity {}", new_entity.id));
+                        }
+
+                        // Add parent component and set parent
+                        add_components(context, new_entity, PARENT);
+                        if let Some(parent) =
+                            get_component_mut::<Parent>(context, new_entity, PARENT)
+                        {
                             *parent = Parent(entity);
                         }
+
+                        context.resources.user_interface.selected_entity = Some(new_entity);
                         ui.close_menu();
                     }
 
-                    // Add "Make Scene" option if entity doesn't have Scene component
-                    if get_component::<Scene>(context, entity, SCENE).is_none() {
-                        if ui.button("Make Scene").clicked() {
-                            add_components(context, entity, SCENE);
-                            ui.close_menu();
+                    // Add "Reparent to..." submenu
+                    ui.menu_button("Reparent to...", |ui| {
+                        // Get all potential parent entities (excluding this entity and its descendants)
+                        let all_entities = query_entities(context, LOCAL_TRANSFORM);
+                        let descendants = query_descendents(context, entity);
+
+                        for potential_parent in all_entities {
+                            // Skip if this would create a cycle
+                            if descendants.contains(&potential_parent) || potential_parent == entity
+                            {
+                                continue;
+                            }
+
+                            // Get name of potential parent
+                            let parent_name = if let Some(Name(name)) =
+                                get_component::<Name>(context, potential_parent, NAME)
+                            {
+                                name.to_string()
+                            } else {
+                                format!("Entity {}", potential_parent.id)
+                            };
+
+                            if ui.button(parent_name).clicked() {
+                                // Check for cycles one more time before reparenting
+                                if !would_create_cycle(context, entity, potential_parent) {
+                                    // Add PARENT component if it doesn't exist
+                                    if get_component::<Parent>(context, entity, PARENT).is_none() {
+                                        add_components(context, entity, PARENT);
+                                    }
+
+                                    // Update parent
+                                    if let Some(parent) =
+                                        get_component_mut::<Parent>(context, entity, PARENT)
+                                    {
+                                        *parent = Parent(potential_parent);
+                                    }
+                                }
+                                ui.close_menu();
+                            }
                         }
-                    } else {
-                        // Add "Remove Scene" option if entity has Scene component
-                        if ui.button("Remove Scene").clicked() {
-                            remove_components(context, entity, SCENE);
-                            ui.close_menu();
+
+                        // Option to remove parent (make root)
+                        if get_component::<Parent>(context, entity, PARENT).is_some() {
+                            ui.separator();
+                            if ui.button("Make Root (Remove Parent)").clicked() {
+                                remove_components(context, entity, PARENT);
+                                ui.close_menu();
+                            }
                         }
-                    }
+                    });
 
                     if ui.button("Remove").clicked() {
                         despawn_entities(context, &[entity]);
@@ -1059,11 +1263,11 @@ fn entity_tree_ui(
             });
         })
         .body(|ui| {
-            query_children(context, entity)
-                .into_iter()
-                .for_each(|child| {
-                    entity_tree_ui(context, ui, child);
-                });
+            // Show children
+            let children = query_children(context, entity);
+            for child in children {
+                entity_tree_ui(context, ui, child);
+            }
         });
 }
 
@@ -1290,19 +1494,90 @@ mod timeline {
     }
 }
 
-fn scene_inspector_ui(
-    context: &mut crate::context::Context,
-    ui: &mut egui::Ui,
-    entity: crate::context::EntityId,
-) {
-    use crate::context::*;
+fn create_scene_pane(context: &mut crate::context::Context) -> Pane {
+    // Count only root nodes (no Parent component) for scene numbering
+    let scene_count = query_entities(context, LOCAL_TRANSFORM)
+        .into_iter()
+        .filter(|e| get_component::<Parent>(context, *e, PARENT).is_none())
+        .count();
 
-    ui.group(|ui| {
-        ui.label("Scene");
-        if let Some(_) = get_component::<Scene>(context, entity, SCENE) {
-            if ui.button("Remove Component").clicked() {
-                remove_components(context, entity, SCENE);
-            }
+    // Create root entity (scene)
+    let scene = spawn_entities(context, NAME | LOCAL_TRANSFORM | GLOBAL_TRANSFORM, 1)[0];
+
+    // Set scene name using root node count
+    if let Some(name) = get_component_mut::<Name>(context, scene, NAME) {
+        *name = Name(format!("Scene {}", scene_count + 1));
+    }
+
+    // Create camera as child
+    let camera = spawn_entities(
+        context,
+        CAMERA | LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME | PARENT,
+        1,
+    )[0];
+
+    // Set camera name to match scene number
+    if let Some(name) = get_component_mut::<Name>(context, camera, NAME) {
+        *name = Name(format!("Camera {}", scene_count + 1));
+    }
+
+    // Set up camera transform
+    initialize_camera_transform(context, camera);
+
+    // Parent camera to scene
+    if let Some(parent) = get_component_mut::<Parent>(context, camera, PARENT) {
+        *parent = Parent(scene);
+    }
+
+    // Set as active camera
+    context.resources.active_camera_entity = Some(camera);
+
+    Pane {
+        kind: PaneKind::Scene {
+            scene_entity: scene,
+            camera_entity: Some(camera),
+        },
+    }
+}
+
+fn initialize_camera_transform(context: &mut crate::context::Context, camera: EntityId) {
+    if let Some(transform) = get_component_mut::<LocalTransform>(context, camera, LOCAL_TRANSFORM) {
+        transform.translation = nalgebra_glm::vec3(0.0, 4.0, 5.0);
+
+        let target = nalgebra_glm::Vec3::zeros();
+        let up = nalgebra_glm::Vec3::y();
+
+        let forward = nalgebra_glm::normalize(&(target - transform.translation));
+        let right = nalgebra_glm::normalize(&nalgebra_glm::cross(&up, &forward));
+        let new_up = nalgebra_glm::cross(&forward, &right);
+
+        let rotation_mat = nalgebra_glm::mat3(
+            right.x, new_up.x, -forward.x, right.y, new_up.y, -forward.y, right.z, new_up.z,
+            -forward.z,
+        );
+        transform.rotation = nalgebra_glm::mat3_to_quat(&rotation_mat);
+    }
+}
+
+// Add this helper function to check for cycles
+fn would_create_cycle(
+    context: &crate::context::Context,
+    child: EntityId,
+    new_parent: EntityId,
+) -> bool {
+    // If the new parent is the same as the child, it would create a cycle
+    if child == new_parent {
+        return true;
+    }
+
+    // Check if any ancestor of new_parent is the child
+    let mut current = new_parent;
+    while let Some(Parent(parent)) = get_component::<Parent>(context, current, PARENT) {
+        if *parent == child {
+            return true;
         }
-    });
+        current = *parent;
+    }
+
+    false
 }

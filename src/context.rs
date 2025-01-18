@@ -10,7 +10,6 @@ crate::ecs! {
         quads: Quads => QUADS,
         name: Name => NAME,
         parent: Parent => PARENT,
-        scene: Scene => SCENE,
     }
     Resources {
         window: window::Window,
@@ -95,9 +94,6 @@ pub struct Name(pub String);
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct Parent(pub crate::context::EntityId);
-
-#[derive(Default, Debug, Copy, Clone, PartialEq)]
-pub struct Scene;
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct ActiveCamera;
@@ -382,27 +378,6 @@ pub fn query_nth_camera_matrices(
     let camera_entity = query_nth_camera(context, index)?;
     let matrices = query_camera_matrices(context, camera_entity)?;
     Some(matrices)
-}
-
-pub fn ensure_main_camera_system(context: &mut Context) {
-    if context.resources.active_camera_entity.is_some() {
-        return;
-    }
-    let camera_entity = if let Some(first_camera) = query_entities(context, CAMERA).first() {
-        *first_camera
-    } else {
-        let camera_mask = CAMERA | LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME;
-        spawn_entities(context, camera_mask, 1)[0]
-    };
-
-    if let Some(name) = get_component_mut::<Name>(context, camera_entity, NAME) {
-        *name = Name("Main Camera".to_string());
-    }
-    if let Some(local_transform) =
-        get_component_mut::<LocalTransform>(context, camera_entity, LOCAL_TRANSFORM)
-    {
-        local_transform.translation = nalgebra_glm::vec3(0.0, 4.0, 5.0);
-    }
 }
 
 pub fn wasd_keyboard_controls_system(context: &mut Context) {

@@ -39,9 +39,6 @@ pub(crate) fn step(context: &mut context::Context, event: &winit::event::WindowE
             // execute queued engine commands
             api::execute_commands_system(context);
 
-            // Ensure at least one camera is present
-            context::ensure_main_camera_system(context);
-
             // Ensure cameras have a local transform component
             context::ensure_camera_transform_system(context);
 
