@@ -35,8 +35,9 @@ macro_rules! ecs {
 
         pub const COMPONENT_COUNT: usize = { Component::All as usize };
 
+        use enum2egui::GuiInspect;
         /// Entity ID, an index into storage and a generation counter to prevent stale references
-        #[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Hash)]
+        #[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Hash, enum2egui::Gui)]
         pub struct EntityId {
             pub id: u32,
             pub generation: u32,

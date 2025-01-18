@@ -1,3 +1,4 @@
+use crate::api::EventQueues;
 use crate::prelude::*;
 use crate::*;
 
@@ -19,7 +20,7 @@ crate::ecs! {
         user_interface: ui::UserInterface,
         active_camera_entity: Option<EntityId>,
         commands: Vec<Command>,
-        events: Vec<Event>,
+        events: EventQueues,
     }
 }
 

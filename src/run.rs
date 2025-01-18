@@ -1,3 +1,4 @@
+use crate::api::process_events_system;
 use crate::{api, context, graphics, input, rpc, ui, window};
 
 /// This is the entry point for the engine
@@ -34,7 +35,7 @@ pub(crate) fn step(context: &mut context::Context, event: &winit::event::WindowE
             rpc::receive_rpc_events_system(context);
 
             // route queued engine events to their domains
-            api::route_events_system(context);
+            process_events_systems(context);
 
             // execute queued engine commands
             api::execute_commands_system(context);
@@ -74,4 +75,9 @@ pub(crate) fn step(context: &mut context::Context, event: &winit::event::WindowE
             input::receive_input_event(context, event);
         }
     }
+}
+
+// Process events in separate systems
+pub fn process_events_systems(context: &mut context::Context) {
+    process_events_system(context);
 }

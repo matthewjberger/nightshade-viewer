@@ -18,6 +18,7 @@ pub struct UserInterface {
     pub selected_entity: Option<crate::context::EntityId>,
     pub timeline_state: TimelineState,
     pub backend_websocket_address: String,
+    pub dragging_viewport: Option<(egui_tiles::TileId, egui::Pos2)>,
 }
 
 /// A context shared between all the panes in the tile tree
@@ -126,16 +127,100 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
             let (controls_rect, viewport_rect) =
                 rect.split_top_bottom_at_y(rect.min.y + controls_height);
 
+            // Handle viewport dragging
+            let response = ui
+                .allocate_rect(viewport_rect, egui::Sense::click_and_drag())
+                .on_hover_cursor(if ui.input(|i| i.modifiers.shift) {
+                    egui::CursorIcon::Grab
+                } else {
+                    egui::CursorIcon::Default
+                });
+
+            // Check if shift is held
+            let shift_held = ui.input(|i| i.modifiers.shift);
+
+            // Return DragStarted if shift is held and dragging
+            if shift_held && response.dragged() {
+                if let Some(mouse_pos) = ui.ctx().pointer_latest_pos() {
+                    context.resources.user_interface.dragging_viewport = Some((tile_id, mouse_pos));
+                    return egui_tiles::UiResponse::DragStarted;
+                }
+            }
+
+            // Handle ongoing drag
+            if let Some((dragging_tile_id, initial_pos)) =
+                context.resources.user_interface.dragging_viewport
+            {
+                if dragging_tile_id == tile_id {
+                    if let Some(current_pos) = ui.ctx().pointer_latest_pos() {
+                        // Stop dragging if shift is released or mouse button is released
+                        if !shift_held || !ui.input(|i| i.pointer.primary_down()) {
+                            context.resources.user_interface.dragging_viewport = None;
+                        } else {
+                            // Show grab cursor while dragging
+                            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grabbing);
+
+                            // Calculate drag delta and update viewport position
+                            let delta = current_pos - initial_pos;
+                            if delta.length() > 0.0 {
+                                // Find a suitable drop target
+                                for (other_tile_id, (_, other_rect)) in &self.viewport_tiles {
+                                    if *other_tile_id != tile_id && other_rect.contains(current_pos)
+                                    {
+                                        // Get the tiles from the tree
+                                        if let Some(tree) =
+                                            &mut context.resources.user_interface.tile_tree
+                                        {
+                                            // First get the panes immutably
+                                            let pane1 = if let Some(egui_tiles::Tile::Pane(pane)) =
+                                                tree.tiles.get(tile_id)
+                                            {
+                                                Some(pane.clone())
+                                            } else {
+                                                None
+                                            };
+
+                                            let pane2 = if let Some(egui_tiles::Tile::Pane(pane)) =
+                                                tree.tiles.get(*other_tile_id)
+                                            {
+                                                Some(pane.clone())
+                                            } else {
+                                                None
+                                            };
+
+                                            // Then do the swap if we got both panes
+                                            if let (Some(pane1), Some(pane2)) = (pane1, pane2) {
+                                                // Update first tile
+                                                if let Some(tile1) = tree.tiles.get_mut(tile_id) {
+                                                    *tile1 = egui_tiles::Tile::Pane(pane2);
+                                                }
+                                                // Update second tile
+                                                if let Some(tile2) =
+                                                    tree.tiles.get_mut(*other_tile_id)
+                                                {
+                                                    *tile2 = egui_tiles::Tile::Pane(pane1);
+                                                }
+                                                context
+                                                    .resources
+                                                    .user_interface
+                                                    .dragging_viewport = None;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Draw background and warning text for unassigned/no-camera cases
             match pane.kind {
                 PaneKind::Unassigned => {
                     // Draw dark background for entire pane area
                     let bg_color = egui::Color32::from_gray(32);
-                    ui.painter().rect_filled(
-                        rect, // Use full pane rect
-                        0.0,  // No rounding
-                        bg_color,
-                    );
+                    ui.painter().rect_filled(rect, 0.0, bg_color);
 
                     // Show unassigned message
                     let text = "Unassigned Pane\n\nSelect a visual type from the dropdown above.";
@@ -327,7 +412,11 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
             // Handle viewport interaction
             let viewport_response = ui.allocate_rect(viewport_rect, egui::Sense::click());
-            if viewport_response.clicked() {
+
+            // Only handle viewport clicks if no color picker is open
+            if viewport_response.clicked()
+                && !ui.memory(|mem| mem.is_popup_open(egui::Id::new("color_picker")))
+            {
                 self.selected_tile = Some(tile_id);
                 if let PaneKind::Scene {
                     camera_entity: Some(camera),
@@ -335,7 +424,6 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                 } = pane.kind
                 {
                     context.resources.active_camera_entity = Some(camera);
-                    context.resources.user_interface.selected_entity = Some(camera);
                 }
             }
         }
@@ -457,8 +545,10 @@ pub fn ensure_tile_tree_system(context: &mut crate::context::Context) {
     let mut tiles = egui_tiles::Tiles::default();
     let mut tab_tiles = vec![];
 
-    // Create initial scene pane on startup
-    let tab_tile_child = tiles.insert_pane(create_scene_pane(context));
+    // Create initial unassigned pane on startup
+    let tab_tile_child = tiles.insert_pane(Pane {
+        kind: PaneKind::Unassigned,
+    });
     let tab_tile = tiles.insert_tab_tile(vec![tab_tile_child]);
     tab_tiles.push(tab_tile);
     let root = tiles.insert_tab_tile(tab_tiles);
@@ -1000,7 +1090,7 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                                 context,
                                 Command::Entity {
                                     command: EntityCommand::SpawnCube {
-                                        position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                                        position: nalgebra_glm::vec3(0.0, 0.0, 0.0).into(),
                                         size: 1.0,
                                         name: "Cube".to_string(),
                                     },
@@ -1013,7 +1103,7 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                                 context,
                                 Command::Entity {
                                     command: EntityCommand::SpawnCamera {
-                                        position: nalgebra_glm::vec3(0.0, 0.0, 5.0),
+                                        position: nalgebra_glm::vec3(0.0, 0.0, 5.0).into(),
                                         name: "Camera".to_string(),
                                     },
                                 },
@@ -1157,13 +1247,12 @@ fn entity_tree_ui(
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
             ui.horizontal(|ui| {
-                // Choose prefix based on type
                 let prefix = if is_scene {
-                    "🎬" // Film clapper for scene
+                    "🎬"
                 } else if is_camera {
-                    "📷" // Camera for camera entities
+                    "📷"
                 } else {
-                    "🔵" // Blue circle for other entities
+                    "🔵"
                 };
 
                 let response = ui.selectable_label(selected, format!("{prefix} {name}"));
@@ -1263,7 +1352,6 @@ fn entity_tree_ui(
             });
         })
         .body(|ui| {
-            // Show children
             let children = query_children(context, entity);
             for child in children {
                 entity_tree_ui(context, ui, child);

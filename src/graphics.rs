@@ -242,7 +242,7 @@ fn update_panes_system(context: &mut crate::context::Context) {
         .iter()
         .map(|(kind, _)| {
             if let crate::ui::PaneKind::Scene {
-                scene_entity,
+                scene_entity: _,
                 camera_entity,
             } = kind
             {

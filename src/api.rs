@@ -1,94 +1,130 @@
 use crate::prelude::*;
+use crate::rpc::execute_rpc_command;
+use enum2egui::{Gui, GuiInspect};
+use enum2str::EnumStr;
 
-/// Engine outputs
-#[derive(Debug, Clone)]
-pub enum Event {
-    EntityCreated { entity_id: EntityId },
-    Report { report: Report },
-    Rpc { event: RpcEvent },
-}
-
-/// Emitted in response to queries
-#[derive(Debug, Clone)]
-pub enum Report {
-    Cameras { entity_ids: Vec<EntityId> },
-}
-
-/// Inputs to the engine
-#[derive(Debug, Clone)]
+// Commands - Input to engine
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum Command {
-    Entity { command: EntityCommand },
-    Request { command: RequestCommand },
-    Rpc { command: RpcCommand },
+    #[default]
+    Empty,
+    Entity {
+        command: EntityCommand,
+    },
+    Request {
+        command: RequestCommand,
+    },
+    Rpc {
+        command: RpcCommand,
+    },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum EntityCommand {
+    #[default]
+    Empty,
     SpawnCube {
-        position: nalgebra_glm::Vec3,
+        position: Vec3,
         size: f32,
         name: String,
     },
     SpawnCamera {
-        position: nalgebra_glm::Vec3,
+        position: Vec3,
         name: String,
     },
 }
 
-/// Commands that request information from the engine
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone, Gui)]
+pub struct Vec3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl From<nalgebra_glm::Vec3> for Vec3 {
+    fn from(vec: nalgebra_glm::Vec3) -> Self {
+        Self {
+            x: vec.x,
+            y: vec.y,
+            z: vec.z,
+        }
+    }
+}
+
+impl Into<nalgebra_glm::Vec3> for Vec3 {
+    fn into(self) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::vec3(self.x, self.y, self.z)
+    }
+}
+
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum RequestCommand {
+    #[default]
+    Empty,
     RequestCameraEntities,
 }
 
-/// Push a command to be executed by the command system
+// Events - Output from engine
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
+pub enum Event {
+    #[default]
+    Empty,
+    EntityCreated {
+        entity_id: EntityId,
+    },
+    CameraReport {
+        cameras: Vec<EntityId>,
+    },
+    Rpc {
+        event: RpcEvent,
+    },
+}
+
+// Event storage in Resources
+pub struct EventQueues {
+    pub events: Vec<Event>,
+}
+
+impl Default for EventQueues {
+    fn default() -> Self {
+        Self { events: Vec::new() }
+    }
+}
+
+// Public API - Just two functions
 pub fn push_command(context: &mut Context, command: Command) {
     context.resources.commands.push(command);
 }
 
-/// Push an event to be processed by event handlers
 pub fn push_event(context: &mut Context, event: Event) {
-    context.resources.events.push(event);
+    context.resources.events.events.push(event);
 }
 
-/// System that processes any pending commands in the command queue
+// System for processing commands
 pub fn execute_commands_system(context: &mut Context) {
     let commands = std::mem::take(&mut context.resources.commands);
-
     for command in commands {
-        log::info!("[Command] Executing command: {command:?}");
-        match command {
-            Command::Entity { command } => {
-                execute_entity_command(context, command);
-            }
-            Command::Request { command } => {
-                execute_query_command(context, command);
-            }
-            Command::Rpc { command } => {
-                execute_rpc_command(context, command);
-            }
-        }
+        log::info!("[Command] {command:?}");
+        execute_command(context, command);
     }
 }
 
-fn execute_query_command(context: &mut Context, command: RequestCommand) {
+// System for processing events
+pub fn process_events_system(context: &mut Context) {
+    let events = std::mem::take(&mut context.resources.events.events);
+    events.into_iter().for_each(|event| {
+        log::info!("[Event] {event:?}");
+    });
+}
+
+// Private implementation details
+fn execute_command(context: &mut Context, command: Command) {
     match command {
-        RequestCommand::RequestCameraEntities => {
-            report_cameras(context);
-        }
+        Command::Entity { command } => execute_entity_command(context, command),
+        Command::Request { command } => execute_request_command(context, command),
+        Command::Rpc { command } => execute_rpc_command(context, command),
+        Command::Empty => {}
     }
-}
-
-fn report_cameras(context: &mut Context) {
-    let cameras = query_entities(context, CAMERA);
-    push_event(
-        context,
-        Event::Report {
-            report: Report::Cameras {
-                entity_ids: cameras,
-            },
-        },
-    );
 }
 
 fn execute_entity_command(context: &mut Context, command: EntityCommand) {
@@ -98,57 +134,34 @@ fn execute_entity_command(context: &mut Context, command: EntityCommand) {
             size,
             name,
         } => {
-            spawn_cube(context, position, size, name);
+            let entity = spawn_cube(context, position.into(), size, name);
+            push_event(context, Event::EntityCreated { entity_id: entity });
         }
         EntityCommand::SpawnCamera { position, name } => {
-            spawn_camera(context, position, name);
+            let entity = spawn_camera(context, position.into(), name);
+            push_event(context, Event::EntityCreated { entity_id: entity });
         }
+        EntityCommand::Empty => {}
     }
 }
 
-fn spawn_camera(context: &mut Context, position: nalgebra_glm::Vec3, name: String) -> EntityId {
-    let entity = spawn_entities(
-        context,
-        LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME | CAMERA,
-        1,
-    )[0];
-
-    // Set name
-    if let Some(name_comp) = get_component_mut::<Name>(context, entity, NAME) {
-        *name_comp = Name(name);
-    }
-
-    // Set transform
-    if let Some(transform) = get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM) {
-        transform.translation = position;
-        transform.scale = nalgebra_glm::vec3(1.0, 1.0, 1.0);
-    }
-
-    // Make this the active camera if we don't have one
-    if context.resources.active_camera_entity.is_none() {
-        context.resources.active_camera_entity = Some(entity);
-    }
-
-    push_event(context, Event::EntityCreated { entity_id: entity });
-
-    entity
-}
-
-/// Route events to the appropriate domains
-pub fn route_events_system(context: &mut Context) {
-    let events = std::mem::take(&mut context.resources.events);
-    for event in events {
-        log::info!("[Event] {event:?}");
+fn execute_request_command(context: &mut Context, command: RequestCommand) {
+    match command {
+        RequestCommand::RequestCameraEntities => {
+            let cameras = query_entities(context, CAMERA);
+            push_event(context, Event::CameraReport { cameras });
+        }
+        RequestCommand::Empty => {}
     }
 }
 
+// Helper functions
 fn spawn_cube(
     context: &mut Context,
     position: nalgebra_glm::Vec3,
     size: f32,
     name: String,
 ) -> EntityId {
-    // Spawn entity with required components
     let entity = spawn_entities(
         context,
         LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME | LINES | QUADS,
@@ -176,7 +189,31 @@ fn spawn_cube(
     );
     paint_entity(context, entity, painting);
 
-    push_event(context, Event::EntityCreated { entity_id: entity });
+    entity
+}
+
+fn spawn_camera(context: &mut Context, position: nalgebra_glm::Vec3, name: String) -> EntityId {
+    let entity = spawn_entities(
+        context,
+        LOCAL_TRANSFORM | GLOBAL_TRANSFORM | NAME | CAMERA,
+        1,
+    )[0];
+
+    // Set name
+    if let Some(name_comp) = get_component_mut::<Name>(context, entity, NAME) {
+        *name_comp = Name(name);
+    }
+
+    // Set transform
+    if let Some(transform) = get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM) {
+        transform.translation = position;
+        transform.scale = nalgebra_glm::vec3(1.0, 1.0, 1.0);
+    }
+
+    // Make this the active camera if we don't have one
+    if context.resources.active_camera_entity.is_none() {
+        context.resources.active_camera_entity = Some(entity);
+    }
 
     entity
 }

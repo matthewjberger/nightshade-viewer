@@ -1,4 +1,7 @@
+use crate::api::push_event;
 use crate::prelude::*;
+use enum2egui::{Gui, GuiInspect};
+use enum2str::EnumStr;
 
 // Remote Procedure Calls
 #[derive(Default)]
@@ -8,33 +11,59 @@ pub struct Rpc {
     pub is_connected: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum RpcCommand {
-    Connect { url: String },
+    #[default]
+    Empty,
+    Connect {
+        url: String,
+    },
     Disconnect,
-    Send { message: RpcMessage },
+    Send {
+        message: RpcMessage,
+    },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum RpcMessage {
-    Text { string: String },
-    Binary { bytes: Vec<u8> },
+    #[default]
+    Empty,
+    Text {
+        string: String,
+    },
+    Binary {
+        bytes: Vec<u8>,
+    },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum RpcEvent {
+    #[default]
+    Empty,
     ConnectionAttemptSucceeded,
     ConnectionAttemptStarted,
     Disconnected,
-    Message { message: RpcMessage },
-    Error { error: RpcError },
+    Message {
+        message: RpcMessage,
+    },
+    Error {
+        error: RpcError,
+    },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum RpcError {
-    ConnectionFailed { url: String },
-    Server { error: String },
-    SendFailed { message: RpcMessage },
+    #[default]
+    Empty,
+    ConnectionFailed {
+        url: String,
+    },
+    Server {
+        error: String,
+    },
+    SendFailed {
+        message: RpcMessage,
+    },
 }
 
 pub fn receive_rpc_events_system(context: &mut Context) {
@@ -124,6 +153,7 @@ pub fn execute_rpc_command(context: &mut Context, command: RpcCommand) {
         RpcCommand::Send { message } => {
             send(context, message);
         }
+        RpcCommand::Empty => {}
     }
 }
 
@@ -168,6 +198,7 @@ fn send(context: &mut Context, message: RpcMessage) {
             RpcMessage::Binary { bytes } => {
                 sender.send(ewebsock::WsMessage::Binary(bytes));
             }
+            RpcMessage::Empty => {}
         }
     } else {
         log::error!("Attempted to send message but websocket is not connected");
