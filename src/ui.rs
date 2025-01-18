@@ -33,17 +33,13 @@ pub struct TileTreeContext {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum PaneKind {
-    Scene {
-        scene_index: usize,
-        active_camera_index: usize,
-    },
+    Scene { active_camera_index: usize },
     Color(egui::Color32),
 }
 
 impl Default for PaneKind {
     fn default() -> Self {
         Self::Scene {
-            scene_index: 0,
             active_camera_index: 0,
         }
     }
@@ -81,7 +77,6 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
     fn tab_title_for_pane(&mut self, pane: &crate::ui::Pane) -> egui::WidgetText {
         match pane.kind {
             PaneKind::Scene {
-                scene_index: _,
                 active_camera_index: _,
             } => "Scene".into(),
             PaneKind::Color(_) => "Color".into(),
@@ -134,13 +129,23 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
         match pane.kind {
             PaneKind::Scene {
-                active_camera_index: _,
-                scene_index: _,
+                active_camera_index,
             } => {
-                // Empty - we'll render the camera view elsewhere
+                // Get total number of cameras
+                let camera_count =
+                    crate::context::query_entities(context, crate::context::CAMERA).len();
+
+                // Only try to select camera if index is valid
+                if active_camera_index < camera_count {
+                    if let Some(camera_entity) =
+                        crate::context::query_nth_camera(context, active_camera_index)
+                    {
+                        context.resources.active_camera_entity = Some(camera_entity);
+                    }
+                }
             }
-            PaneKind::Color(_) => {
-                // TODO: demonstrate a regular egui widget here
+            PaneKind::Color(_color32) => {
+                //
             }
         }
 
@@ -167,7 +172,6 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                         let is_scene = matches!(pane.kind, PaneKind::Scene { .. });
                         if ui.selectable_label(is_scene, "Scene").clicked() {
                             pane.kind = PaneKind::Scene {
-                                scene_index: 0,
                                 active_camera_index: 0,
                             };
                         }
@@ -181,7 +185,6 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
                 if let PaneKind::Scene {
                     active_camera_index,
-                    scene_index: _,
                 } = &mut pane.kind
                 {
                     ui.add_space(4.0);
@@ -284,7 +287,6 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
             match pane_kind {
                 PaneKind::Scene {
                     active_camera_index,
-                    scene_index: _,
                 } => {
                     // Get total number of cameras
                     let camera_count =

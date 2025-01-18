@@ -201,7 +201,6 @@ fn update_panes_system(context: &mut crate::context::Context) {
     let mut camera_matrices = Vec::new();
     for (kind, viewport) in &viewports {
         let matrices = if let crate::ui::PaneKind::Scene {
-            scene_index: _,
             active_camera_index,
         } = kind
         {
@@ -318,7 +317,6 @@ fn update_panes_system(context: &mut crate::context::Context) {
     {
         match kind {
             crate::ui::PaneKind::Scene {
-                scene_index: _,
                 active_camera_index: _,
             } => {
                 if let Some(matrices) = matrices {
