@@ -32,7 +32,10 @@ pub struct Window {
 use wasm_bindgen::prelude::*;
 
 impl winit::application::ApplicationHandler for crate::context::Context {
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+    fn resumed(
+        &mut self, // required by winit
+        event_loop: &winit::event_loop::ActiveEventLoop,
+    ) {
         #[allow(unused_mut)]
         let mut attributes = winit::window::Window::default_attributes();
 
@@ -82,7 +85,7 @@ impl winit::application::ApplicationHandler for crate::context::Context {
     }
 
     fn window_event(
-        &mut self,
+        &mut self, // required by winit
         event_loop: &winit::event_loop::ActiveEventLoop,
         _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,

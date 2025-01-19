@@ -17,7 +17,7 @@ pub use context::Context;
 pub use run::run_frontend;
 
 pub mod prelude {
-    pub use crate::api::{push_command, push_event, Command, Event};
+    pub use crate::api::{publish_event, publish_command, Command, Event};
     pub use crate::context::*;
     pub use crate::input::*;
     pub use crate::paint::*;

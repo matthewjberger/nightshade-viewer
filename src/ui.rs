@@ -1,5 +1,7 @@
-use crate::{api::push_command, api::Command, prelude::*};
-use web_time::SystemTime;
+use crate::{
+    api::{publish_command, publish_event, Message},
+    prelude::*,
+};
 
 #[derive(Default)]
 pub struct UserInterface {
@@ -16,8 +18,7 @@ pub struct UserInterface {
     pub backend_websocket_address: String,
     pub dragging_viewport: Option<(egui_tiles::TileId, egui::Pos2)>,
     pub api_log: Vec<ApiLogEntry>,
-    pub draft_command: Command,
-    pub draft_event: Event,
+    pub draft_message: Message,
 }
 
 /// A context shared between all the panes in the tile tree
@@ -77,7 +78,10 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
         }
     }
 
-    fn tab_title_for_pane(&mut self, pane: &crate::ui::Pane) -> egui::WidgetText {
+    fn tab_title_for_pane(
+        &mut self, // required by egui_tiles
+        pane: &crate::ui::Pane,
+    ) -> egui::WidgetText {
         match pane.kind {
             PaneKind::Scene {
                 scene_entity,
@@ -97,7 +101,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
     }
 
     fn top_bar_right_ui(
-        &mut self,
+        &mut self, // required by egui_tiles
         _tiles: &egui_tiles::Tiles<crate::ui::Pane>,
         ui: &mut egui::Ui,
         tile_id: egui_tiles::TileId,
@@ -110,7 +114,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
     }
 
     fn pane_ui(
-        &mut self,
+        &mut self, // required by egui_tiles
         ui: &mut egui::Ui,
         tile_id: egui_tiles::TileId,
         pane: &mut crate::ui::Pane,
@@ -221,11 +225,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                 PaneKind::ApiLog => {
                     // Draw dark background for entire pane area including controls
                     let bg_color = egui::Color32::from_gray(32);
-                    ui.painter().rect_filled(
-                        rect, // Use full pane rect instead of viewport_rect
-                        0.0,  // No rounding
-                        bg_color,
-                    );
+                    ui.painter().rect_filled(rect, 0.0, bg_color);
 
                     // Create a child UI for the log content area
                     let mut content_ui = ui.child_ui(
@@ -238,7 +238,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                     egui::ScrollArea::vertical().stick_to_bottom(true).show(
                         &mut content_ui,
                         |ui| {
-                            // Show entries with alternating backgrounds for better readability
+                            // Show entries with alternating backgrounds
                             for (idx, entry) in
                                 context.resources.user_interface.api_log.iter().enumerate()
                             {
@@ -255,15 +255,17 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                                 );
 
                                 ui.horizontal(|ui| {
-                                    // Fixed-width type label
-                                    let (label, color) = match entry.kind {
-                                        ApiLogKind::Command => {
+                                    // Determine label and color based on Message variant
+                                    let (label, color) = match entry.message {
+                                        Message::Command { .. } => {
                                             ("COMMAND", egui::Color32::from_rgb(130, 170, 255))
                                         }
-                                        ApiLogKind::Event => {
+                                        Message::Event { .. } => {
                                             ("EVENT  ", egui::Color32::from_rgb(130, 255, 170))
                                         }
                                     };
+
+                                    // Show type label
                                     ui.add(
                                         egui::Label::new(
                                             egui::RichText::new(label)
@@ -274,13 +276,13 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                                         .wrap(),
                                     );
 
-                                    // Message with wrapping
+                                    // Show message content
                                     ui.with_layout(
                                         egui::Layout::left_to_right(egui::Align::Center)
                                             .with_cross_justify(true),
                                         |ui| {
                                             ui.label(
-                                                egui::RichText::new(&entry.message)
+                                                egui::RichText::new(format!("{:?}", entry.message))
                                                     .monospace()
                                                     .color(egui::Color32::from_gray(230)),
                                             );
@@ -473,7 +475,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                         "No Camera".to_string()
                     };
 
-                    egui::ComboBox::from_label("Camera")
+                    egui::ComboBox::from_label("")
                         .selected_text(current_camera_text)
                         .show_ui(ui, |ui| {
                             for (camera, label) in &all_cameras {
@@ -529,7 +531,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
     }
 
     fn on_tab_close(
-        &mut self,
+        &mut self, // required by egui_tiles
         tiles: &mut egui_tiles::Tiles<crate::ui::Pane>,
         tile_id: egui_tiles::TileId,
     ) -> bool {
@@ -739,6 +741,7 @@ fn central_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                         .map(|ctx| unsafe { ctx.as_mut() }),
                     Some(Some(_))
                 ) {
+                    // Add closing parenthesis here
                     // Create new unassigned pane by default
                     let new_pane = Pane {
                         kind: PaneKind::Unassigned,
@@ -1197,38 +1200,29 @@ fn top_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
         });
     });
 
-    // Add the command window
+    // Update the command window
     if context.resources.user_interface.show_command_window {
         egui::Window::new("Api")
             .resizable(true)
             .default_size([400.0, 300.0])
             .show(ui, |ui| {
-                // Add a container with max width
                 egui::ScrollArea::both().show(ui, |ui| {
                     ui.set_max_width(380.0);
-
-                    ui.heading("Send Command");
-                    ui.horizontal(|ui| {
-                        use enum2egui::GuiInspect;
-                        context.resources.user_interface.draft_command.ui_mut(ui);
-                        let command = context.resources.user_interface.draft_command.clone();
-                        if ui.button("Send").clicked() {
-                            push_command(context, command);
-                        }
-                    });
-
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.add_space(8.0);
-
-                    ui.heading("Publish Event");
-                    ui.horizontal(|ui| {
-                        use enum2egui::GuiInspect;
-                        let event = context.resources.user_interface.draft_event.clone();
-                        context.resources.user_interface.draft_event.ui_mut(ui);
-                        if ui.button("Publish").clicked() {
-                            push_event(context, event);
-                        }
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            if ui.button("Send").clicked() {
+                                match &context.resources.user_interface.draft_message {
+                                    Message::Command { command } => {
+                                        publish_command(context, command.clone());
+                                    }
+                                    Message::Event { event } => {
+                                        publish_event(context, event.clone());
+                                    }
+                                }
+                            }
+                            use enum2egui::GuiInspect;
+                            context.resources.user_interface.draft_message.ui_mut(ui);
+                        });
                     });
                 });
             });
@@ -1570,38 +1564,15 @@ fn would_create_cycle(
 
 #[derive(Clone)]
 pub struct ApiLogEntry {
-    pub timestamp: SystemTime,
-    pub timestamp_string: String, // Pre-computed timestamp string
-    pub kind: ApiLogKind,
-    pub message: String,
+    pub message: Message,
 }
 
 impl Default for ApiLogEntry {
     fn default() -> Self {
-        let timestamp = SystemTime::now();
         Self {
-            timestamp_string: format_timestamp(timestamp),
-            timestamp,
-            kind: ApiLogKind::default(),
-            message: String::default(),
+            message: Message::default(),
         }
     }
-}
-
-// Make format_timestamp public and move it out of the timeline module
-pub fn format_timestamp(timestamp: SystemTime) -> String {
-    let duration = timestamp
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = duration.as_secs_f64();
-    format!("[{:.3}s]", secs)
-}
-
-#[derive(Default, Clone)]
-pub enum ApiLogKind {
-    #[default]
-    Command,
-    Event,
 }
 
 // Update the function to check both text editing and window focus

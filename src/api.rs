@@ -1,11 +1,6 @@
-use crate::{
-    prelude::*,
-    rpc::execute_rpc_command,
-    ui::{format_timestamp, ApiLogEntry, ApiLogKind},
-};
+use crate::{prelude::*, rpc::execute_rpc_command, ui::ApiLogEntry};
 use enum2egui::{Gui, GuiInspect};
 use enum2str::EnumStr;
-use web_time::SystemTime;
 
 // Commands - Input to engine
 #[derive(Default, Debug, Clone, Gui, EnumStr)]
@@ -13,6 +8,7 @@ pub enum Command {
     #[default]
     Empty,
     Query {
+        id: u64,
         command: QueryCommand,
     },
     Spawn {
@@ -72,21 +68,64 @@ impl From<nalgebra_glm::Vec3> for Vec3 {
 #[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum Event {
     #[default]
-    None,
-    EntityCreated {
-        entity_id: EntityId,
+    Empty,
+    Query {
+        id: u64,
+        result: QueryResult,
     },
+    Spawn {
+        result: SpawnResult,
+    },
+    Websocket {
+        event: WebsocketEvent,
+    },
+}
+
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
+pub enum QueryResult {
+    #[default]
+    Empty,
     CameraList {
         cameras: Vec<EntityId>,
     },
-    WebsocketConnected,
-    WebsocketDisconnected,
-    WebsocketMessage {
+}
+
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
+pub enum SpawnResult {
+    #[default]
+    Empty,
+    EntityCreated {
+        entity_id: EntityId,
+    },
+}
+
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
+pub enum WebsocketEvent {
+    #[default]
+    Empty,
+    Connected,
+    Disconnected,
+    Message {
         message: String,
     },
-    WebsocketError {
+    Error {
         error: String,
     },
+}
+
+// Update the Message enum definition
+#[derive(Debug, Clone, Gui, EnumStr)]
+pub enum Message {
+    Command { command: Command },
+    Event { event: Event },
+}
+
+impl Default for Message {
+    fn default() -> Self {
+        Self::Command {
+            command: Command::default(),
+        }
+    }
 }
 
 // Event storage in Resources
@@ -96,11 +135,11 @@ pub struct EventQueues {
 }
 
 // Public API - Just two functions
-pub fn push_command(context: &mut Context, command: Command) {
+pub fn publish_command(context: &mut Context, command: Command) {
     context.resources.commands.push(command);
 }
 
-pub fn push_event(context: &mut Context, event: Event) {
+pub fn publish_event(context: &mut Context, event: Event) {
     context.resources.events.events.push(event);
 }
 
@@ -109,13 +148,11 @@ pub fn execute_commands_system(context: &mut Context) {
     let commands = std::mem::take(&mut context.resources.commands);
     for command in commands {
         log::info!("[Command] {command:?}");
-        // Add to API log with pre-computed timestamp
-        let timestamp = SystemTime::now();
+        // Add to API log without timestamp
         context.resources.user_interface.api_log.push(ApiLogEntry {
-            timestamp,
-            timestamp_string: format_timestamp(timestamp),
-            kind: ApiLogKind::Command,
-            message: format!("{command:?}"),
+            message: Message::Command {
+                command: command.clone(),
+            },
         });
         execute_command(context, command);
     }
@@ -126,13 +163,11 @@ pub fn process_events_system(context: &mut Context) {
     let events = std::mem::take(&mut context.resources.events.events);
     events.into_iter().for_each(|event| {
         log::info!("[Event] {event:?}");
-        // Add to API log with pre-computed timestamp
-        let timestamp = SystemTime::now();
+        // Add to API log without timestamp
         context.resources.user_interface.api_log.push(ApiLogEntry {
-            timestamp,
-            timestamp_string: format_timestamp(timestamp),
-            kind: ApiLogKind::Event,
-            message: format!("{event:?}"),
+            message: Message::Event {
+                event: event.clone(),
+            },
         });
     });
 }
@@ -143,7 +178,7 @@ fn execute_command(context: &mut Context, command: Command) {
         Command::Rpc { command } => {
             execute_rpc_command(context, command);
         }
-        Command::Query { command } => execute_query_command(context, command),
+        Command::Query { id, command } => execute_query_command(context, id, command),
         Command::Empty => {}
     }
 }
@@ -157,20 +192,36 @@ fn execute_spawn_command(context: &mut Context, spawn_command: SpawnCommand) {
             name,
         } => {
             let entity = spawn_cube(context, position.into(), size, name);
-            push_event(context, Event::EntityCreated { entity_id: entity });
+            publish_event(
+                context,
+                Event::Spawn {
+                    result: SpawnResult::EntityCreated { entity_id: entity },
+                },
+            );
         }
         SpawnCommand::Camera { position, name } => {
             let entity = spawn_camera(context, position.into(), name);
-            push_event(context, Event::EntityCreated { entity_id: entity });
+            publish_event(
+                context,
+                Event::Spawn {
+                    result: SpawnResult::EntityCreated { entity_id: entity },
+                },
+            );
         }
     }
 }
 
-fn execute_query_command(context: &mut Context, query_command: QueryCommand) {
+fn execute_query_command(context: &mut Context, id: u64, query_command: QueryCommand) {
     match query_command {
         QueryCommand::ListCameras => {
             let cameras = query_entities(context, CAMERA);
-            push_event(context, Event::CameraList { cameras });
+            publish_event(
+                context,
+                Event::Query {
+                    id,
+                    result: QueryResult::CameraList { cameras },
+                },
+            );
         }
         QueryCommand::Empty => {}
     }
