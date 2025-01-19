@@ -407,8 +407,9 @@ fn update_panes_system(context: &mut crate::context::Context) {
                     }
                 }
             }
-            crate::ui::PaneKind::Color(_) => {}
+            crate::ui::PaneKind::Color(_color) => {}
             crate::ui::PaneKind::Unassigned => {}
+            crate::ui::PaneKind::ApiLog => {}
         }
     }
 }
@@ -597,6 +598,12 @@ fn render_pane(
             a: 1.0,
         },
         crate::ui::PaneKind::Unassigned => wgpu::Color {
+            r: 32.0 / 255.0,
+            g: 32.0 / 255.0,
+            b: 32.0 / 255.0,
+            a: 1.0,
+        },
+        crate::ui::PaneKind::ApiLog => wgpu::Color {
             r: 32.0 / 255.0,
             g: 32.0 / 255.0,
             b: 32.0 / 255.0,

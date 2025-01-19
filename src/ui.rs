@@ -1,8 +1,5 @@
-use crate::{
-    api::{push_command, Command, EntityCommand, RequestCommand},
-    prelude::*,
-    rpc::{RpcCommand, RpcMessage},
-};
+use crate::{api::push_command, api::Command, prelude::*};
+use web_time::SystemTime;
 
 #[derive(Default)]
 pub struct UserInterface {
@@ -19,6 +16,7 @@ pub struct UserInterface {
     pub timeline_state: TimelineState,
     pub backend_websocket_address: String,
     pub dragging_viewport: Option<(egui_tiles::TileId, egui::Pos2)>,
+    pub api_log: Vec<ApiLogEntry>,
 }
 
 /// A context shared between all the panes in the tile tree
@@ -39,6 +37,7 @@ pub enum PaneKind {
         camera_entity: Option<EntityId>,
     },
     Color(egui::Color32),
+    ApiLog,
     Unassigned,
 }
 
@@ -91,6 +90,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                 "Scene".into()
             }
             PaneKind::Color(_) => "Color".into(),
+            PaneKind::ApiLog => "API Log".into(),
             PaneKind::Unassigned => "Unassigned".into(),
         }
     }
@@ -217,6 +217,111 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
             // Draw background and warning text for unassigned/no-camera cases
             match pane.kind {
+                PaneKind::ApiLog => {
+                    // Draw dark background for entire pane area including controls
+                    let bg_color = egui::Color32::from_gray(32);
+                    ui.painter().rect_filled(
+                        rect, // Use full pane rect instead of viewport_rect
+                        0.0,  // No rounding
+                        bg_color,
+                    );
+
+                    // Create a child UI for the log content area
+                    let mut content_ui = ui.child_ui(
+                        viewport_rect,
+                        egui::Layout::top_down(egui::Align::Min),
+                        None,
+                    );
+
+                    // Show API log content
+                    egui::ScrollArea::vertical().stick_to_bottom(true).show(
+                        &mut content_ui,
+                        |ui| {
+                            // Add toolbar at top
+                            ui.horizontal(|ui| {
+                                if ui.button("🗑 Clear").clicked() {
+                                    context.resources.user_interface.api_log.clear();
+                                }
+
+                                ui.separator();
+
+                                // Add entry count with icon
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(format!(
+                                            "{} entries",
+                                            context.resources.user_interface.api_log.len()
+                                        ));
+                                        ui.label("📋");
+                                    },
+                                );
+                            });
+
+                            ui.add_space(4.0);
+                            ui.separator();
+                            ui.add_space(4.0);
+
+                            // Show entries with alternating backgrounds for better readability
+                            for (idx, entry) in
+                                context.resources.user_interface.api_log.iter().enumerate()
+                            {
+                                let row_bg = if idx % 2 == 0 {
+                                    egui::Color32::from_gray(28)
+                                } else {
+                                    egui::Color32::from_gray(35)
+                                };
+
+                                ui.painter().rect_filled(
+                                    ui.available_rect_before_wrap().shrink(2.0),
+                                    0.0,
+                                    row_bg,
+                                );
+
+                                ui.horizontal(|ui| {
+                                    // Use monospace font for consistent spacing
+                                    ui.label(
+                                        egui::RichText::new(&entry.timestamp_string)
+                                            .monospace()
+                                            .color(egui::Color32::from_gray(150)),
+                                    );
+
+                                    // Fixed-width type label
+                                    let (label, color) = match entry.kind {
+                                        ApiLogKind::Command => {
+                                            ("COMMAND", egui::Color32::from_rgb(130, 170, 255))
+                                        }
+                                        ApiLogKind::Event => {
+                                            ("EVENT  ", egui::Color32::from_rgb(130, 255, 170))
+                                        }
+                                    };
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(label)
+                                                .monospace()
+                                                .strong()
+                                                .color(color),
+                                        )
+                                        .wrap(),
+                                    );
+
+                                    // Message with wrapping
+                                    ui.with_layout(
+                                        egui::Layout::left_to_right(egui::Align::Center)
+                                            .with_cross_justify(true),
+                                        |ui| {
+                                            ui.label(
+                                                egui::RichText::new(&entry.message)
+                                                    .monospace()
+                                                    .color(egui::Color32::from_gray(230)),
+                                            );
+                                        },
+                                    );
+                                });
+                            }
+                        },
+                    );
+                }
                 PaneKind::Unassigned => {
                     // Draw dark background for entire pane area
                     let bg_color = egui::Color32::from_gray(32);
@@ -283,11 +388,12 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
             child_ui.horizontal(|ui| {
                 ui.add_space(8.0);
 
-                // Scene/Color/Unassigned type selector
+                // Scene/Color/ApiLog/Unassigned type selector
                 egui::ComboBox::new(format!("type_{}", tile_id.0), "")
                     .selected_text(match pane.kind {
                         PaneKind::Scene { .. } => "Scene",
                         PaneKind::Color(_) => "Color",
+                        PaneKind::ApiLog => "API Log",
                         PaneKind::Unassigned => "Unassigned",
                     })
                     .show_ui(ui, |ui| {
@@ -320,6 +426,11 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                             pane.kind = PaneKind::Color(egui::Color32::from_gray(200));
                         }
 
+                        let is_api_log = matches!(pane.kind, PaneKind::ApiLog);
+                        if ui.selectable_label(is_api_log, "API Log").clicked() && !is_api_log {
+                            pane.kind = PaneKind::ApiLog;
+                        }
+
                         let is_unassigned = matches!(pane.kind, PaneKind::Unassigned);
                         if ui.selectable_label(is_unassigned, "Unassigned").clicked()
                             && !is_unassigned
@@ -330,69 +441,86 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
                 // Camera selector for Scene panes
                 if let PaneKind::Scene {
-                    scene_entity: _,
+                    scene_entity,
                     camera_entity,
-                } = &mut pane.kind
+                } = pane.kind
                 {
                     // Get all cameras in the world
                     let all_cameras: Vec<_> = query_entities(context, CAMERA)
                         .into_iter()
                         .map(|camera| {
-                            // Get camera's parent scene name
+                            // Get camera name
+                            let camera_name = if let Some(Name(name)) =
+                                get_component::<Name>(context, camera, NAME)
+                            {
+                                name.clone()
+                            } else {
+                                format!("Camera {}", camera.id)
+                            };
+
+                            // Get scene name (parent's name)
                             let scene_name = if let Some(Parent(parent)) =
                                 get_component::<Parent>(context, camera, PARENT)
                             {
-                                if get_component::<Parent>(context, *parent, PARENT).is_none() {
-                                    if let Some(Name(name)) =
-                                        get_component::<Name>(context, *parent, NAME)
-                                    {
-                                        format!(" ({})", name)
-                                    } else {
-                                        format!(" (Scene {})", parent.id)
-                                    }
+                                if let Some(Name(name)) =
+                                    get_component::<Name>(context, *parent, NAME)
+                                {
+                                    format!(" ({})", name)
                                 } else {
-                                    String::new()
+                                    format!(" (Scene {})", parent.id)
                                 }
                             } else {
                                 " (No Scene)".to_string()
                             };
 
-                            // Get camera name
-                            let camera_name = if let Some(Name(name)) =
-                                get_component::<Name>(context, camera, NAME)
-                            {
-                                format!("{}{}", name, scene_name)
-                            } else {
-                                format!("Camera {}{}", camera.id, scene_name)
-                            };
-
-                            (camera, camera_name)
+                            (camera, format!("{}{}", camera_name, scene_name))
                         })
                         .collect();
 
-                    if !all_cameras.is_empty() {
-                        egui::ComboBox::new(format!("camera_{}", tile_id.0), "")
-                            .selected_text(if let Some(cam) = camera_entity {
-                                all_cameras
-                                    .iter()
-                                    .find(|(c, _)| *c == *cam)
-                                    .map(|(_, name)| name.clone())
-                                    .unwrap_or_else(|| "Select Camera".to_string())
+                    // Get current camera name for display with scene
+                    let current_camera_text = if let Some(cam) = camera_entity {
+                        let camera_name =
+                            if let Some(Name(name)) = get_component::<Name>(context, cam, NAME) {
+                                name.clone()
                             } else {
-                                "Select Camera".to_string()
-                            })
-                            .show_ui(ui, |ui| {
-                                for (camera, label) in &all_cameras {
-                                    if ui
-                                        .selectable_label(*camera_entity == Some(*camera), label)
-                                        .clicked()
-                                    {
-                                        *camera_entity = Some(*camera);
-                                        context.resources.active_camera_entity = Some(*camera);
-                                    }
+                                format!("Camera {}", cam.id)
+                            };
+
+                        let scene_name = if let Some(Parent(parent)) =
+                            get_component::<Parent>(context, cam, PARENT)
+                        {
+                            if let Some(Name(name)) = get_component::<Name>(context, *parent, NAME)
+                            {
+                                format!(" ({})", name)
+                            } else {
+                                format!(" (Scene {})", parent.id)
+                            }
+                        } else {
+                            " (No Scene)".to_string()
+                        };
+
+                        format!("{}{}", camera_name, scene_name)
+                    } else {
+                        "No Camera".to_string()
+                    };
+
+                    egui::ComboBox::from_label("Camera")
+                        .selected_text(current_camera_text)
+                        .show_ui(ui, |ui| {
+                            for (camera, label) in &all_cameras {
+                                if ui
+                                    .selectable_label(Some(*camera) == camera_entity, label)
+                                    .clicked()
+                                {
+                                    // Create new PaneKind outside the closure
+                                    let new_kind = PaneKind::Scene {
+                                        scene_entity,
+                                        camera_entity: Some(*camera),
+                                    };
+                                    pane.kind = new_kind;
                                 }
-                            });
-                    }
+                            }
+                        });
                 }
             });
 
@@ -517,6 +645,7 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
                 }
                 PaneKind::Color(_) => {}
                 PaneKind::Unassigned => {}
+                PaneKind::ApiLog => {}
             }
         }
     }
@@ -637,11 +766,13 @@ fn central_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
             tile_tree.ui(tile_tree_context, ui);
 
             if let Some(parent) = tile_tree_context.add_child_to.take() {
-                if let Some(Some(context)) = tile_tree_context
-                    .context
-                    .as_mut()
-                    .map(|ctx| unsafe { ctx.as_mut() })
-                {
+                if matches!(
+                    tile_tree_context
+                        .context
+                        .as_mut()
+                        .map(|ctx| unsafe { ctx.as_mut() }),
+                    Some(Some(_))
+                ) {
                     // Create new unassigned pane by default
                     let new_pane = Pane {
                         kind: PaneKind::Unassigned,
@@ -1088,12 +1219,10 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                         if ui.button("Spawn Cube").clicked() {
                             push_command(
                                 context,
-                                Command::Entity {
-                                    command: EntityCommand::SpawnCube {
-                                        position: nalgebra_glm::vec3(0.0, 0.0, 0.0).into(),
-                                        size: 1.0,
-                                        name: "Cube".to_string(),
-                                    },
+                                Command::SpawnCube {
+                                    position: nalgebra_glm::vec3(0.0, 0.0, 0.0).into(),
+                                    size: 1.0,
+                                    name: "Cube".to_string(),
                                 },
                             );
                         }
@@ -1101,22 +1230,15 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                         if ui.button("Spawn Camera").clicked() {
                             push_command(
                                 context,
-                                Command::Entity {
-                                    command: EntityCommand::SpawnCamera {
-                                        position: nalgebra_glm::vec3(0.0, 0.0, 5.0).into(),
-                                        name: "Camera".to_string(),
-                                    },
+                                Command::SpawnCamera {
+                                    position: nalgebra_glm::vec3(0.0, 0.0, 5.0).into(),
+                                    name: "Camera".to_string(),
                                 },
                             );
                         }
 
                         if ui.button("List Cameras").clicked() {
-                            push_command(
-                                context,
-                                Command::Request {
-                                    command: RequestCommand::RequestCameraEntities,
-                                },
-                            );
+                            push_command(context, Command::ListCameras);
                         }
 
                         ui.group(|ui| {
@@ -1128,18 +1250,18 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                                 )
                                 .clicked()
                             {
-                                let url = context
-                                    .resources
-                                    .user_interface
-                                    .backend_websocket_address
-                                    .to_string();
                                 push_command(
                                     context,
-                                    Command::Rpc {
-                                        command: RpcCommand::Connect { url },
+                                    Command::ConnectWebsocket {
+                                        url: context
+                                            .resources
+                                            .user_interface
+                                            .backend_websocket_address
+                                            .clone(),
                                     },
                                 );
                             }
+
                             if context
                                 .resources
                                 .user_interface
@@ -1157,19 +1279,14 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                         if ui
                             .add_enabled(
                                 context.resources.rpc.is_connected,
-                                egui::Button::new("Publish Message"),
+                                egui::Button::new("Send Message"),
                             )
                             .clicked()
                         {
                             push_command(
                                 context,
-                                Command::Rpc {
-                                    command: RpcCommand::Send {
-                                        message: RpcMessage::Text {
-                                            string: "Hello, from the nightshade frontend!"
-                                                .to_string(),
-                                        },
-                                    },
+                                Command::SendWebsocketMessage {
+                                    message: "Hello, from the nightshade frontend!".to_string(),
                                 },
                             );
                         }
@@ -1181,12 +1298,7 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                             )
                             .clicked()
                         {
-                            push_command(
-                                context,
-                                Command::Rpc {
-                                    command: RpcCommand::Disconnect,
-                                },
-                            );
+                            push_command(context, Command::DisconnectWebsocket);
                         }
                     })
                     .header_response
@@ -1213,6 +1325,14 @@ fn top_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                 "Timeline",
             );
             ui.separator();
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ui.menu_button("Zoom", |ui| {
+                    egui::gui_zoom::zoom_menu_buttons(ui);
+                });
+                ui.separator();
+            }
 
             // Push FPS counter to the far right using spring
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1668,4 +1788,40 @@ fn would_create_cycle(
     }
 
     false
+}
+
+#[derive(Clone)]
+pub struct ApiLogEntry {
+    pub timestamp: SystemTime,
+    pub timestamp_string: String, // Pre-computed timestamp string
+    pub kind: ApiLogKind,
+    pub message: String,
+}
+
+impl Default for ApiLogEntry {
+    fn default() -> Self {
+        let timestamp = SystemTime::now();
+        Self {
+            timestamp_string: format_timestamp(timestamp),
+            timestamp,
+            kind: ApiLogKind::default(),
+            message: String::default(),
+        }
+    }
+}
+
+// Make format_timestamp public and move it out of the timeline module
+pub fn format_timestamp(timestamp: SystemTime) -> String {
+    let duration = timestamp
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration.as_secs_f64();
+    format!("[{:.3}s]", secs)
+}
+
+#[derive(Default, Clone)]
+pub enum ApiLogKind {
+    #[default]
+    Command,
+    Event,
 }

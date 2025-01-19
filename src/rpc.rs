@@ -1,4 +1,4 @@
-use crate::api::push_event;
+use crate::api::{push_event, Command, Event};
 use crate::prelude::*;
 use enum2egui::{Gui, GuiInspect};
 use enum2str::EnumStr;
@@ -87,31 +87,17 @@ fn receive_rpc_event(context: &mut Context, event: ewebsock::WsEvent) {
     match event {
         ewebsock::WsEvent::Opened => {
             context.resources.rpc.is_connected = true;
-            push_event(
-                context,
-                Event::Rpc {
-                    event: RpcEvent::ConnectionAttemptStarted,
-                },
-            );
+            push_event(context, Event::WebsocketConnected);
         }
         ewebsock::WsEvent::Message(ws_message) => match ws_message {
             ewebsock::WsMessage::Text(text) => {
-                push_event(
-                    context,
-                    Event::Rpc {
-                        event: RpcEvent::Message {
-                            message: RpcMessage::Text { string: text },
-                        },
-                    },
-                );
+                push_event(context, Event::WebsocketMessage { message: text });
             }
-            ewebsock::WsMessage::Binary(bytes) => {
+            ewebsock::WsMessage::Binary(_) => {
                 push_event(
                     context,
-                    Event::Rpc {
-                        event: RpcEvent::Message {
-                            message: RpcMessage::Binary { bytes },
-                        },
+                    Event::WebsocketError {
+                        error: "Binary messages not supported".to_string(),
                     },
                 );
             }
@@ -121,94 +107,74 @@ fn receive_rpc_event(context: &mut Context, event: ewebsock::WsEvent) {
             context.resources.rpc.is_connected = false;
             push_event(
                 context,
-                Event::Rpc {
-                    event: RpcEvent::Error {
-                        error: RpcError::Server {
-                            error: error.to_string(),
-                        },
-                    },
+                Event::WebsocketError {
+                    error: error.to_string(),
                 },
             );
         }
         ewebsock::WsEvent::Closed => {
             context.resources.rpc.is_connected = false;
-            push_event(
-                context,
-                Event::Rpc {
-                    event: RpcEvent::Disconnected,
-                },
-            );
+            push_event(context, Event::WebsocketDisconnected);
         }
     }
 }
 
-pub fn execute_rpc_command(context: &mut Context, command: RpcCommand) {
+pub fn execute_rpc_command(context: &mut Context, command: Command) {
     match command {
-        RpcCommand::Connect { url } => {
-            connect(context, &url);
-        }
-        RpcCommand::Disconnect => {
-            disconnect(context);
-        }
-        RpcCommand::Send { message } => {
-            send(context, message);
-        }
-        RpcCommand::Empty => {}
-    }
-}
-
-fn connect(context: &mut Context, url: &str) {
-    if let Ok((sender, receiver)) =
-        ewebsock::connect(format!("ws://{url}"), ewebsock::Options::default())
-    {
-        context.resources.rpc.sender = Some(sender);
-        context.resources.rpc.receiver = Some(receiver);
-        push_event(
-            context,
-            Event::Rpc {
-                event: RpcEvent::ConnectionAttemptStarted,
-            },
-        );
-    } else {
-        log::error!("Failed to connect to websocket server");
-        push_event(
-            context,
-            Event::Rpc {
-                event: RpcEvent::Error {
-                    error: RpcError::ConnectionFailed {
-                        url: url.to_string(),
+        Command::ConnectWebsocket { url } => {
+            if context.resources.rpc.is_connected {
+                push_event(
+                    context,
+                    Event::WebsocketError {
+                        error: "Already connected".to_string(),
                     },
-                },
-            },
-        );
-    }
-}
-
-fn disconnect(context: &mut Context) {
-    context.resources.rpc.is_connected = false;
-    context.resources.rpc.sender.take();
-}
-
-fn send(context: &mut Context, message: RpcMessage) {
-    if let Some(sender) = context.resources.rpc.sender.as_mut() {
-        match message {
-            RpcMessage::Text { string: message } => {
-                sender.send(ewebsock::WsMessage::Text(message));
+                );
+                return;
             }
-            RpcMessage::Binary { bytes } => {
-                sender.send(ewebsock::WsMessage::Binary(bytes));
+
+            if let Ok((sender, receiver)) =
+                ewebsock::connect(format!("ws://{url}"), ewebsock::Options::default())
+            {
+                context.resources.rpc.sender = Some(sender);
+                context.resources.rpc.receiver = Some(receiver);
+                context.resources.rpc.is_connected = true;
+                push_event(context, Event::WebsocketConnected);
+            } else {
+                push_event(
+                    context,
+                    Event::WebsocketError {
+                        error: format!("Failed to connect to {}", url),
+                    },
+                );
             }
-            RpcMessage::Empty => {}
         }
-    } else {
-        log::error!("Attempted to send message but websocket is not connected");
-        push_event(
-            context,
-            Event::Rpc {
-                event: RpcEvent::Error {
-                    error: RpcError::SendFailed { message },
-                },
-            },
-        );
+        Command::SendWebsocketMessage { message } => {
+            if !context.resources.rpc.is_connected {
+                push_event(
+                    context,
+                    Event::WebsocketError {
+                        error: "Not connected".to_string(),
+                    },
+                );
+                return;
+            }
+
+            if let Some(sender) = &mut context.resources.rpc.sender {
+                sender.send(ewebsock::WsMessage::Text(message.clone()));
+                push_event(
+                    context,
+                    Event::WebsocketMessage {
+                        message: format!("Sent: {}", message),
+                    },
+                );
+            }
+        }
+        Command::DisconnectWebsocket => {
+            context.resources.rpc.is_connected = false;
+            context.resources.rpc.sender.take();
+            context.resources.rpc.receiver.take();
+            push_event(context, Event::WebsocketDisconnected);
+        }
+        _ => {}
     }
 }

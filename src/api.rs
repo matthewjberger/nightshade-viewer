@@ -1,28 +1,17 @@
-use crate::prelude::*;
-use crate::rpc::execute_rpc_command;
+use crate::{
+    prelude::*,
+    rpc::execute_rpc_command,
+    ui::{format_timestamp, ApiLogEntry, ApiLogKind},
+};
 use enum2egui::{Gui, GuiInspect};
 use enum2str::EnumStr;
+use web_time::SystemTime;
 
 // Commands - Input to engine
 #[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum Command {
     #[default]
-    Empty,
-    Entity {
-        command: EntityCommand,
-    },
-    Request {
-        command: RequestCommand,
-    },
-    Rpc {
-        command: RpcCommand,
-    },
-}
-
-#[derive(Default, Debug, Clone, Gui, EnumStr)]
-pub enum EntityCommand {
-    #[default]
-    Empty,
+    None,
     SpawnCube {
         position: Vec3,
         size: f32,
@@ -32,6 +21,14 @@ pub enum EntityCommand {
         position: Vec3,
         name: String,
     },
+    ListCameras,
+    ConnectWebsocket {
+        url: String,
+    },
+    SendWebsocketMessage {
+        message: String,
+    },
+    DisconnectWebsocket,
 }
 
 #[derive(Default, Debug, Clone, Gui)]
@@ -57,26 +54,24 @@ impl From<nalgebra_glm::Vec3> for Vec3 {
     }
 }
 
-#[derive(Default, Debug, Clone, Gui, EnumStr)]
-pub enum RequestCommand {
-    #[default]
-    Empty,
-    RequestCameraEntities,
-}
-
 // Events - Output from engine
 #[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum Event {
     #[default]
-    Empty,
+    None,
     EntityCreated {
         entity_id: EntityId,
     },
-    CameraReport {
+    CameraList {
         cameras: Vec<EntityId>,
     },
-    Rpc {
-        event: RpcEvent,
+    WebsocketConnected,
+    WebsocketDisconnected,
+    WebsocketMessage {
+        message: String,
+    },
+    WebsocketError {
+        error: String,
     },
 }
 
@@ -100,6 +95,14 @@ pub fn execute_commands_system(context: &mut Context) {
     let commands = std::mem::take(&mut context.resources.commands);
     for command in commands {
         log::info!("[Command] {command:?}");
+        // Add to API log with pre-computed timestamp
+        let timestamp = SystemTime::now();
+        context.resources.user_interface.api_log.push(ApiLogEntry {
+            timestamp,
+            timestamp_string: format_timestamp(timestamp),
+            kind: ApiLogKind::Command,
+            message: format!("{command:?}"),
+        });
         execute_command(context, command);
     }
 }
@@ -109,22 +112,21 @@ pub fn process_events_system(context: &mut Context) {
     let events = std::mem::take(&mut context.resources.events.events);
     events.into_iter().for_each(|event| {
         log::info!("[Event] {event:?}");
+        // Add to API log with pre-computed timestamp
+        let timestamp = SystemTime::now();
+        context.resources.user_interface.api_log.push(ApiLogEntry {
+            timestamp,
+            timestamp_string: format_timestamp(timestamp),
+            kind: ApiLogKind::Event,
+            message: format!("{event:?}"),
+        });
     });
 }
 
 // Private implementation details
 fn execute_command(context: &mut Context, command: Command) {
     match command {
-        Command::Entity { command } => execute_entity_command(context, command),
-        Command::Request { command } => execute_request_command(context, command),
-        Command::Rpc { command } => execute_rpc_command(context, command),
-        Command::Empty => {}
-    }
-}
-
-fn execute_entity_command(context: &mut Context, command: EntityCommand) {
-    match command {
-        EntityCommand::SpawnCube {
+        Command::SpawnCube {
             position,
             size,
             name,
@@ -132,21 +134,24 @@ fn execute_entity_command(context: &mut Context, command: EntityCommand) {
             let entity = spawn_cube(context, position.into(), size, name);
             push_event(context, Event::EntityCreated { entity_id: entity });
         }
-        EntityCommand::SpawnCamera { position, name } => {
+        Command::SpawnCamera { position, name } => {
             let entity = spawn_camera(context, position.into(), name);
             push_event(context, Event::EntityCreated { entity_id: entity });
         }
-        EntityCommand::Empty => {}
-    }
-}
-
-fn execute_request_command(context: &mut Context, command: RequestCommand) {
-    match command {
-        RequestCommand::RequestCameraEntities => {
+        Command::ListCameras => {
             let cameras = query_entities(context, CAMERA);
-            push_event(context, Event::CameraReport { cameras });
+            push_event(context, Event::CameraList { cameras });
         }
-        RequestCommand::Empty => {}
+        Command::ConnectWebsocket { url } => {
+            execute_rpc_command(context, Command::ConnectWebsocket { url });
+        }
+        Command::SendWebsocketMessage { message } => {
+            execute_rpc_command(context, Command::SendWebsocketMessage { message });
+        }
+        Command::DisconnectWebsocket => {
+            execute_rpc_command(context, Command::DisconnectWebsocket);
+        }
+        Command::None => {}
     }
 }
 
