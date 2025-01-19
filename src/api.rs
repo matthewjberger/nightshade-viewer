@@ -41,19 +41,19 @@ pub struct Vec3 {
     pub z: f32,
 }
 
-impl From<nalgebra_glm::Vec3> for Vec3 {
-    fn from(vec: nalgebra_glm::Vec3) -> Self {
-        Self {
-            x: vec.x,
-            y: vec.y,
-            z: vec.z,
-        }
+impl From<Vec3> for nalgebra_glm::Vec3 {
+    fn from(val: Vec3) -> Self {
+        nalgebra_glm::vec3(val.x, val.y, val.z)
     }
 }
 
-impl Into<nalgebra_glm::Vec3> for Vec3 {
-    fn into(self) -> nalgebra_glm::Vec3 {
-        nalgebra_glm::vec3(self.x, self.y, self.z)
+impl From<nalgebra_glm::Vec3> for Vec3 {
+    fn from(val: nalgebra_glm::Vec3) -> Self {
+        Self {
+            x: val.x,
+            y: val.y,
+            z: val.z,
+        }
     }
 }
 
@@ -81,14 +81,9 @@ pub enum Event {
 }
 
 // Event storage in Resources
+#[derive(Default)]
 pub struct EventQueues {
     pub events: Vec<Event>,
-}
-
-impl Default for EventQueues {
-    fn default() -> Self {
-        Self { events: Vec::new() }
-    }
 }
 
 // Public API - Just two functions

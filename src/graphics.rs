@@ -206,28 +206,23 @@ fn update_panes_system(context: &mut crate::context::Context) {
     // Collect camera matrices
     let mut camera_matrices = Vec::new();
     for (kind, viewport) in &viewports {
-        let matrices = if let crate::ui::PaneKind::Scene { camera_entity, .. } = kind {
-            // Use the camera entity directly if we have one
-            if let Some(camera_entity) = camera_entity {
-                if let Some(camera) = get_component::<Camera>(context, *camera_entity, CAMERA) {
-                    if let Some(transform) =
-                        get_component::<GlobalTransform>(context, *camera_entity, GLOBAL_TRANSFORM)
-                    {
-                        let view = nalgebra_glm::inverse(&transform.0);
-                        let projection =
-                            camera.projection_matrix(viewport.width() / viewport.height());
+        let matrices = if let crate::ui::PaneKind::Scene {
+            camera_entity: Some(camera_entity),
+            ..
+        } = kind
+        {
+            if let (Some(camera), Some(transform)) = (
+                get_component::<Camera>(context, *camera_entity, CAMERA),
+                get_component::<GlobalTransform>(context, *camera_entity, GLOBAL_TRANSFORM),
+            ) {
+                let view = nalgebra_glm::inverse(&transform.0);
+                let projection = camera.projection_matrix(viewport.width() / viewport.height());
 
-                        Some(CameraMatrices {
-                            view,
-                            projection,
-                            camera_position: transform.0.column(3).xyz(),
-                        })
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+                Some(CameraMatrices {
+                    view,
+                    projection,
+                    camera_position: transform.0.column(3).xyz(),
+                })
             } else {
                 None
             }
