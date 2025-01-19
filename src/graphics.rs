@@ -408,7 +408,7 @@ fn update_panes_system(context: &mut crate::context::Context) {
                 }
             }
             crate::ui::PaneKind::Color(_color) => {}
-            crate::ui::PaneKind::Unassigned => {}
+            crate::ui::PaneKind::Empty => {}
             crate::ui::PaneKind::ApiLog => {}
         }
     }
@@ -597,7 +597,7 @@ fn render_pane(
             b: (color.b() as f64 / 255.0),
             a: 1.0,
         },
-        crate::ui::PaneKind::Unassigned => wgpu::Color {
+        crate::ui::PaneKind::Empty => wgpu::Color {
             r: 32.0 / 255.0,
             g: 32.0 / 255.0,
             b: 32.0 / 255.0,
@@ -1028,11 +1028,7 @@ mod sky {
     }
 
     fn load_sky_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Texture {
-        // TODO:
-        // This HDR is big and we statically build it in,
-        // so this contributes significantly to the final binary's filesize
-        // and can be reduced by using a compressed format (like a ktx8)
-        let hdr_data = include_bytes!("hdr/kloppenheim.hdr");
+        let hdr_data = include_bytes!("hdr/restaurant.hdr");
         let cursor = std::io::Cursor::new(hdr_data);
         let decoder =
             image::codecs::hdr::HdrDecoder::new(cursor).expect("Failed to create HDR decoder");

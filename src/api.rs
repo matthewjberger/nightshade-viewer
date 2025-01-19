@@ -69,12 +69,12 @@ impl From<nalgebra_glm::Vec3> for Vec3 {
 pub enum Event {
     #[default]
     Empty,
-    Query {
+    QueryResult {
         id: u64,
         result: QueryResult,
     },
-    Spawn {
-        result: SpawnResult,
+    Report {
+        report: Report,
     },
     Websocket {
         event: WebsocketEvent,
@@ -91,7 +91,7 @@ pub enum QueryResult {
 }
 
 #[derive(Default, Debug, Clone, Gui, EnumStr)]
-pub enum SpawnResult {
+pub enum Report {
     #[default]
     Empty,
     EntityCreated {
@@ -148,7 +148,6 @@ pub fn execute_commands_system(context: &mut Context) {
     let commands = std::mem::take(&mut context.resources.commands);
     for command in commands {
         log::info!("[Command] {command:?}");
-        // Add to API log without timestamp
         context.resources.user_interface.api_log.push(ApiLogEntry {
             message: Message::Command {
                 command: command.clone(),
@@ -163,7 +162,6 @@ pub fn process_events_system(context: &mut Context) {
     let events = std::mem::take(&mut context.resources.events.events);
     events.into_iter().for_each(|event| {
         log::info!("[Event] {event:?}");
-        // Add to API log without timestamp
         context.resources.user_interface.api_log.push(ApiLogEntry {
             message: Message::Event {
                 event: event.clone(),
@@ -194,8 +192,8 @@ fn execute_spawn_command(context: &mut Context, spawn_command: SpawnCommand) {
             let entity = spawn_cube(context, position.into(), size, name);
             publish_event(
                 context,
-                Event::Spawn {
-                    result: SpawnResult::EntityCreated { entity_id: entity },
+                Event::Report {
+                    report: Report::EntityCreated { entity_id: entity },
                 },
             );
         }
@@ -203,8 +201,8 @@ fn execute_spawn_command(context: &mut Context, spawn_command: SpawnCommand) {
             let entity = spawn_camera(context, position.into(), name);
             publish_event(
                 context,
-                Event::Spawn {
-                    result: SpawnResult::EntityCreated { entity_id: entity },
+                Event::Report {
+                    report: Report::EntityCreated { entity_id: entity },
                 },
             );
         }
@@ -217,7 +215,7 @@ fn execute_query_command(context: &mut Context, id: u64, query_command: QueryCom
             let cameras = query_entities(context, CAMERA);
             publish_event(
                 context,
-                Event::Query {
+                Event::QueryResult {
                     id,
                     result: QueryResult::CameraList { cameras },
                 },
@@ -240,18 +238,15 @@ fn spawn_cube(
         1,
     )[0];
 
-    // Set name
     if let Some(name_comp) = get_component_mut::<Name>(context, entity, NAME) {
         *name_comp = Name(name);
     }
 
-    // Set transform
     if let Some(transform) = get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM) {
         transform.translation = position;
         transform.scale = nalgebra_glm::vec3(1.0, 1.0, 1.0);
     }
 
-    // Paint the cube
     let mut painting = Painting::default();
     paint_box(
         &mut painting,
@@ -271,18 +266,15 @@ fn spawn_camera(context: &mut Context, position: nalgebra_glm::Vec3, name: Strin
         1,
     )[0];
 
-    // Set name
     if let Some(name_comp) = get_component_mut::<Name>(context, entity, NAME) {
         *name_comp = Name(name);
     }
 
-    // Set transform
     if let Some(transform) = get_component_mut::<LocalTransform>(context, entity, LOCAL_TRANSFORM) {
         transform.translation = position;
         transform.scale = nalgebra_glm::vec3(1.0, 1.0, 1.0);
     }
 
-    // Make this the active camera if we don't have one
     if context.resources.active_camera_entity.is_none() {
         context.resources.active_camera_entity = Some(entity);
     }

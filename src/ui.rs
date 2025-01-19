@@ -40,12 +40,12 @@ pub enum PaneKind {
     },
     Color(egui::Color32),
     ApiLog,
-    Unassigned,
+    Empty,
 }
 
 impl Default for PaneKind {
     fn default() -> Self {
-        Self::Unassigned
+        Self::Empty
     }
 }
 
@@ -96,7 +96,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
             }
             PaneKind::Color(_) => "Color".into(),
             PaneKind::ApiLog => "API Log".into(),
-            PaneKind::Unassigned => "Unassigned".into(),
+            PaneKind::Empty => "Empty".into(),
         }
     }
 
@@ -220,16 +220,16 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                 }
             }
 
-            // Draw background and warning text for unassigned/no-camera cases
             match pane.kind {
                 PaneKind::ApiLog => {
                     // Draw dark background for entire pane area including controls
                     let bg_color = egui::Color32::from_gray(32);
                     ui.painter().rect_filled(rect, 0.0, bg_color);
 
-                    // Create a child UI for the log content area
+                    // Create a child UI for the log content area with padding
+                    let viewport_with_padding = viewport_rect.shrink(4.0);
                     let mut content_ui = ui.child_ui(
-                        viewport_rect,
+                        viewport_with_padding,
                         egui::Layout::top_down(egui::Align::Min),
                         None,
                     );
@@ -238,69 +238,84 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                     egui::ScrollArea::vertical().stick_to_bottom(true).show(
                         &mut content_ui,
                         |ui| {
-                            // Show entries with alternating backgrounds
-                            for (idx, entry) in
-                                context.resources.user_interface.api_log.iter().enumerate()
-                            {
-                                let row_bg = if idx % 2 == 0 {
-                                    egui::Color32::from_gray(28)
-                                } else {
-                                    egui::Color32::from_gray(35)
-                                };
+                            // Create a frame for the entire log content
+                            egui::Frame::none()
+                                .inner_margin(egui::Margin::symmetric(0.0, 0.0))
+                                .show(ui, |ui| {
+                                    // Show entries with alternating backgrounds
+                                    for (idx, entry) in
+                                        context.resources.user_interface.api_log.iter().enumerate()
+                                    {
+                                        let row_bg = if idx % 2 == 0 {
+                                            egui::Color32::from_gray(28)
+                                        } else {
+                                            egui::Color32::from_gray(35)
+                                        };
 
-                                ui.painter().rect_filled(
-                                    ui.available_rect_before_wrap().shrink(2.0),
-                                    0.0,
-                                    row_bg,
-                                );
+                                        // Create a frame for each row that spans the full width
+                                        egui::Frame::none()
+                                            .fill(row_bg)
+                                            .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                                            .outer_margin(egui::Margin::symmetric(0.0, 0.0))
+                                            .show(ui, |ui| {
+                                                ui.horizontal(|ui| {
+                                                    // Determine label and color based on Message variant
+                                                    let (label, color) = match entry.message {
+                                                        Message::Command { .. } => (
+                                                            "COMMAND",
+                                                            egui::Color32::from_rgb(130, 170, 255),
+                                                        ),
+                                                        Message::Event { .. } => (
+                                                            "EVENT  ",
+                                                            egui::Color32::from_rgb(130, 255, 170),
+                                                        ),
+                                                    };
 
-                                ui.horizontal(|ui| {
-                                    // Determine label and color based on Message variant
-                                    let (label, color) = match entry.message {
-                                        Message::Command { .. } => {
-                                            ("COMMAND", egui::Color32::from_rgb(130, 170, 255))
-                                        }
-                                        Message::Event { .. } => {
-                                            ("EVENT  ", egui::Color32::from_rgb(130, 255, 170))
-                                        }
-                                    };
+                                                    // Show type label
+                                                    ui.add(
+                                                        egui::Label::new(
+                                                            egui::RichText::new(label)
+                                                                .monospace()
+                                                                .strong()
+                                                                .color(color),
+                                                        )
+                                                        .wrap(),
+                                                    );
 
-                                    // Show type label
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(label)
-                                                .monospace()
-                                                .strong()
-                                                .color(color),
-                                        )
-                                        .wrap(),
-                                    );
-
-                                    // Show message content
-                                    ui.with_layout(
-                                        egui::Layout::left_to_right(egui::Align::Center)
-                                            .with_cross_justify(true),
-                                        |ui| {
-                                            ui.label(
-                                                egui::RichText::new(format!("{:?}", entry.message))
-                                                    .monospace()
-                                                    .color(egui::Color32::from_gray(230)),
-                                            );
-                                        },
-                                    );
+                                                    // Show message content
+                                                    ui.with_layout(
+                                                        egui::Layout::left_to_right(
+                                                            egui::Align::Center,
+                                                        )
+                                                        .with_cross_justify(true),
+                                                        |ui| {
+                                                            ui.label(
+                                                                egui::RichText::new(format!(
+                                                                    "{:?}",
+                                                                    entry.message
+                                                                ))
+                                                                .monospace()
+                                                                .color(egui::Color32::from_gray(
+                                                                    230,
+                                                                )),
+                                                            );
+                                                        },
+                                                    );
+                                                });
+                                            });
+                                    }
                                 });
-                            }
                         },
                     );
                 }
-                PaneKind::Unassigned => {
+                PaneKind::Empty => {
                     // Draw dark background for entire pane area
                     let bg_color = egui::Color32::from_gray(32);
                     ui.painter().rect_filled(rect, 0.0, bg_color);
 
-                    // Show unassigned message
-                    let text = "Unassigned Pane\n\nSelect a visual type from the dropdown above.";
-                    let text_color = egui::Color32::from_rgb(220, 130, 0); // Same orange as warning
+                    // Show empty message
+                    let text = "Select a visual from the dropdown above";
+                    let text_color = egui::Color32::from_rgb(130, 255, 170);
                     let galley = ui.painter().layout_no_wrap(
                         text.into(),
                         egui::FontId::proportional(14.0),
@@ -359,13 +374,12 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
             child_ui.horizontal(|ui| {
                 ui.add_space(8.0);
 
-                // Scene/Color/ApiLog/Unassigned type selector
                 egui::ComboBox::new(format!("type_{}", tile_id.0), "")
                     .selected_text(match pane.kind {
                         PaneKind::Scene { .. } => "Scene",
                         PaneKind::Color(_) => "Color",
                         PaneKind::ApiLog => "API Log",
-                        PaneKind::Unassigned => "Unassigned",
+                        PaneKind::Empty => "Empty",
                     })
                     .show_ui(ui, |ui| {
                         let is_scene = matches!(pane.kind, PaneKind::Scene { .. });
@@ -402,11 +416,9 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                             pane.kind = PaneKind::ApiLog;
                         }
 
-                        let is_unassigned = matches!(pane.kind, PaneKind::Unassigned);
-                        if ui.selectable_label(is_unassigned, "Unassigned").clicked()
-                            && !is_unassigned
-                        {
-                            pane.kind = PaneKind::Unassigned;
+                        let is_empty = matches!(pane.kind, PaneKind::Empty);
+                        if ui.selectable_label(is_empty, "Empty").clicked() && !is_empty {
+                            pane.kind = PaneKind::Empty;
                         }
                     });
 
@@ -615,7 +627,7 @@ pub fn receive_ui_event(context: &mut crate::context::Context, event: &winit::ev
                     }
                 }
                 PaneKind::Color(_) => {}
-                PaneKind::Unassigned => {}
+                PaneKind::Empty => {}
                 PaneKind::ApiLog => {}
             }
         }
@@ -645,9 +657,8 @@ pub fn ensure_tile_tree_system(context: &mut crate::context::Context) {
     let mut tiles = egui_tiles::Tiles::default();
     let mut tab_tiles = vec![];
 
-    // Create initial unassigned pane on startup
     let tab_tile_child = tiles.insert_pane(Pane {
-        kind: PaneKind::Unassigned,
+        kind: PaneKind::Empty,
     });
     let tab_tile = tiles.insert_tab_tile(vec![tab_tile_child]);
     tab_tiles.push(tab_tile);
@@ -741,10 +752,8 @@ fn central_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                         .map(|ctx| unsafe { ctx.as_mut() }),
                     Some(Some(_))
                 ) {
-                    // Add closing parenthesis here
-                    // Create new unassigned pane by default
                     let new_pane = Pane {
-                        kind: PaneKind::Unassigned,
+                        kind: PaneKind::Empty,
                     };
 
                     let new_child = tile_tree.tiles.insert_pane(new_pane);
@@ -1562,17 +1571,9 @@ fn would_create_cycle(
     false
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct ApiLogEntry {
     pub message: Message,
-}
-
-impl Default for ApiLogEntry {
-    fn default() -> Self {
-        Self {
-            message: Message::default(),
-        }
-    }
 }
 
 // Update the function to check both text editing and window focus
