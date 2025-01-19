@@ -119,9 +119,9 @@ fn receive_rpc_event(context: &mut Context, event: ewebsock::WsEvent) {
     }
 }
 
-pub fn execute_rpc_command(context: &mut Context, command: Command) {
+pub fn execute_rpc_command(context: &mut Context, command: RpcCommand) {
     match command {
-        Command::ConnectWebsocket { url } => {
+        RpcCommand::Connect { url } => {
             if context.resources.rpc.is_connected {
                 push_event(
                     context,
@@ -148,7 +148,7 @@ pub fn execute_rpc_command(context: &mut Context, command: Command) {
                 );
             }
         }
-        Command::SendWebsocketMessage { message } => {
+        RpcCommand::Send { message } => {
             if !context.resources.rpc.is_connected {
                 push_event(
                     context,
@@ -160,7 +160,7 @@ pub fn execute_rpc_command(context: &mut Context, command: Command) {
             }
 
             if let Some(sender) = &mut context.resources.rpc.sender {
-                sender.send(ewebsock::WsMessage::Text(message.clone()));
+                sender.send(ewebsock::WsMessage::Text(message.to_string()));
                 push_event(
                     context,
                     Event::WebsocketMessage {
@@ -169,7 +169,7 @@ pub fn execute_rpc_command(context: &mut Context, command: Command) {
                 );
             }
         }
-        Command::DisconnectWebsocket => {
+        RpcCommand::Disconnect => {
             context.resources.rpc.is_connected = false;
             context.resources.rpc.sender.take();
             context.resources.rpc.receiver.take();

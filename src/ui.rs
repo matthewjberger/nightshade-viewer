@@ -9,14 +9,15 @@ pub struct UserInterface {
     pub frame_output: Option<(egui::FullOutput, Vec<egui::ClippedPrimitive>)>,
     pub show_left_panel: bool,
     pub show_right_panel: bool,
-    pub show_bottom_panel: bool,
+    pub show_command_window: bool,
     pub uniform_scaling: bool,
     pub consumed_event: bool,
     pub selected_entity: Option<crate::context::EntityId>,
-    pub timeline_state: TimelineState,
     pub backend_websocket_address: String,
     pub dragging_viewport: Option<(egui_tiles::TileId, egui::Pos2)>,
     pub api_log: Vec<ApiLogEntry>,
+    pub draft_command: Command,
+    pub draft_event: Event,
 }
 
 /// A context shared between all the panes in the tile tree
@@ -237,31 +238,6 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                     egui::ScrollArea::vertical().stick_to_bottom(true).show(
                         &mut content_ui,
                         |ui| {
-                            // Add toolbar at top
-                            ui.horizontal(|ui| {
-                                if ui.button("🗑 Clear").clicked() {
-                                    context.resources.user_interface.api_log.clear();
-                                }
-
-                                ui.separator();
-
-                                // Add entry count with icon
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        ui.label(format!(
-                                            "{} entries",
-                                            context.resources.user_interface.api_log.len()
-                                        ));
-                                        ui.label("📋");
-                                    },
-                                );
-                            });
-
-                            ui.add_space(4.0);
-                            ui.separator();
-                            ui.add_space(4.0);
-
                             // Show entries with alternating backgrounds for better readability
                             for (idx, entry) in
                                 context.resources.user_interface.api_log.iter().enumerate()
@@ -279,13 +255,6 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                                 );
 
                                 ui.horizontal(|ui| {
-                                    // Use monospace font for consistent spacing
-                                    ui.label(
-                                        egui::RichText::new(&entry.timestamp_string)
-                                            .monospace()
-                                            .color(egui::Color32::from_gray(150)),
-                                    );
-
                                     // Fixed-width type label
                                     let (label, color) = match entry.kind {
                                         ApiLogKind::Command => {
@@ -688,8 +657,6 @@ pub fn ensure_tile_tree_system(context: &mut crate::context::Context) {
 /// Creates the UI for the frame and
 /// emits the resources needed for rendering
 pub fn create_ui_system(context: &mut crate::context::Context) {
-    update_timeline_system(context);
-
     // Set the context pointer before any UI work
     context.resources.user_interface.tile_tree_context.context = Some(context as *mut _);
 
@@ -723,7 +690,6 @@ fn create_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     top_panel_ui(context, ui);
     left_panel_ui(context, ui);
     central_panel_ui(context, ui);
-    bottom_panel_ui(context, ui);
 }
 
 fn central_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
@@ -872,20 +838,6 @@ fn name_inspector_ui(
             }
         }
     });
-}
-
-fn bottom_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
-    if !context.resources.user_interface.show_bottom_panel {
-        return;
-    }
-
-    egui::TopBottomPanel::bottom("timeline").show(ui, |ui| {
-        timeline_ui(ui, &mut context.resources.user_interface.timeline_state);
-    });
-
-    if context.resources.user_interface.timeline_state.playing {
-        ui.request_repaint();
-    }
 }
 
 fn lines_inspector_ui(
@@ -1202,103 +1154,14 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
                         if let Some(entity) = context.resources.user_interface.selected_entity {
                             entity_inspector_ui(context, ui, entity);
                         } else {
-                            ui.label("No entity selected");
-                        }
-                    })
-                    .header_response
-                    .clicked()
-                {
-                    // Optional: handle header click
-                }
-
-                ui.separator();
-
-                // Commands Section
-                if ui
-                    .collapsing("Commands", |ui| {
-                        if ui.button("Spawn Cube").clicked() {
-                            push_command(
-                                context,
-                                Command::SpawnCube {
-                                    position: nalgebra_glm::vec3(0.0, 0.0, 0.0).into(),
-                                    size: 1.0,
-                                    name: "Cube".to_string(),
-                                },
-                            );
-                        }
-
-                        if ui.button("Spawn Camera").clicked() {
-                            push_command(
-                                context,
-                                Command::SpawnCamera {
-                                    position: nalgebra_glm::vec3(0.0, 0.0, 5.0).into(),
-                                    name: "Camera".to_string(),
-                                },
-                            );
-                        }
-
-                        if ui.button("List Cameras").clicked() {
-                            push_command(context, Command::ListCameras);
-                        }
-
-                        ui.group(|ui| {
-                            let network_connected = context.resources.rpc.is_connected;
-                            if ui
-                                .add_enabled(
-                                    !network_connected,
-                                    egui::Button::new("Connect Websocket"),
-                                )
-                                .clicked()
-                            {
-                                push_command(
-                                    context,
-                                    Command::ConnectWebsocket {
-                                        url: context
-                                            .resources
-                                            .user_interface
-                                            .backend_websocket_address
-                                            .clone(),
-                                    },
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(8.0);
+                                ui.label(
+                                    egui::RichText::new("No entity selected")
+                                        .color(egui::Color32::from_gray(128)),
                                 );
-                            }
-
-                            if context
-                                .resources
-                                .user_interface
-                                .backend_websocket_address
-                                .is_empty()
-                            {
-                                context.resources.user_interface.backend_websocket_address =
-                                    "127.0.0.1:9001".to_string();
-                            }
-                            ui.text_edit_singleline(
-                                &mut context.resources.user_interface.backend_websocket_address,
-                            );
-                        });
-
-                        if ui
-                            .add_enabled(
-                                context.resources.rpc.is_connected,
-                                egui::Button::new("Send Message"),
-                            )
-                            .clicked()
-                        {
-                            push_command(
-                                context,
-                                Command::SendWebsocketMessage {
-                                    message: "Hello, from the nightshade frontend!".to_string(),
-                                },
-                            );
-                        }
-
-                        if ui
-                            .add_enabled(
-                                context.resources.rpc.is_connected,
-                                egui::Button::new("Disconnect"),
-                            )
-                            .clicked()
-                        {
-                            push_command(context, Command::DisconnectWebsocket);
+                                ui.add_space(8.0);
+                            });
                         }
                     })
                     .header_response
@@ -1313,36 +1176,63 @@ fn left_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
 fn top_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     egui::TopBottomPanel::top("menu").show(ui, |ui| {
         egui::menu::bar(ui, |ui| {
-            // Theme switch and panel toggles on the left
             egui::global_theme_preference_switch(ui);
             ui.separator();
             ui.checkbox(
                 &mut context.resources.user_interface.show_left_panel,
-                "Hierarchy",
+                "Tree",
             );
             ui.checkbox(
-                &mut context.resources.user_interface.show_bottom_panel,
-                "Timeline",
+                &mut context.resources.user_interface.show_command_window,
+                "Api",
             );
             ui.separator();
 
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                ui.menu_button("Zoom", |ui| {
-                    egui::gui_zoom::zoom_menu_buttons(ui);
-                });
-                ui.separator();
-            }
-
-            // Push FPS counter to the far right using spring
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(format!(
-                    "FPS: {}",
+                    "FPS: {:>3}", // Right-align with width of 3
                     context.resources.window.frames_per_second
                 ));
             });
         });
     });
+
+    // Add the command window
+    if context.resources.user_interface.show_command_window {
+        egui::Window::new("Api")
+            .resizable(true)
+            .default_size([400.0, 300.0])
+            .show(ui, |ui| {
+                // Add a container with max width
+                egui::ScrollArea::both().show(ui, |ui| {
+                    ui.set_max_width(380.0);
+
+                    ui.heading("Send Command");
+                    ui.horizontal(|ui| {
+                        use enum2egui::GuiInspect;
+                        context.resources.user_interface.draft_command.ui_mut(ui);
+                        let command = context.resources.user_interface.draft_command.clone();
+                        if ui.button("Send").clicked() {
+                            push_command(context, command);
+                        }
+                    });
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+
+                    ui.heading("Publish Event");
+                    ui.horizontal(|ui| {
+                        use enum2egui::GuiInspect;
+                        let event = context.resources.user_interface.draft_event.clone();
+                        context.resources.user_interface.draft_event.ui_mut(ui);
+                        if ui.button("Publish").clicked() {
+                            push_event(context, event);
+                        }
+                    });
+                });
+            });
+    }
 }
 
 // Recursively renders the entity tree in the ui system
@@ -1590,118 +1480,6 @@ fn update_tile_mappings(
     }
 }
 
-pub use timeline::*;
-mod timeline {
-    pub fn timeline_ui(ui: &mut egui::Ui, state: &mut TimelineState) {
-        let rect = ui.max_rect();
-        let border_color = egui::Color32::from_rgb(59, 130, 246);
-        let border_width = 1.0;
-        let border_rounding = 1.0;
-        let border_rect = rect.shrink(1.0);
-        ui.painter().rect_stroke(
-            border_rect,
-            border_rounding,
-            egui::Stroke::new(border_width, border_color),
-        );
-
-        egui::Frame::none()
-            .inner_margin(egui::Margin::from(6.0))
-            .show(ui, |ui| {
-                ui.horizontal_centered(|ui| {
-                    // Time display
-                    let time_text = format!(
-                        "{} / {}",
-                        format_time(state.current_time),
-                        format_time(state.total_duration)
-                    );
-                    ui.label(time_text);
-
-                    ui.add_space(16.0);
-
-                    // Timeline slider
-                    let slider =
-                        egui::Slider::new(&mut state.current_time, 0.0..=state.total_duration)
-                            .show_value(false)
-                            .custom_formatter(|_, _| String::new())
-                            .custom_parser(|s| s.parse::<f64>().ok());
-
-                    if ui.add(slider).dragged() {
-                        state.playing = false;
-                    }
-
-                    ui.add_space(16.0);
-
-                    // Step buttons
-                    if ui.button("⏮").clicked() {
-                        state.current_time = (state.current_time - 1.0).max(0.0);
-                    }
-
-                    // Play/Pause button
-                    if ui.button(if state.playing { "⏸" } else { "▶" }).clicked() {
-                        state.playing = !state.playing;
-                    }
-
-                    if ui.button("⏭").clicked() {
-                        state.current_time = (state.current_time + 1.0).min(state.total_duration);
-                    }
-
-                    ui.add_space(16.0);
-
-                    egui::ComboBox::from_label("Speed")
-                        .selected_text(format!("{:.1}x", state.playback_speed))
-                        .show_ui(ui, |ui| {
-                            for &speed in &[0.1, 0.5, 1.0, 2.0, 5.0] {
-                                ui.selectable_value(
-                                    &mut state.playback_speed,
-                                    speed,
-                                    format!("{:.1}x", speed),
-                                );
-                            }
-                        });
-                });
-            });
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct TimelineState {
-        pub playing: bool,
-        pub current_time: f64,
-        pub total_duration: f64,
-        pub playback_speed: f64,
-    }
-
-    impl Default for TimelineState {
-        fn default() -> Self {
-            Self {
-                playing: false,
-                current_time: 0.0,
-                total_duration: 100.0,
-                playback_speed: 1.0,
-            }
-        }
-    }
-
-    pub fn update_timeline_system(context: &mut crate::context::Context) {
-        let delta_time = context.resources.window.delta_time as f64;
-        let timeilne = &mut context.resources.user_interface.timeline_state;
-        if !timeilne.playing {
-            return;
-        }
-        timeilne.current_time += delta_time * timeilne.playback_speed;
-        if timeilne.current_time >= timeilne.total_duration {
-            timeilne.current_time = timeilne.total_duration;
-            timeilne.playing = false;
-        }
-    }
-
-    pub fn format_time(seconds: f64) -> String {
-        let minutes = (seconds as i32) / 60;
-        let secs = (seconds as i32) % 60;
-        let ms = (seconds.fract() * 1000.0) as i32;
-        format!("{:02}:{:02}.{:03}", minutes, secs, ms)
-    }
-}
-
 fn create_scene_pane(context: &mut crate::context::Context) -> Pane {
     // Count only root nodes (no Parent component) for scene numbering
     let scene_count = query_entities(context, LOCAL_TRANSFORM)
@@ -1824,4 +1602,16 @@ pub enum ApiLogKind {
     #[default]
     Command,
     Event,
+}
+
+// Update the function to check both text editing and window focus
+pub fn should_capture_keyboard(context: &crate::context::Context) -> bool {
+    let Some(gui_state) = &context.resources.user_interface.state else {
+        return false;
+    };
+
+    let ctx = gui_state.egui_ctx();
+
+    // Check if any UI element wants keyboard input OR if any window is focused
+    ctx.wants_keyboard_input() || ctx.wants_pointer_input()
 }

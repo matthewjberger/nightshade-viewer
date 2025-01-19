@@ -11,24 +11,38 @@ use web_time::SystemTime;
 #[derive(Default, Debug, Clone, Gui, EnumStr)]
 pub enum Command {
     #[default]
-    None,
-    SpawnCube {
+    Empty,
+    Query {
+        command: QueryCommand,
+    },
+    Spawn {
+        command: SpawnCommand,
+    },
+    Rpc {
+        command: RpcCommand,
+    },
+}
+
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
+pub enum QueryCommand {
+    #[default]
+    Empty,
+    ListCameras,
+}
+
+#[derive(Default, Debug, Clone, Gui, EnumStr)]
+pub enum SpawnCommand {
+    #[default]
+    Empty,
+    Cube {
         position: Vec3,
         size: f32,
         name: String,
     },
-    SpawnCamera {
+    Camera {
         position: Vec3,
         name: String,
     },
-    ListCameras,
-    ConnectWebsocket {
-        url: String,
-    },
-    SendWebsocketMessage {
-        message: String,
-    },
-    DisconnectWebsocket,
 }
 
 #[derive(Default, Debug, Clone, Gui)]
@@ -123,10 +137,21 @@ pub fn process_events_system(context: &mut Context) {
     });
 }
 
-// Private implementation details
 fn execute_command(context: &mut Context, command: Command) {
     match command {
-        Command::SpawnCube {
+        Command::Spawn { command } => execute_spawn_command(context, command),
+        Command::Rpc { command } => {
+            execute_rpc_command(context, command);
+        }
+        Command::Query { command } => execute_query_command(context, command),
+        Command::Empty => {}
+    }
+}
+
+fn execute_spawn_command(context: &mut Context, spawn_command: SpawnCommand) {
+    match spawn_command {
+        SpawnCommand::Empty => {}
+        SpawnCommand::Cube {
             position,
             size,
             name,
@@ -134,24 +159,20 @@ fn execute_command(context: &mut Context, command: Command) {
             let entity = spawn_cube(context, position.into(), size, name);
             push_event(context, Event::EntityCreated { entity_id: entity });
         }
-        Command::SpawnCamera { position, name } => {
+        SpawnCommand::Camera { position, name } => {
             let entity = spawn_camera(context, position.into(), name);
             push_event(context, Event::EntityCreated { entity_id: entity });
         }
-        Command::ListCameras => {
+    }
+}
+
+fn execute_query_command(context: &mut Context, query_command: QueryCommand) {
+    match query_command {
+        QueryCommand::ListCameras => {
             let cameras = query_entities(context, CAMERA);
             push_event(context, Event::CameraList { cameras });
         }
-        Command::ConnectWebsocket { url } => {
-            execute_rpc_command(context, Command::ConnectWebsocket { url });
-        }
-        Command::SendWebsocketMessage { message } => {
-            execute_rpc_command(context, Command::SendWebsocketMessage { message });
-        }
-        Command::DisconnectWebsocket => {
-            execute_rpc_command(context, Command::DisconnectWebsocket);
-        }
-        Command::None => {}
+        QueryCommand::Empty => {}
     }
 }
 
