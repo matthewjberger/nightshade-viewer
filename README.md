@@ -1,8 +1,8 @@
-# Nightshade
-
- <img src="./src/icon/nightshade.png" alt="drawing" width="100"/>
+# Nightshade <img src="./src/icon/nightshade.png" alt="drawing" width="100"/>
 
 `Nightshade` is a portable graphics engine, written in rust
+
+![image](https://github.com/user-attachments/assets/aa466608-30db-4b0c-8585-3bcdb6ceb127)
 
 ## Quickstart
 
