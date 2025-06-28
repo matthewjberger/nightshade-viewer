@@ -17,39 +17,39 @@ path = "src/lib.rs"
 name = "nightshade_core"
 
 [dependencies]
-bitflags = "2.8.0"
-bytemuck = { version = "1.21.0", features = ["derive"] }
-enum2egui = "0.3.10"
-egui = "0.30.0"
-egui_tiles = "0.11.0"
-egui-wgpu = { version = "0.30.0", features = ["winit"] }
+bitflags = "2.9.1"
+bytemuck = { version = "1.23.1", features = ["derive"] }
+enum2egui = "0.3.11"
+egui = "0.31.1"
+egui_tiles = "0.12.0"
+egui-wgpu = { version = "0.31.1", features = ["winit"] }
 futures = "0.3.31"
 image = { version = "0.24.9", default-features = false, features = ["png", "hdr"] }
-log = "0.4.22"
+log = "0.4.27"
 nalgebra-glm = { version = "0.19.0", features = [
     "convert-bytemuck",
 ] }
 web-time = "1.1.0"
-wgpu = { version = "23.0.1", default-features = false }
-winit = "0.30.8"
+wgpu = { version = "24.0.5", default-features = false }
+winit = "0.30.11"
 ewebsock = "0.8.0"
-enum2str = "0.1.11"
+enum2str = "0.1.16"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-env_logger = "0.11.6"
-egui-winit = "0.30.0"
-futures-util = "0.3.28"
+env_logger = "0.11.8"
+egui-winit = "0.31.1"
+futures-util = "0.3.31"
 pollster = "0.4.0"
 structopt = "0.3.26"
-tokio = { version = "1.31.0", features = ["full"] }
-tokio-tungstenite = "0.20.0"
+tokio = { version = "1.45.1", features = ["full"] }
+tokio-tungstenite = "0.20.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
-egui-winit = { version = "0.30.0", default-features = false }
-wasm-bindgen = "0.2.99"
-wasm-bindgen-futures = "0.4.49"
+egui-winit = { version = "0.31.1", default-features = false }
+wasm-bindgen = "0.2.100"
+wasm-bindgen-futures = "0.4.50"
 
 [features]
 default = ["wgpu/default"]
