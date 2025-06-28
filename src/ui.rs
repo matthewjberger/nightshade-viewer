@@ -228,10 +228,10 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
                     // Create a child UI for the log content area with padding
                     let viewport_with_padding = viewport_rect.shrink(4.0);
-                    let mut content_ui = ui.child_ui(
-                        viewport_with_padding,
-                        egui::Layout::top_down(egui::Align::Min),
-                        None,
+                    let mut content_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(viewport_with_padding)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
                     );
 
                     // Show API log content
@@ -239,8 +239,8 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                         &mut content_ui,
                         |ui| {
                             // Create a frame for the entire log content
-                            egui::Frame::none()
-                                .inner_margin(egui::Margin::symmetric(0.0, 0.0))
+                            egui::Frame::NONE
+                                .inner_margin(egui::Margin::symmetric(0, 0))
                                 .show(ui, |ui| {
                                     // Show entries with alternating backgrounds
                                     for (idx, entry) in
@@ -253,10 +253,10 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                                         };
 
                                         // Create a frame for each row that spans the full width
-                                        egui::Frame::none()
+                                        egui::Frame::NONE
                                             .fill(row_bg)
-                                            .inner_margin(egui::Margin::symmetric(8.0, 4.0))
-                                            .outer_margin(egui::Margin::symmetric(0.0, 0.0))
+                                            .inner_margin(egui::Margin::symmetric(8, 4))
+                                            .outer_margin(egui::Margin::symmetric(0, 0))
                                             .show(ui, |ui| {
                                                 ui.horizontal(|ui| {
                                                     // Determine label and color based on Message variant
@@ -365,10 +365,10 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
 
             // Add controls UI after background
             let _child_response = ui.allocate_rect(controls_rect, egui::Sense::hover());
-            let mut child_ui = ui.child_ui(
-                controls_rect,
-                egui::Layout::left_to_right(egui::Align::Center),
-                None,
+            let mut child_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(controls_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
             );
 
             child_ui.horizontal(|ui| {
@@ -518,6 +518,7 @@ impl egui_tiles::Behavior<crate::ui::Pane> for crate::ui::TileTreeContext {
                     border_rect,
                     border_rounding,
                     egui::Stroke::new(border_width, border_color),
+                    egui::StrokeKind::Outside,
                 );
             }
 
@@ -707,7 +708,7 @@ fn create_ui(context: &mut crate::context::Context, ui: &egui::Context) {
 
 fn central_panel_ui(context: &mut crate::context::Context, ui: &egui::Context) {
     egui::CentralPanel::default()
-        .frame(egui::Frame::none())
+        .frame(egui::Frame::NONE)
         .show(ui, |ui| {
             context
                 .resources

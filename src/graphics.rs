@@ -98,6 +98,7 @@ pub fn resize_renderer(context: &mut crate::context::Context, width: u32, height
             base_array_layer: 0,
             array_layer_count: None,
             mip_level_count: None,
+            usage: None,
         })
     };
     renderer.ui_depth_texture_view = ui_depth_view;
@@ -154,6 +155,7 @@ pub fn resize_renderer(context: &mut crate::context::Context, width: u32, height
             base_array_layer: 0,
             array_layer_count: None,
             mip_level_count: None,
+            usage: None,
         });
         let grid = create_grid(
             &renderer.gpu.device,
@@ -530,13 +532,13 @@ pub fn render_frame_system(context: &mut crate::context::Context) {
             };
 
             encoder.copy_texture_to_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &target.color_texture,
                     mip_level: 0,
                     origin: source_origin,
                     aspect: wgpu::TextureAspect::All,
                 },
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &surface_texture.texture,
                     mip_level: 0,
                     origin: destination_origin,
@@ -720,6 +722,7 @@ fn ensure_viewports(context: &mut crate::Context, viewport_count: usize) {
             base_array_layer: 0,
             array_layer_count: None,
             mip_level_count: None,
+            usage: None,
         });
         let grid = create_grid(
             &renderer.gpu.device,
@@ -787,6 +790,7 @@ pub async fn create_renderer_async(
             base_array_layer: 0,
             array_layer_count: None,
             mip_level_count: None,
+            usage: None,
         })
     };
     let egui_renderer = egui_wgpu::Renderer::new(
@@ -811,8 +815,8 @@ async fn create_gpu_async(
     width: u32,
     height: u32,
 ) -> crate::graphics::Gpu {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all),
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::all(),
         ..Default::default()
     });
 
@@ -908,6 +912,7 @@ mod sky {
         let sky_texture = load_sky_texture(device, queue);
         let sky_texture_view = sky_texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::Cube),
+            usage: None,
             ..Default::default()
         });
 
@@ -1060,14 +1065,14 @@ mod sky {
             .collect();
 
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &equirect_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             bytemuck::cast_slice(&data),
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(metadata.width * 16), // 4 x f32
                 rows_per_image: Some(metadata.height),
