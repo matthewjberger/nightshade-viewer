@@ -30,13 +30,10 @@ pub fn AssetBrowser(
                     on:click=move |event: MouseEvent| event.stop_propagation()
                 >
                     <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-white/10">
-                        <div class="flex flex-col">
-                            <span class="text-[14px] font-semibold text-white/90 leading-tight">
-                                {move || title(state.browser.get())}
-                            </span>
-                            <span class="text-[11px] text-white/40">
-                                {move || subtitle(state.browser.get())}
-                            </span>
+                        <div class="flex items-center gap-1">
+                            {source_tab(state, search, Browser::Khronos, "Khronos")}
+                            {source_tab(state, search, Browser::Models, "Models")}
+                            {source_tab(state, search, Browser::Hdris, "HDRIs")}
                         </div>
                         <input
                             class="flex-1 max-w-xs ml-2 rounded-md bg-black/40 border border-white/10 px-2.5 py-1.5 text-[13px] text-white/90 placeholder:text-white/30 outline-none focus:border-orange-400/60"
@@ -79,21 +76,30 @@ pub fn AssetBrowser(
     }
 }
 
-fn title(browser: Browser) -> &'static str {
-    match browser {
-        Browser::Khronos => "Khronos Sample Assets",
-        Browser::Hdris => "Polyhaven Environments",
-        Browser::Models => "Polyhaven Models",
-        Browser::Closed => "",
-    }
-}
-
-fn subtitle(browser: Browser) -> &'static str {
-    match browser {
-        Browser::Khronos => "glTF sample models",
-        Browser::Hdris => "HDRI lighting",
-        Browser::Models => "CC0 glTF models",
-        Browser::Closed => "",
+fn source_tab(
+    state: ViewerState,
+    search: RwSignal<String>,
+    target: Browser,
+    label: &'static str,
+) -> impl IntoView {
+    let class = move || {
+        let base = "px-2.5 py-1 rounded-md text-[12px] font-semibold transition-colors";
+        if state.browser.get() == target {
+            format!("{base} bg-white/10 text-white")
+        } else {
+            format!("{base} text-white/55 hover:text-white/85")
+        }
+    };
+    view! {
+        <button
+            class=class
+            on:click=move |_| {
+                search.set(String::new());
+                state.browser.set(target);
+            }
+        >
+            {label}
+        </button>
     }
 }
 

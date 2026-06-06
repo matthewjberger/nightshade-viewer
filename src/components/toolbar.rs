@@ -61,7 +61,7 @@ pub fn Toolbar(
                 &bridge,
                 &ClientMessage::LoadPolyhaven {
                     slug: list[index].slug.clone(),
-                    resolution: state.resolution.get_untracked(),
+                    resolution: 4,
                 },
             );
         }
@@ -166,25 +166,7 @@ pub fn Toolbar(
                         state.browser.set(Browser::Khronos);
                     }
                 >
-                    "Khronos"
-                </button>
-                <button
-                    class=BUTTON
-                    on:click=move |_| {
-                        close_menu();
-                        state.browser.set(Browser::Hdris);
-                    }
-                >
-                    "HDRIs"
-                </button>
-                <button
-                    class=BUTTON
-                    on:click=move |_| {
-                        close_menu();
-                        state.browser.set(Browser::Models);
-                    }
-                >
-                    "Models"
+                    "Browse"
                 </button>
                 <button class=BUTTON on:click=move |event| { close_menu(); frame(event) }>
                     "Frame"
