@@ -28,6 +28,15 @@ pub enum GizmoKind {
     Scale,
 }
 
+/// Lifecycle phase of a forwarded touch contact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TouchPhase {
+    Started,
+    Moved,
+    Ended,
+    Cancelled,
+}
+
 /// Viewport shading mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShadingMode {
@@ -105,6 +114,14 @@ pub enum ClientMessage {
     /// Wheel delta in raw pixels (the worker converts to scroll lines).
     Wheel {
         delta: f32,
+    },
+    /// A touch contact in physical pixels. Drives the engine touch controller:
+    /// one finger orbits, two fingers pan, a pinch zooms. `id` is the pointer id.
+    Touch {
+        id: u64,
+        phase: TouchPhase,
+        x: f32,
+        y: f32,
     },
     /// A click without drag: GPU-pick and select (or cycle) at this position.
     Pick {

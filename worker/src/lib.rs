@@ -112,6 +112,11 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 input_inject_mouse_wheel(&mut app.world, Vec2::new(0.0, -delta / 100.0));
             }
         }
+        ClientMessage::Touch { id, phase, x, y } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                input_inject_touch(&mut app.world, id, touch_phase(phase), Vec2::new(x, y));
+            }
+        }
         ClientMessage::Pick { x, y } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 systems::picking::request(&mut app.state.viewer, &mut app.world, x, y);
@@ -364,6 +369,15 @@ fn mouse_button(button: u8) -> WinitMouseButton {
         1 => WinitMouseButton::Middle,
         2 => WinitMouseButton::Right,
         _ => WinitMouseButton::Left,
+    }
+}
+
+fn touch_phase(phase: protocol::TouchPhase) -> TouchPhase {
+    match phase {
+        protocol::TouchPhase::Started => TouchPhase::Started,
+        protocol::TouchPhase::Moved => TouchPhase::Moved,
+        protocol::TouchPhase::Ended => TouchPhase::Ended,
+        protocol::TouchPhase::Cancelled => TouchPhase::Cancelled,
     }
 }
 

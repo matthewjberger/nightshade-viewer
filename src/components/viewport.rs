@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use leptos::html;
 use leptos::prelude::*;
-use protocol::ClientMessage;
+use protocol::{ClientMessage, TouchPhase};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::{DragEvent, HtmlCanvasElement, MouseEvent, PointerEvent, ResizeObserver, WheelEvent};
@@ -16,6 +18,15 @@ struct DragState {
     moved: f32,
 }
 
+/// Per-contact tracking for forwarded touches, used to tell a tap (pick) from a
+/// drag (camera gesture) without echoing the engine's own touch state.
+#[derive(Clone, Copy)]
+struct TouchTrack {
+    last_x: f32,
+    last_y: f32,
+    moved: f32,
+}
+
 /// The render surface. Forwards raw pointer and wheel input to the worker so the
 /// engine drives the camera and gizmos, detects a click (no drag) to pick, and
 /// accepts dropped files.
@@ -26,6 +37,7 @@ pub fn Viewport(
 ) -> impl IntoView {
     let canvas_ref = NodeRef::<html::Canvas>::new();
     let drag = StoredValue::new(DragState::default());
+    let touches = StoredValue::new(HashMap::<i32, TouchTrack>::new());
 
     Effect::new(move |_| {
         let Some(canvas) = canvas_ref.get() else {
@@ -51,6 +63,36 @@ pub fn Viewport(
     });
 
     let on_pointerdown = move |event: PointerEvent| {
+        if event.pointer_type() == "touch" {
+            let id = event.pointer_id();
+            touches.update_value(|map| {
+                map.insert(
+                    id,
+                    TouchTrack {
+                        last_x: event.client_x() as f32,
+                        last_y: event.client_y() as f32,
+                        moved: 0.0,
+                    },
+                );
+            });
+            if let Some(canvas) = canvas_ref.get() {
+                let _ = canvas.set_pointer_capture(id);
+                if let Some(bridge) = bridge.get_value() {
+                    let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                    send(
+                        &bridge,
+                        &ClientMessage::Touch {
+                            id: id as u64,
+                            phase: TouchPhase::Started,
+                            x,
+                            y,
+                        },
+                    );
+                }
+            }
+            state.grabbing.set(true);
+            return;
+        }
         let button = event.button().max(0) as u8;
         drag.update_value(|state| {
             state.button = Some(button);
@@ -76,6 +118,33 @@ pub fn Viewport(
     };
 
     let on_pointermove = move |event: PointerEvent| {
+        if event.pointer_type() == "touch" {
+            let id = event.pointer_id();
+            touches.update_value(|map| {
+                if let Some(track) = map.get_mut(&id) {
+                    let x = event.client_x() as f32;
+                    let y = event.client_y() as f32;
+                    track.moved += (x - track.last_x).abs() + (y - track.last_y).abs();
+                    track.last_x = x;
+                    track.last_y = y;
+                }
+            });
+            if let Some(canvas) = canvas_ref.get()
+                && let Some(bridge) = bridge.get_value()
+            {
+                let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                send(
+                    &bridge,
+                    &ClientMessage::Touch {
+                        id: id as u64,
+                        phase: TouchPhase::Moved,
+                        x,
+                        y,
+                    },
+                );
+            }
+            return;
+        }
         drag.update_value(|state| {
             let x = event.client_x() as f32;
             let y = event.client_y() as f32;
@@ -92,6 +161,40 @@ pub fn Viewport(
     };
 
     let on_pointerup = move |event: PointerEvent| {
+        if event.pointer_type() == "touch" {
+            let id = event.pointer_id();
+            let (moved, count) = touches.with_value(|map| {
+                (
+                    map.get(&id).map(|track| track.moved).unwrap_or(0.0),
+                    map.len(),
+                )
+            });
+            touches.update_value(|map| {
+                map.remove(&id);
+            });
+            if let Some(canvas) = canvas_ref.get() {
+                let _ = canvas.release_pointer_capture(id);
+                if let Some(bridge) = bridge.get_value() {
+                    let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                    send(
+                        &bridge,
+                        &ClientMessage::Touch {
+                            id: id as u64,
+                            phase: TouchPhase::Ended,
+                            x,
+                            y,
+                        },
+                    );
+                    if count == 1 && moved < 5.0 {
+                        send(&bridge, &ClientMessage::Pick { x, y });
+                    }
+                }
+            }
+            if touches.with_value(|map| map.is_empty()) {
+                state.grabbing.set(false);
+            }
+            return;
+        }
         let (button, moved) = drag.with_value(|state| (state.button, state.moved));
         drag.update_value(|state| state.button = None);
         state.grabbing.set(false);
@@ -110,6 +213,34 @@ pub fn Viewport(
                     send(&bridge, &ClientMessage::Pick { x, y });
                 }
             }
+        }
+    };
+
+    let on_pointercancel = move |event: PointerEvent| {
+        if event.pointer_type() != "touch" {
+            return;
+        }
+        let id = event.pointer_id();
+        touches.update_value(|map| {
+            map.remove(&id);
+        });
+        if let Some(canvas) = canvas_ref.get() {
+            let _ = canvas.release_pointer_capture(id);
+            if let Some(bridge) = bridge.get_value() {
+                let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                send(
+                    &bridge,
+                    &ClientMessage::Touch {
+                        id: id as u64,
+                        phase: TouchPhase::Cancelled,
+                        x,
+                        y,
+                    },
+                );
+            }
+        }
+        if touches.with_value(HashMap::is_empty) {
+            state.grabbing.set(false);
         }
     };
 
@@ -151,6 +282,7 @@ pub fn Viewport(
                 on:pointerdown=on_pointerdown
                 on:pointermove=on_pointermove
                 on:pointerup=on_pointerup
+                on:pointercancel=on_pointercancel
                 on:contextmenu=on_contextmenu
             ></canvas>
         </div>
