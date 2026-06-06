@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast, JsValue};
 
 use crate::bridge::Bridge;
 use crate::components::add_menu::AddMenu;
@@ -26,17 +26,37 @@ pub fn App() -> impl IntoView {
     let state = ViewerState::new();
     let bridge = StoredValue::new_local(None::<Bridge>);
 
+    let _ = window_event_listener(leptos::ev::keydown, move |event| {
+        if typing_in_field(&event) {
+            return;
+        }
+        match event.key().as_str() {
+            "h" | "H" => state.ui_hidden.update(|hidden| *hidden = !*hidden),
+            "Escape" => state.ui_hidden.set(false),
+            _ => {}
+        }
+    });
+
     view! {
         <Viewport bridge state />
-        <Toolbar bridge state />
-        <LeftPanel bridge state />
-        <Inspector bridge state />
-        <NavGizmo bridge state />
-        <GizmoPanel bridge state />
-        <AnimationBar bridge state />
-        <AssetBrowser bridge state />
-        <AddMenu bridge state />
+        <Show when=move || !state.ui_hidden.get() fallback=|| ()>
+            <Toolbar bridge state />
+            <LeftPanel bridge state />
+            <Inspector bridge state />
+            <NavGizmo bridge state />
+            <GizmoPanel bridge state />
+            <AnimationBar bridge state />
+            <AssetBrowser bridge state />
+            <AddMenu bridge state />
+        </Show>
         <Loader state />
+        <Show when=move || state.ui_hidden.get() fallback=|| ()>
+            <button
+                class="fixed bottom-3 right-3 z-40 w-2.5 h-2.5 rounded-full bg-white/25 hover:bg-white/70 transition-colors"
+                title="Show interface (H)"
+                on:click=move |_| state.ui_hidden.set(false)
+            ></button>
+        </Show>
         <Show when=move || state.dragging.get() fallback=|| ()>
             <div class="fixed inset-2 z-30 pointer-events-none flex items-center justify-center rounded-2xl border-4 border-dashed border-orange-400/50 bg-orange-500/10">
                 <div class="px-6 py-4 rounded-xl bg-[#14161d]/90 border border-white/10 text-white/90 text-[15px] shadow-2xl">
@@ -59,6 +79,20 @@ fn unsupported() -> impl IntoView {
             </div>
         </div>
     }
+}
+
+fn typing_in_field(event: &web_sys::KeyboardEvent) -> bool {
+    event
+        .target()
+        .and_then(|target| target.dyn_into::<web_sys::HtmlElement>().ok())
+        .map(|element| {
+            let tag = element.tag_name();
+            tag.eq_ignore_ascii_case("input")
+                || tag.eq_ignore_ascii_case("textarea")
+                || tag.eq_ignore_ascii_case("select")
+                || element.is_content_editable()
+        })
+        .unwrap_or(false)
 }
 
 fn webgpu_supported() -> bool {
