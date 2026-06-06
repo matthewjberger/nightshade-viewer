@@ -70,12 +70,21 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
         }
         ClientMessage::Resize { width, height } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
+                let physical_width = (width as u32).max(1);
+                let physical_height = (height as u32).max(1);
                 resize_offscreen(
                     &mut app.world,
                     &mut app.renderer,
-                    (width as u32).max(1),
-                    (height as u32).max(1),
+                    physical_width,
+                    physical_height,
                 );
+                app.world.resources.window.active_viewport_rect =
+                    Some(nightshade::ecs::window::resources::ViewportRect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: physical_width as f32,
+                        height: physical_height as f32,
+                    });
             }
         }
         ClientMessage::PointerMove { x, y } => {

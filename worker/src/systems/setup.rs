@@ -7,6 +7,15 @@ use nightshade::prelude::*;
 pub fn spawn(viewer: &mut ViewerWorld, world: &mut World) {
     world.resources.user_interface.enabled = true;
     world.resources.retained_ui.enabled = true;
+    if let Some((width, height)) = world.resources.window.cached_viewport_size {
+        world.resources.window.active_viewport_rect =
+            Some(nightshade::ecs::window::resources::ViewportRect {
+                x: 0.0,
+                y: 0.0,
+                width: width as f32,
+                height: height as f32,
+            });
+    }
     world.resources.render_settings.atmosphere = Atmosphere::Sky;
     world.resources.render_settings.clear_color = [0.09, 0.10, 0.13, 1.0];
     capture_procedural_atmosphere_ibl(world, Atmosphere::Sky, 0.0);
