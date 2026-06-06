@@ -4,15 +4,13 @@ use protocol::{ClientMessage, LightKind, PrimitiveKind};
 use web_sys::{Event, HtmlElement, MouseEvent};
 
 use crate::bridge::{Bridge, send, send_file};
-use crate::state::{Browser, ViewerState};
+use crate::state::ViewerState;
 
 type BridgeSlot = StoredValue<Option<Bridge>, LocalStorage>;
 
 const ITEM: &str = "px-3 py-2 rounded-lg border border-white/10 bg-black/30 text-[12px] text-white/80 hover:border-orange-400/60 hover:bg-white/5 transition-colors";
 
-/// The single place to bring content into the scene: create primitive geometry
-/// and lights, import a local file, browse the asset library, or load a random
-/// model or sky.
+/// Create content in the scene: primitive geometry, lights, or a local file.
 #[component]
 pub fn AddMenu(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
     let file_ref = NodeRef::<html::Input>::new();
@@ -42,42 +40,6 @@ pub fn AddMenu(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
         state.add_open.set(false);
     };
 
-    let browse = move |_| {
-        state.browser.set(Browser::Khronos);
-        state.add_open.set(false);
-    };
-    let random_model = move |_| {
-        let list = state.khronos.get_untracked();
-        if let Some(bridge) = bridge.get_value()
-            && !list.is_empty()
-        {
-            let index = ((js_sys::Math::random() * list.len() as f64) as usize).min(list.len() - 1);
-            send(
-                &bridge,
-                &ClientMessage::LoadKhronos {
-                    name: list[index].name.clone(),
-                },
-            );
-        }
-        state.add_open.set(false);
-    };
-    let random_sky = move |_| {
-        let list = state.hdris.get_untracked();
-        if let Some(bridge) = bridge.get_value()
-            && !list.is_empty()
-        {
-            let index = ((js_sys::Math::random() * list.len() as f64) as usize).min(list.len() - 1);
-            send(
-                &bridge,
-                &ClientMessage::LoadPolyhaven {
-                    slug: list[index].slug.clone(),
-                    resolution: 4,
-                },
-            );
-        }
-        state.add_open.set(false);
-    };
-
     view! {
         <input
             type="file"
@@ -103,7 +65,7 @@ pub fn AddMenu(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                             <div class="text-[11px] uppercase tracking-wider text-white/40">
                                 "Geometry"
                             </div>
-                            <div class="grid grid-cols-3 gap-2">
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {primitive_button(add_entity, PrimitiveKind::Cube, "Cube")}
                                 {primitive_button(add_entity, PrimitiveKind::Sphere, "Sphere")}
                                 {primitive_button(add_entity, PrimitiveKind::Cylinder, "Cylinder")}
@@ -116,7 +78,7 @@ pub fn AddMenu(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                             <div class="text-[11px] uppercase tracking-wider text-white/40">
                                 "Lights"
                             </div>
-                            <div class="grid grid-cols-3 gap-2">
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {light_button(add_entity, LightKind::Directional, "Directional")}
                                 {light_button(add_entity, LightKind::Point, "Point")}
                                 {light_button(add_entity, LightKind::Spot, "Spot")}
@@ -124,14 +86,11 @@ pub fn AddMenu(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                         </div>
                         <div class="space-y-2">
                             <div class="text-[11px] uppercase tracking-wider text-white/40">
-                                "Models & environments"
+                                "Import"
                             </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <button class=ITEM on:click=import_file>"Import file…"</button>
-                                <button class=ITEM on:click=browse>"Browse library…"</button>
-                                <button class=ITEM on:click=random_model>"Random model"</button>
-                                <button class=ITEM on:click=random_sky>"Random sky"</button>
-                            </div>
+                            <button class=format!("{ITEM} w-full") on:click=import_file>
+                                "Import file…"
+                            </button>
                         </div>
                     </div>
                 </div>
