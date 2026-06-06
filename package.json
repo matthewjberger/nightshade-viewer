@@ -1,0 +1,12 @@
+{
+  "name": "nightshade-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build:css": "tailwindcss -i ./public/input.css -o ./public/styles.css",
+    "watch:css": "tailwindcss -i ./public/input.css -o ./public/styles.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}
