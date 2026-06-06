@@ -44,7 +44,7 @@ pub fn LeftPanel(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
     };
 
     let panel_class = move || {
-        let base = "fixed top-16 left-3 bottom-3 w-72 max-w-[85vw] z-20 flex flex-col rounded-xl border border-white/10 bg-[#14161d]/85 backdrop-blur-md shadow-2xl shadow-black/40 overflow-hidden transition-transform duration-200 sm:translate-x-0";
+        let base = "fixed top-16 left-3 bottom-3 w-72 max-w-[85vw] z-20 flex flex-col rounded-xl border border-white/10 bg-[#14161d]/85 backdrop-blur-md shadow-2xl shadow-black/40 overflow-hidden transition-transform duration-200";
         if state.scene_open.get() {
             format!("{base} translate-x-0")
         } else {

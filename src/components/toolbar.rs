@@ -87,29 +87,29 @@ pub fn Toolbar(
     let toggle_scene = move |_| {
         let open = !state.scene_open.get_untracked();
         state.scene_open.set(open);
-        if open {
+        if open && is_mobile() {
             state.inspector_open.set(false);
         }
     };
     let toggle_inspector = move |_| {
         let open = !state.inspector_open.get_untracked();
         state.inspector_open.set(open);
-        if open {
+        if open && is_mobile() {
             state.scene_open.set(false);
         }
     };
     let scene_class = move || {
         if state.scene_open.get() {
-            format!("{BUTTON} sm:hidden bg-white/10 text-white")
+            format!("{BUTTON} bg-white/10 text-white")
         } else {
-            format!("{BUTTON} sm:hidden")
+            BUTTON.to_string()
         }
     };
     let inspector_class = move || {
         if state.inspector_open.get() {
-            format!("{BUTTON} sm:hidden bg-white/10 text-white")
+            format!("{BUTTON} bg-white/10 text-white")
         } else {
-            format!("{BUTTON} sm:hidden")
+            BUTTON.to_string()
         }
     };
     let menu_open = RwSignal::new(false);
@@ -211,4 +211,12 @@ pub fn Toolbar(
             />
         </div>
     }
+}
+
+fn is_mobile() -> bool {
+    web_sys::window()
+        .and_then(|window| window.inner_width().ok())
+        .and_then(|value| value.as_f64())
+        .map(|width| width < 640.0)
+        .unwrap_or(false)
 }
