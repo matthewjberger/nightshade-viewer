@@ -54,6 +54,7 @@ pub struct ViewerState {
     pub scene_open: RwSignal<bool>,
     pub inspector_open: RwSignal<bool>,
     pub add_open: RwSignal<bool>,
+    pub hint_open: RwSignal<bool>,
     pub tab: RwSignal<PanelTab>,
     pub stats: RwSignal<Option<ModelStats>>,
     pub clips: RwSignal<Vec<ClipInfo>>,
@@ -100,6 +101,7 @@ impl ViewerState {
             scene_open: RwSignal::new(false),
             inspector_open: RwSignal::new(false),
             add_open: RwSignal::new(false),
+            hint_open: RwSignal::new(!hint_seen()),
             tab: RwSignal::new(PanelTab::Scene),
             stats: RwSignal::new(None),
             clips: RwSignal::new(Vec::new()),
@@ -126,5 +128,26 @@ impl ViewerState {
 impl Default for ViewerState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Key under which the one-time onboarding hint records that it has been seen.
+const HINT_KEY: &str = "nightshade_hint_seen";
+
+fn local_storage() -> Option<web_sys::Storage> {
+    web_sys::window().and_then(|window| window.local_storage().ok().flatten())
+}
+
+/// Whether the onboarding hint has already been dismissed on this browser.
+pub fn hint_seen() -> bool {
+    local_storage()
+        .and_then(|storage| storage.get_item(HINT_KEY).ok().flatten())
+        .is_some()
+}
+
+/// Records that the onboarding hint has been dismissed so it stays hidden.
+pub fn mark_hint_seen() {
+    if let Some(storage) = local_storage() {
+        let _ = storage.set_item(HINT_KEY, "1");
     }
 }

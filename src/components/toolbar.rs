@@ -42,8 +42,16 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
             send(&bridge, &ClientMessage::SetTurntable { enabled });
         }
     };
-    let browse = move |_| state.browser.set(Browser::Khronos);
+    let dismiss_hint = move || {
+        state.hint_open.set(false);
+        crate::state::mark_hint_seen();
+    };
+    let browse = move |_| {
+        dismiss_hint();
+        state.browser.set(Browser::Khronos);
+    };
     let random_model = move |_| {
+        dismiss_hint();
         let list = state.models.get_untracked();
         if let Some(bridge) = bridge.get_value()
             && !list.is_empty()
@@ -59,6 +67,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
         }
     };
     let random_sky = move |_| {
+        dismiss_hint();
         let list = state.hdris.get_untracked();
         if let Some(bridge) = bridge.get_value()
             && !list.is_empty()
@@ -96,6 +105,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
         <div class="fixed top-3 left-3 right-3 h-10 z-10 flex items-center gap-1 px-3 rounded-xl border border-white/10 bg-[#14161d]/85 backdrop-blur-md shadow-lg shadow-black/40">
             <button
                 class=format!("{BUTTON} sm:hidden text-[15px] leading-none")
+                title="Menu"
                 on:click=toggle_menu
             >
                 "☰"
@@ -112,6 +122,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
             <div class=actions_class>
                 <button
                     class=move || toggle_class(state.scene_open.get())
+                    title="Toggle the scene tree"
                     on:click=move |event| {
                         close_menu();
                         toggle_scene(event);
@@ -121,6 +132,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 </button>
                 <button
                     class=move || toggle_class(state.inspector_open.get())
+                    title="Toggle the inspector"
                     on:click=move |event| {
                         close_menu();
                         toggle_inspector(event);
@@ -130,8 +142,10 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 </button>
                 <button
                     class=BUTTON
+                    title="Add geometry, lights, or import a file"
                     on:click=move |_| {
                         close_menu();
+                        dismiss_hint();
                         state.add_open.set(true);
                     }
                 >
@@ -140,6 +154,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 <div class="hidden sm:block shrink-0 w-px h-4 bg-white/10 mx-1"></div>
                 <button
                     class=move || toggle_class(state.grid.get())
+                    title="Toggle the ground grid"
                     on:click=move |event| {
                         close_menu();
                         toggle_grid(event);
@@ -149,6 +164,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 </button>
                 <button
                     class=move || toggle_class(state.turntable.get())
+                    title="Toggle the turntable spin"
                     on:click=move |event| {
                         close_menu();
                         toggle_turntable(event);
@@ -158,11 +174,17 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 </button>
             </div>
             <div class="flex-1"></div>
-            <button class=BUTTON on:click=browse>"Browse"</button>
+            <button class=BUTTON title="Browse the asset library" on:click=browse>
+                "Browse"
+            </button>
             <div class="shrink-0 flex items-center gap-1">
                 <span class="text-[11px] text-white/40 pl-1">"Random:"</span>
-                <button class=BUTTON on:click=random_model>"Model"</button>
-                <button class=BUTTON on:click=random_sky>"Sky"</button>
+                <button class=BUTTON title="Load a random Polyhaven model" on:click=random_model>
+                    "Model"
+                </button>
+                <button class=BUTTON title="Load a random HDRI sky" on:click=random_sky>
+                    "Sky"
+                </button>
             </div>
             <span class="hidden sm:inline shrink-0 text-[11px] text-white/45 tabular-nums pl-1">
                 {status}

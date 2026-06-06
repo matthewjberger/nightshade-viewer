@@ -46,6 +46,7 @@ web-sys = { version = "0.3", features = [
     "ResizeObserver",
     "ResizeObserverEntry",
     "Performance",
+    "Storage",
 ] }
 
 [profile.release]

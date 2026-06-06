@@ -2,6 +2,7 @@ pub mod add_menu;
 pub mod animation_bar;
 pub mod browser;
 pub mod gizmo_panel;
+pub mod hint;
 pub mod inspector;
 pub mod left_panel;
 pub mod loader;

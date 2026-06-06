@@ -6,6 +6,7 @@ use crate::components::add_menu::AddMenu;
 use crate::components::animation_bar::AnimationBar;
 use crate::components::browser::AssetBrowser;
 use crate::components::gizmo_panel::GizmoPanel;
+use crate::components::hint::Hint;
 use crate::components::inspector::Inspector;
 use crate::components::left_panel::LeftPanel;
 use crate::components::loader::Loader;
@@ -41,6 +42,7 @@ pub fn App() -> impl IntoView {
         <Viewport bridge state />
         <Show when=move || !state.ui_hidden.get() fallback=|| ()>
             <Toolbar bridge state />
+            <Hint state />
             <LeftPanel bridge state />
             <Inspector bridge state />
             <NavGizmo bridge state />
