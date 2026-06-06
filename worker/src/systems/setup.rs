@@ -7,6 +7,7 @@ use nightshade::prelude::*;
 pub fn spawn(viewer: &mut ViewerWorld, world: &mut World) {
     world.resources.user_interface.enabled = true;
     world.resources.retained_ui.enabled = true;
+    world.resources.user_interface.gizmos.nav_gizmo_enabled = false;
     if let Some((width, height)) = world.resources.window.cached_viewport_size {
         world.resources.window.active_viewport_rect =
             Some(nightshade::ecs::window::resources::ViewportRect {

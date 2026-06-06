@@ -45,7 +45,6 @@ pub fn Viewport(
             .transfer_control_to_offscreen()
             .expect("failed to transfer canvas to offscreen");
         let connected = bridge::connect(offscreen, width, height, state);
-        send_nav_offset(&connected, dpr);
         observe_resize(canvas, connected.clone());
         bridge.set_value(Some(connected));
     });
@@ -182,21 +181,6 @@ fn physical(canvas: &HtmlCanvasElement, client_x: i32, client_y: i32) -> (f32, f
     )
 }
 
-/// CSS-pixel offset that shifts the engine nav gizmo clear of the toolbar and
-/// the right-hand inspector panel. Sent in physical pixels.
-const NAV_OFFSET_X_CSS: f32 = -320.0;
-const NAV_OFFSET_Y_CSS: f32 = 56.0;
-
-fn send_nav_offset(bridge: &Bridge, dpr: f32) {
-    send(
-        bridge,
-        &ClientMessage::SetNavGizmoOffset {
-            x: NAV_OFFSET_X_CSS * dpr,
-            y: NAV_OFFSET_Y_CSS * dpr,
-        },
-    );
-}
-
 fn observe_resize(canvas: HtmlCanvasElement, bridge: Bridge) {
     let resize_window = web_sys::window().unwrap();
     let resize_canvas = canvas.clone();
@@ -210,7 +194,6 @@ fn observe_resize(canvas: HtmlCanvasElement, bridge: Bridge) {
                 height: rect.height() as f32 * dpr,
             },
         );
-        send_nav_offset(&bridge, dpr);
     });
     let observer = ResizeObserver::new(on_resize.as_ref().unchecked_ref())
         .expect("failed to create resize observer");

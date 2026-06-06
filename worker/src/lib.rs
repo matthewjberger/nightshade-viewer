@@ -146,11 +146,6 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 app.world.resources.debug_draw.show_grid = enabled;
             }
         }
-        ClientMessage::SetNavGizmoOffset { x, y } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.world.resources.user_interface.gizmos.nav_gizmo_offset = Vec2::new(x, y);
-            }
-        }
         ClientMessage::Frame => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 app.state.viewer.resources.camera_input.frame_requested = true;
