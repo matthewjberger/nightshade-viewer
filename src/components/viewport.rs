@@ -45,6 +45,7 @@ pub fn Viewport(
             .transfer_control_to_offscreen()
             .expect("failed to transfer canvas to offscreen");
         let connected = bridge::connect(offscreen, width, height, state);
+        attach_wheel(&canvas, bridge);
         observe_resize(canvas, connected.clone());
         bridge.set_value(Some(connected));
     });
@@ -112,18 +113,6 @@ pub fn Viewport(
         }
     };
 
-    let on_wheel = move |event: WheelEvent| {
-        event.prevent_default();
-        if let Some(bridge) = bridge.get_value() {
-            send(
-                &bridge,
-                &ClientMessage::Wheel {
-                    delta: event.delta_y() as f32,
-                },
-            );
-        }
-    };
-
     let on_contextmenu = move |event: MouseEvent| event.prevent_default();
 
     let on_dragover = move |event: DragEvent| {
@@ -162,7 +151,6 @@ pub fn Viewport(
                 on:pointerdown=on_pointerdown
                 on:pointermove=on_pointermove
                 on:pointerup=on_pointerup
-                on:wheel=on_wheel
                 on:contextmenu=on_contextmenu
             ></canvas>
         </div>
@@ -176,6 +164,30 @@ fn physical(canvas: &HtmlCanvasElement, client_x: i32, client_y: i32) -> (f32, f
         ((client_x as f64 - rect.left()) * dpr) as f32,
         ((client_y as f64 - rect.top()) * dpr) as f32,
     )
+}
+
+fn attach_wheel(canvas: &HtmlCanvasElement, bridge: StoredValue<Option<Bridge>, LocalStorage>) {
+    let on_wheel = Closure::<dyn FnMut(WheelEvent)>::new(move |event: WheelEvent| {
+        event.prevent_default();
+        if let Some(bridge) = bridge.get_value() {
+            send(
+                &bridge,
+                &ClientMessage::Wheel {
+                    delta: event.delta_y() as f32,
+                },
+            );
+        }
+    });
+    let options = web_sys::AddEventListenerOptions::new();
+    options.set_passive(false);
+    canvas
+        .add_event_listener_with_callback_and_add_event_listener_options(
+            "wheel",
+            on_wheel.as_ref().unchecked_ref(),
+            &options,
+        )
+        .expect("failed to add wheel listener");
+    on_wheel.forget();
 }
 
 fn observe_resize(canvas: HtmlCanvasElement, bridge: Bridge) {
