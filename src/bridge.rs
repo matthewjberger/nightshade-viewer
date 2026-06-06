@@ -40,7 +40,8 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
                 state.loading.set(active.then_some(label));
             }
             WorkerMessage::KhronosList { entries } => state.khronos.set(entries),
-            WorkerMessage::PolyhavenList { entries } => state.polyhaven.set(entries),
+            WorkerMessage::PolyhavenList { entries } => state.hdris.set(entries),
+            WorkerMessage::PolyhavenModelsList { entries } => state.models.set(entries),
         }
     });
     worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));

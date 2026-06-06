@@ -20,7 +20,13 @@ pub fn sync(viewer: &mut ViewerWorld, world: &mut World) {
 }
 
 fn build_tree(viewer: &ViewerWorld, world: &World) -> Vec<SceneNode> {
-    let root = viewer.resources.model.root;
+    let ids: std::collections::HashSet<u32> = viewer
+        .resources
+        .model
+        .entities
+        .iter()
+        .map(|entity| entity.id)
+        .collect();
     viewer
         .resources
         .model
@@ -36,19 +42,19 @@ fn build_tree(viewer: &ViewerWorld, world: &World) -> Vec<SceneNode> {
             SceneNode {
                 id: entity.id,
                 name,
-                depth: depth_of(world, entity, root),
+                depth: depth_of(world, entity, &ids),
                 has_mesh: world.core.entity_has_components(entity, RENDER_MESH),
             }
         })
         .collect()
 }
 
-fn depth_of(world: &World, entity: Entity, root: Option<Entity>) -> u32 {
+fn depth_of(world: &World, entity: Entity, ids: &std::collections::HashSet<u32>) -> u32 {
     let mut depth = 0;
     let mut current = entity;
-    while Some(current) != root && depth < 64 {
+    while depth < 64 {
         match world.core.get_parent(current) {
-            Some(Parent(Some(parent))) => {
+            Some(Parent(Some(parent))) if ids.contains(&parent.id) => {
                 current = *parent;
                 depth += 1;
             }

@@ -1,6 +1,9 @@
-use crate::ecs::ViewerWorld;
+use std::collections::HashMap;
+
+use crate::ecs::{PendingAsset, ViewerWorld};
+use nightshade::ecs::prefab::GltfLoadResult;
 use nightshade::prelude::*;
-use protocol::{AssetKind, WorkerMessage};
+use protocol::WorkerMessage;
 
 const DEFAULT_MODEL: &[u8] = include_bytes!("../../assets/DamagedHelmet.glb");
 
@@ -21,9 +24,12 @@ pub fn poll(viewer: &mut ViewerWorld, world: &mut World) {
     let Some(asset) = pending else {
         return;
     };
-    match asset.kind {
-        AssetKind::Model => load_model(viewer, world, &asset.bytes),
-        AssetKind::Hdri => load_hdri(world, &asset.bytes),
+    match asset {
+        PendingAsset::Model(bytes) => load_model(viewer, world, &bytes),
+        PendingAsset::ModelWithResources { gltf, resources } => {
+            load_model_with_resources(viewer, world, &gltf, &resources)
+        }
+        PendingAsset::Hdri(bytes) => load_hdri(world, &bytes),
     }
     crate::post(&WorkerMessage::Loading {
         active: false,
@@ -31,28 +37,55 @@ pub fn poll(viewer: &mut ViewerWorld, world: &mut World) {
     });
 }
 
-/// Imports a glTF/GLB, replaces the current model, records its entities, and
-/// frames the camera on it.
+/// Imports a self-contained glTF/GLB and spawns it.
 pub fn load_model(viewer: &mut ViewerWorld, world: &mut World, bytes: &[u8]) {
+    match import_gltf_from_bytes(bytes) {
+        Ok(result) => spawn_result(viewer, world, result),
+        Err(error) => tracing::error!("failed to import model: {error}"),
+    }
+}
+
+/// Imports a glTF with external buffers and images supplied as bytes.
+pub fn load_model_with_resources(
+    viewer: &mut ViewerWorld,
+    world: &mut World,
+    gltf: &[u8],
+    resources: &HashMap<String, Vec<u8>>,
+) {
+    match nightshade::ecs::prefab::import_gltf_with_resources(gltf, resources) {
+        Ok(result) => spawn_result(viewer, world, result),
+        Err(error) => tracing::error!("failed to import model: {error}"),
+    }
+}
+
+/// Replaces the current model with a freshly imported one. Spawns every prefab
+/// with its skins and animations so skeleton joints are parented under the root
+/// (and therefore despawn with it), then frames the camera.
+fn spawn_result(viewer: &mut ViewerWorld, world: &mut World, mut result: GltfLoadResult) {
     despawn_current(viewer, world);
-
-    let mut result = match import_gltf_from_bytes(bytes) {
-        Ok(result) => result,
-        Err(error) => {
-            tracing::error!("failed to import model: {error}");
-            return;
-        }
-    };
     nightshade::ecs::loading::queue_gltf_load(world, &mut result);
-    let Some(prefab) = result.prefabs.first() else {
+
+    let mut roots = Vec::new();
+    let mut entities = Vec::new();
+    for prefab in &result.prefabs {
+        let root = nightshade::ecs::prefab::spawn_prefab_with_skins(
+            world,
+            prefab,
+            &result.animations,
+            &result.skins,
+            Vec3::new(0.0, 0.0, 0.0),
+        );
+        entities.push(root);
+        entities.extend(nightshade::ecs::transform::queries::query_descendants(
+            world, root,
+        ));
+        roots.push(root);
+    }
+    if roots.is_empty() {
         return;
-    };
+    }
 
-    let root = nightshade::ecs::prefab::spawn_prefab(world, prefab, Vec3::new(0.0, 0.0, 0.0));
-    let mut entities = nightshade::ecs::transform::queries::query_descendants(world, root);
-    entities.insert(0, root);
-
-    viewer.resources.model.root = Some(root);
+    viewer.resources.model.roots = roots;
     viewer.resources.model.entities = entities;
     viewer.resources.selection.selected = None;
     world
@@ -71,7 +104,7 @@ fn load_hdri(world: &mut World, bytes: &[u8]) {
 }
 
 fn despawn_current(viewer: &mut ViewerWorld, world: &mut World) {
-    if let Some(root) = viewer.resources.model.root.take() {
+    for root in std::mem::take(&mut viewer.resources.model.roots) {
         despawn_recursive_immediate(world, root);
     }
     viewer.resources.model.entities.clear();

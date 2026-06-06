@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use nightshade::prelude::*;
 use nightshade::render::wgpu::create_wgpu_renderer;
-use protocol::{BYTES_KEY, ClientMessage, MESSAGE_KEY, WorkerMessage};
+use protocol::{AssetKind, BYTES_KEY, ClientMessage, MESSAGE_KEY, WorkerMessage};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::spawn_local;
@@ -129,7 +129,10 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 && let Some(bytes) = bytes_from(&data)
                 && let Ok(mut slot) = app.state.viewer.resources.incoming.asset.lock()
             {
-                *slot = Some(PendingAsset { kind, bytes });
+                *slot = Some(match kind {
+                    AssetKind::Model => PendingAsset::Model(bytes),
+                    AssetKind::Hdri => PendingAsset::Hdri(bytes),
+                });
             }
         }
         ClientMessage::LoadKhronos { name } => {
@@ -140,6 +143,11 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
         ClientMessage::LoadPolyhaven { slug } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 systems::browsers::fetch_polyhaven(&app.state.viewer, &slug);
+            }
+        }
+        ClientMessage::LoadPolyhavenModel { slug } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                systems::browsers::fetch_polyhaven_model(&app.state.viewer, &slug);
             }
         }
         ClientMessage::RefreshBrowsers => {

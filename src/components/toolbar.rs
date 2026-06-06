@@ -49,8 +49,11 @@ pub fn Toolbar(
             <button class=BUTTON on:click=move |_| state.browser.set(Browser::Khronos)>
                 "Khronos"
             </button>
-            <button class=BUTTON on:click=move |_| state.browser.set(Browser::Polyhaven)>
-                "Polyhaven"
+            <button class=BUTTON on:click=move |_| state.browser.set(Browser::Hdris)>
+                "HDRIs"
+            </button>
+            <button class=BUTTON on:click=move |_| state.browser.set(Browser::Models)>
+                "Models"
             </button>
             <button class=BUTTON on:click=frame>"Frame"</button>
             <div class="flex-1"></div>

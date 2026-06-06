@@ -74,6 +74,10 @@ pub enum ClientMessage {
     LoadPolyhaven {
         slug: String,
     },
+    /// Load a Polyhaven model by its slug (worker fetches glTF plus textures).
+    LoadPolyhavenModel {
+        slug: String,
+    },
     /// Ask the worker to fetch the browser indices if it has not yet.
     RefreshBrowsers,
 }
@@ -124,4 +128,5 @@ pub enum WorkerMessage {
     Loading { active: bool, label: String },
     KhronosList { entries: Vec<KhronosEntry> },
     PolyhavenList { entries: Vec<PolyhavenEntry> },
+    PolyhavenModelsList { entries: Vec<PolyhavenEntry> },
 }

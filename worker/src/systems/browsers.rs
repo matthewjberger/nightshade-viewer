@@ -1,16 +1,21 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::ecs::{FetchState, KhronosAsset, PendingAsset, PolyAsset, ViewerWorld};
 use nightshade::prelude::{ehttp, serde_json};
-use protocol::{AssetKind, KhronosEntry, PolyhavenEntry, WorkerMessage};
+use protocol::{KhronosEntry, PolyhavenEntry, WorkerMessage};
 use serde::Deserialize;
 
 const KHRONOS_BASE: &str =
     "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models";
 const KHRONOS_INDEX: &str = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/model-index.json";
-const POLYHAVEN_ASSETS: &str = "https://api.polyhaven.com/assets?type=hdris";
+const POLYHAVEN_HDRIS: &str = "https://api.polyhaven.com/assets?type=hdris";
+const POLYHAVEN_MODELS: &str = "https://api.polyhaven.com/assets?type=models";
 const POLYHAVEN_FILES: &str = "https://api.polyhaven.com/files/";
 const POLYHAVEN_THUMB: &str = "https://cdn.polyhaven.com/asset_img/thumbs/";
+
+type AssetSlot = Arc<Mutex<Option<PendingAsset>>>;
+type LoadingSlot = Arc<Mutex<Option<String>>>;
 
 #[derive(Deserialize)]
 struct KhronosRaw {
@@ -43,10 +48,33 @@ struct HdriFiles {
     hdri: std::collections::BTreeMap<String, HdriResolution>,
 }
 
+#[derive(Deserialize)]
+struct IncludeFile {
+    url: String,
+}
+
+#[derive(Deserialize)]
+struct GltfFile {
+    url: String,
+    #[serde(default)]
+    include: std::collections::BTreeMap<String, IncludeFile>,
+}
+
+#[derive(Deserialize)]
+struct GltfResolution {
+    gltf: GltfFile,
+}
+
+#[derive(Deserialize)]
+struct ModelFiles {
+    gltf: std::collections::BTreeMap<String, GltfResolution>,
+}
+
 /// Kicks off the index fetches if they have not started.
 pub fn ensure_indices(viewer: &ViewerWorld) {
     ensure_khronos(&viewer.resources.browsers.khronos);
-    ensure_polyhaven(&viewer.resources.browsers.polyhaven);
+    ensure_polyhaven(&viewer.resources.browsers.hdris, POLYHAVEN_HDRIS);
+    ensure_polyhaven(&viewer.resources.browsers.models, POLYHAVEN_MODELS);
 }
 
 /// Streams each browser list to the page once its index has loaded.
@@ -68,28 +96,43 @@ pub fn poll(viewer: &mut ViewerWorld) {
         viewer.resources.browsers.khronos_sent = true;
     }
 
-    if !viewer.resources.browsers.polyhaven_sent
-        && let Ok(guard) = viewer.resources.browsers.polyhaven.lock()
-        && let FetchState::Loaded(entries) = &*guard
+    if !viewer.resources.browsers.hdris_sent
+        && let Some(list) = poly_list(&viewer.resources.browsers.hdris)
     {
-        let list = entries
+        crate::post(&WorkerMessage::PolyhavenList { entries: list });
+        viewer.resources.browsers.hdris_sent = true;
+    }
+
+    if !viewer.resources.browsers.models_sent
+        && let Some(list) = poly_list(&viewer.resources.browsers.models)
+    {
+        crate::post(&WorkerMessage::PolyhavenModelsList { entries: list });
+        viewer.resources.browsers.models_sent = true;
+    }
+}
+
+fn poly_list(state: &Arc<Mutex<FetchState<Vec<PolyAsset>>>>) -> Option<Vec<PolyhavenEntry>> {
+    let guard = state.lock().ok()?;
+    let FetchState::Loaded(entries) = &*guard else {
+        return None;
+    };
+    Some(
+        entries
             .iter()
             .map(|entry| PolyhavenEntry {
                 slug: entry.slug.clone(),
                 name: entry.name.clone(),
                 thumbnail: entry.thumbnail.clone(),
             })
-            .collect();
-        crate::post(&WorkerMessage::PolyhavenList { entries: list });
-        drop(guard);
-        viewer.resources.browsers.polyhaven_sent = true;
-    }
+            .collect(),
+    )
 }
 
 /// Re-sends the loaded lists (used when the page UI re-requests them).
 pub fn resend(viewer: &mut ViewerWorld) {
     viewer.resources.browsers.khronos_sent = false;
-    viewer.resources.browsers.polyhaven_sent = false;
+    viewer.resources.browsers.hdris_sent = false;
+    viewer.resources.browsers.models_sent = false;
 }
 
 /// Fetches a Khronos sample model by name into the asset inbox.
@@ -113,12 +156,8 @@ pub fn fetch_khronos(viewer: &ViewerWorld, name: &str) {
     if !begin_loading(viewer, name) {
         return;
     }
-    download_into(
-        url,
-        AssetKind::Model,
-        Arc::clone(&viewer.resources.incoming.asset),
-        Arc::clone(&viewer.resources.incoming.loading),
-    );
+    let (asset, loading) = slots(viewer);
+    download_single(url, PendingAsset::Model, asset, loading);
 }
 
 /// Fetches a Polyhaven HDRI by slug: resolve the file list, then download.
@@ -126,9 +165,8 @@ pub fn fetch_polyhaven(viewer: &ViewerWorld, slug: &str) {
     if !begin_loading(viewer, slug) {
         return;
     }
+    let (asset, loading) = slots(viewer);
     let files_url = format!("{POLYHAVEN_FILES}{slug}");
-    let asset = Arc::clone(&viewer.resources.incoming.asset);
-    let loading = Arc::clone(&viewer.resources.incoming.loading);
     ehttp::fetch(ehttp::Request::get(&files_url), move |result| {
         let url = result
             .ok()
@@ -136,14 +174,45 @@ pub fn fetch_polyhaven(viewer: &ViewerWorld, slug: &str) {
             .and_then(|response| serde_json::from_slice::<HdriFiles>(&response.bytes).ok())
             .and_then(pick_hdr);
         match url {
-            Some(url) => download_into(url, AssetKind::Hdri, asset, loading),
-            None => {
-                if let Ok(mut guard) = loading.lock() {
-                    *guard = None;
-                }
-            }
+            Some(url) => download_single(url, PendingAsset::Hdri, asset, loading),
+            None => clear(&loading),
         }
     });
+}
+
+/// Fetches a Polyhaven model by slug: resolve the glTF plus its textures, then
+/// download them all into a resource map.
+pub fn fetch_polyhaven_model(viewer: &ViewerWorld, slug: &str) {
+    if !begin_loading(viewer, slug) {
+        return;
+    }
+    let (asset, loading) = slots(viewer);
+    let files_url = format!("{POLYHAVEN_FILES}{slug}");
+    ehttp::fetch(ehttp::Request::get(&files_url), move |result| {
+        let gltf = result
+            .ok()
+            .filter(|response| response.ok)
+            .and_then(|response| serde_json::from_slice::<ModelFiles>(&response.bytes).ok())
+            .and_then(pick_model);
+        match gltf {
+            Some(gltf) => {
+                let includes: Vec<(String, String)> = gltf
+                    .include
+                    .into_iter()
+                    .map(|(key, file)| (key, file.url))
+                    .collect();
+                download_model(gltf.url, includes, asset, loading);
+            }
+            None => clear(&loading),
+        }
+    });
+}
+
+fn slots(viewer: &ViewerWorld) -> (AssetSlot, LoadingSlot) {
+    (
+        Arc::clone(&viewer.resources.incoming.asset),
+        Arc::clone(&viewer.resources.incoming.loading),
+    )
 }
 
 fn begin_loading(viewer: &ViewerWorld, label: &str) -> bool {
@@ -161,24 +230,83 @@ fn begin_loading(viewer: &ViewerWorld, label: &str) -> bool {
     true
 }
 
-fn download_into(
+fn clear(loading: &LoadingSlot) {
+    if let Ok(mut guard) = loading.lock() {
+        *guard = None;
+    }
+}
+
+fn download_single(
     url: String,
-    kind: AssetKind,
-    asset: Arc<Mutex<Option<PendingAsset>>>,
-    loading: Arc<Mutex<Option<String>>>,
+    make: fn(Vec<u8>) -> PendingAsset,
+    asset: AssetSlot,
+    loading: LoadingSlot,
 ) {
     ehttp::fetch(ehttp::Request::get(&url), move |result| {
         if let Ok(response) = result
             && response.ok
             && let Ok(mut slot) = asset.lock()
         {
-            *slot = Some(PendingAsset {
-                kind,
-                bytes: response.bytes,
-            });
+            *slot = Some(make(response.bytes));
         }
-        if let Ok(mut guard) = loading.lock() {
-            *guard = None;
+        clear(&loading);
+    });
+}
+
+fn download_model(
+    gltf_url: String,
+    includes: Vec<(String, String)>,
+    asset: AssetSlot,
+    loading: LoadingSlot,
+) {
+    ehttp::fetch(ehttp::Request::get(&gltf_url), move |result| {
+        let gltf = match result.ok().filter(|response| response.ok).map(|r| r.bytes) {
+            Some(bytes) => bytes,
+            None => {
+                clear(&loading);
+                return;
+            }
+        };
+        if includes.is_empty() {
+            if let Ok(mut slot) = asset.lock() {
+                *slot = Some(PendingAsset::ModelWithResources {
+                    gltf,
+                    resources: HashMap::new(),
+                });
+            }
+            clear(&loading);
+            return;
+        }
+
+        let total = includes.len();
+        let progress = Arc::new(Mutex::new((Some(gltf), HashMap::new(), 0usize, false)));
+        for (key, url) in includes {
+            let progress = Arc::clone(&progress);
+            let asset = Arc::clone(&asset);
+            let loading = loading.clone();
+            ehttp::fetch(ehttp::Request::get(&url), move |result| {
+                let bytes = result.ok().filter(|response| response.ok).map(|r| r.bytes);
+                let mut guard = progress.lock().unwrap();
+                match bytes {
+                    Some(bytes) => {
+                        guard.1.insert(key.clone(), bytes);
+                        guard.2 += 1;
+                    }
+                    None => guard.3 = true,
+                }
+                if guard.3 {
+                    clear(&loading);
+                    return;
+                }
+                if guard.2 == total {
+                    let gltf = guard.0.take().unwrap();
+                    let resources = std::mem::take(&mut guard.1);
+                    if let Ok(mut slot) = asset.lock() {
+                        *slot = Some(PendingAsset::ModelWithResources { gltf, resources });
+                    }
+                    clear(&loading);
+                }
+            });
         }
     });
 }
@@ -202,8 +330,7 @@ fn ensure_khronos(state: &Arc<Mutex<FetchState<Vec<KhronosAsset>>>>) {
                     Err(_) => FetchState::Failed,
                 }
             }
-            Ok(_) => FetchState::Failed,
-            Err(_) => FetchState::Failed,
+            _ => FetchState::Failed,
         };
         if let Ok(mut guard) = target.lock() {
             *guard = next;
@@ -236,7 +363,7 @@ fn khronos_entries(raw: Vec<KhronosRaw>) -> Vec<KhronosAsset> {
     entries
 }
 
-fn ensure_polyhaven(state: &Arc<Mutex<FetchState<Vec<PolyAsset>>>>) {
+fn ensure_polyhaven(state: &Arc<Mutex<FetchState<Vec<PolyAsset>>>>, index_url: &str) {
     {
         let Ok(guard) = state.lock() else {
             return;
@@ -247,7 +374,7 @@ fn ensure_polyhaven(state: &Arc<Mutex<FetchState<Vec<PolyAsset>>>>) {
     }
     *state.lock().unwrap() = FetchState::Loading;
     let target = Arc::clone(state);
-    ehttp::fetch(ehttp::Request::get(POLYHAVEN_ASSETS), move |result| {
+    ehttp::fetch(ehttp::Request::get(index_url), move |result| {
         let next = match result {
             Ok(response) if response.ok => match serde_json::from_slice::<
                 std::collections::BTreeMap<String, PolyRaw>,
@@ -256,8 +383,7 @@ fn ensure_polyhaven(state: &Arc<Mutex<FetchState<Vec<PolyAsset>>>>) {
                 Ok(raw) => FetchState::Loaded(poly_entries(raw)),
                 Err(_) => FetchState::Failed,
             },
-            Ok(_) => FetchState::Failed,
-            Err(_) => FetchState::Failed,
+            _ => FetchState::Failed,
         };
         if let Ok(mut guard) = target.lock() {
             *guard = next;
@@ -294,6 +420,16 @@ fn pick_hdr(files: HdriFiles) -> Option<String> {
         .find(|(value, _)| *value == 1)
         .map(|(_, url)| url.clone())
         .or_else(|| entries.into_iter().next().map(|(_, url)| url))
+}
+
+fn pick_model(files: ModelFiles) -> Option<GltfFile> {
+    let mut entries: Vec<(u32, GltfFile)> = files
+        .gltf
+        .into_iter()
+        .map(|(key, resolution)| (resolution_value(&key), resolution.gltf))
+        .collect();
+    entries.sort_by_key(|(value, _)| *value);
+    entries.into_iter().next().map(|(_, gltf)| gltf)
 }
 
 fn resolution_value(key: &str) -> u32 {

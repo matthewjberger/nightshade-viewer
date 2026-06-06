@@ -6,7 +6,8 @@ use protocol::{EntityDetail, KhronosEntry, PolyhavenEntry, SceneNode};
 pub enum Browser {
     Closed,
     Khronos,
-    Polyhaven,
+    Hdris,
+    Models,
 }
 
 /// All page state, grouped as signals. `Copy`, so it threads into every
@@ -20,7 +21,8 @@ pub struct ViewerState {
     pub selected: RwSignal<Option<EntityDetail>>,
     pub loading: RwSignal<Option<String>>,
     pub khronos: RwSignal<Vec<KhronosEntry>>,
-    pub polyhaven: RwSignal<Vec<PolyhavenEntry>>,
+    pub hdris: RwSignal<Vec<PolyhavenEntry>>,
+    pub models: RwSignal<Vec<PolyhavenEntry>>,
     pub browser: RwSignal<Browser>,
     pub dragging: RwSignal<bool>,
     pub grabbing: RwSignal<bool>,
@@ -36,7 +38,8 @@ impl ViewerState {
             selected: RwSignal::new(None),
             loading: RwSignal::new(None),
             khronos: RwSignal::new(Vec::new()),
-            polyhaven: RwSignal::new(Vec::new()),
+            hdris: RwSignal::new(Vec::new()),
+            models: RwSignal::new(Vec::new()),
             browser: RwSignal::new(Browser::Closed),
             dragging: RwSignal::new(false),
             grabbing: RwSignal::new(false),

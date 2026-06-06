@@ -1,7 +1,7 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use nightshade::prelude::Entity;
-use protocol::AssetKind;
 
 /// Per-frame camera deltas forwarded from the page, applied then cleared.
 #[derive(Default)]
@@ -20,10 +20,10 @@ pub struct Selection {
     pub selected: Option<Entity>,
 }
 
-/// The loaded model: its root and every spawned entity (for despawn + tree).
+/// The loaded model: the spawned prefab roots and every entity under them.
 #[derive(Default)]
 pub struct Model {
-    pub root: Option<Entity>,
+    pub roots: Vec<Entity>,
     pub entities: Vec<Entity>,
 }
 
@@ -41,9 +41,13 @@ pub struct SceneSync {
 }
 
 /// A binary asset waiting to be loaded into the engine.
-pub struct PendingAsset {
-    pub kind: AssetKind,
-    pub bytes: Vec<u8>,
+pub enum PendingAsset {
+    Model(Vec<u8>),
+    ModelWithResources {
+        gltf: Vec<u8>,
+        resources: HashMap<String, Vec<u8>>,
+    },
+    Hdri(Vec<u8>),
 }
 
 /// Inbox for asset bytes from drops or browser fetches, plus the loading label
@@ -72,7 +76,7 @@ pub struct KhronosAsset {
     pub thumbnail: Option<String>,
 }
 
-/// A Polyhaven HDRI index entry.
+/// A Polyhaven index entry (HDRI or model).
 #[derive(Clone)]
 pub struct PolyAsset {
     pub slug: String,
@@ -93,18 +97,22 @@ pub enum FetchState<T> {
 /// Browser index fetch state. The lists are streamed to the page once loaded.
 pub struct Browsers {
     pub khronos: Arc<Mutex<FetchState<Vec<KhronosAsset>>>>,
-    pub polyhaven: Arc<Mutex<FetchState<Vec<PolyAsset>>>>,
+    pub hdris: Arc<Mutex<FetchState<Vec<PolyAsset>>>>,
+    pub models: Arc<Mutex<FetchState<Vec<PolyAsset>>>>,
     pub khronos_sent: bool,
-    pub polyhaven_sent: bool,
+    pub hdris_sent: bool,
+    pub models_sent: bool,
 }
 
 impl Default for Browsers {
     fn default() -> Self {
         Self {
             khronos: Arc::new(Mutex::new(FetchState::Idle)),
-            polyhaven: Arc::new(Mutex::new(FetchState::Idle)),
+            hdris: Arc::new(Mutex::new(FetchState::Idle)),
+            models: Arc::new(Mutex::new(FetchState::Idle)),
             khronos_sent: false,
-            polyhaven_sent: false,
+            hdris_sent: false,
+            models_sent: false,
         }
     }
 }
