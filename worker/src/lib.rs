@@ -105,6 +105,9 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                     WinitElementState::Released
                 };
                 input_inject_mouse_button(&mut app.world, mouse_button(button), state);
+                if pressed {
+                    app.world.resources.input.mouse.position_delta = Vec2::new(0.0, 0.0);
+                }
             }
         }
         ClientMessage::Wheel { delta } => {
