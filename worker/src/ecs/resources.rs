@@ -5,10 +5,12 @@ use nightshade::prelude::Entity;
 use protocol::{ClipInfo, ModelStats};
 
 /// Camera requests from the page. Orbit, pan, and zoom now come from forwarded
-/// pointer input the engine reads directly, so only framing remains here.
+/// pointer input the engine reads directly, so only framing and the turntable
+/// toggle remain here.
 #[derive(Default)]
 pub struct CameraInput {
     pub frame_requested: bool,
+    pub turntable: bool,
 }
 
 /// The currently selected engine entity.

@@ -224,6 +224,10 @@ pub enum ClientMessage {
     },
     /// Frame the camera on the current selection (or the whole model).
     Frame,
+    /// Toggle the auto-rotating turntable camera.
+    SetTurntable {
+        enabled: bool,
+    },
     /// A dropped file's bytes are in the `bytes` field of the envelope.
     DropAsset {
         kind: AssetKind,

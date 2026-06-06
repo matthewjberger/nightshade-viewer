@@ -1,14 +1,32 @@
 use crate::ecs::ViewerWorld;
 use nightshade::prelude::*;
 
+/// Angular speed of the turntable: one full revolution every twenty seconds.
+const TURNTABLE_RADIANS_PER_SECOND: f32 = std::f32::consts::TAU / 20.0;
+
 /// Runs the engine pan-orbit controller (which reads the forwarded pointer
-/// input and respects the gizmo's `hud_wants_pointer`) and frames the model when
-/// requested.
+/// input and respects the gizmo's `hud_wants_pointer`), frames the model when
+/// requested, and advances the turntable when it is enabled.
 pub fn update(viewer: &mut ViewerWorld, world: &mut World) {
     if std::mem::take(&mut viewer.resources.camera_input.frame_requested) {
         frame_model(viewer, world);
     }
+    if viewer.resources.camera_input.turntable {
+        advance_turntable(world);
+    }
     pan_orbit_camera_system(world);
+}
+
+/// Eases the orbit yaw target forward each frame so the controller's own
+/// smoothing carries the camera around the model at a constant rate.
+fn advance_turntable(world: &mut World) {
+    let Some(camera) = world.resources.active_camera else {
+        return;
+    };
+    let delta_time = world.resources.window.timing.delta_time;
+    if let Some(orbit) = world.core.get_pan_orbit_camera_mut(camera) {
+        orbit.target_yaw += TURNTABLE_RADIANS_PER_SECOND * delta_time;
+    }
 }
 
 /// The loaded model's world-space bounding box, from each entity's bounding

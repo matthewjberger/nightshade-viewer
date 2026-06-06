@@ -80,6 +80,20 @@ pub fn Toolbar(
             BUTTON.to_string()
         }
     };
+    let toggle_turntable = move |_| {
+        let enabled = !state.turntable.get_untracked();
+        state.turntable.set(enabled);
+        if let Some(bridge) = bridge.get_value() {
+            send(&bridge, &ClientMessage::SetTurntable { enabled });
+        }
+    };
+    let turntable_class = move || {
+        if state.turntable.get() {
+            format!("{BUTTON} bg-white/10 text-white")
+        } else {
+            BUTTON.to_string()
+        }
+    };
     let status = move || match state.loading.get() {
         Some(label) => format!("Loading {label}…"),
         None => format!("{:.0} fps", state.fps.get()),
@@ -182,6 +196,15 @@ pub fn Toolbar(
                 </button>
                 <button class=grid_class on:click=move |event| { close_menu(); toggle_grid(event) }>
                     "Grid"
+                </button>
+                <button
+                    class=turntable_class
+                    on:click=move |event| {
+                        close_menu();
+                        toggle_turntable(event);
+                    }
+                >
+                    "Spin"
                 </button>
             </div>
             <div class="shrink-0 flex items-center gap-1">

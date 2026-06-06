@@ -276,6 +276,11 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 app.state.viewer.resources.camera_input.frame_requested = true;
             }
         }
+        ClientMessage::SetTurntable { enabled } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                app.state.viewer.resources.camera_input.turntable = enabled;
+            }
+        }
         ClientMessage::DropAsset { kind } => {
             if let Some(app) = app_slot.borrow_mut().as_mut()
                 && let Some(bytes) = bytes_from(&data)
