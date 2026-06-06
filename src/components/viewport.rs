@@ -137,12 +137,8 @@ pub fn Viewport(
     let on_wheel = move |event: WheelEvent| {
         event.prevent_default();
         if let Some(bridge) = bridge.get_value() {
-            send(
-                &bridge,
-                &ClientMessage::Zoom {
-                    amount: event.delta_y() as f32,
-                },
-            );
+            let amount = (event.delta_y() as f32 / 100.0).clamp(-4.0, 4.0);
+            send(&bridge, &ClientMessage::Zoom { amount });
         }
     };
 

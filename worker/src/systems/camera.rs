@@ -2,7 +2,7 @@ use crate::ecs::ViewerWorld;
 use nightshade::prelude::*;
 
 const ORBIT_SENSITIVITY: f32 = 0.005;
-const ZOOM_SENSITIVITY: f32 = 0.05;
+const ZOOM_SENSITIVITY: f32 = 0.12;
 const PAN_SENSITIVITY: f32 = 0.0015;
 const PITCH_LIMIT: f32 = 1.55;
 
@@ -46,11 +46,10 @@ pub fn update(viewer: &mut ViewerWorld, world: &mut World) {
         orbit.target_yaw -= yaw * ORBIT_SENSITIVITY;
         orbit.target_pitch =
             (orbit.target_pitch + pitch * ORBIT_SENSITIVITY).clamp(-PITCH_LIMIT, PITCH_LIMIT);
-        let radius = (orbit.target_radius + zoom * orbit.target_radius * ZOOM_SENSITIVITY)
-            .clamp(0.05, 5000.0);
-        orbit.target_radius = radius;
+        let factor = (1.0 + ZOOM_SENSITIVITY).powf(zoom);
+        orbit.target_radius = (orbit.target_radius * factor).clamp(0.05, 5000.0);
         if let Some((right, up)) = basis {
-            let scale = radius * PAN_SENSITIVITY;
+            let scale = orbit.target_radius * PAN_SENSITIVITY;
             orbit.target_focus += right * (-pan_x * scale) + up * (pan_y * scale);
         }
     }
