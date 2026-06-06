@@ -100,9 +100,14 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
             >
                 "☰"
             </button>
-            <span class="shrink min-w-0 truncate text-[13px] font-semibold text-white/90 mr-1 sm:mr-3">
+            <a
+                href="https://github.com/matthewjberger/nightshade"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="shrink min-w-0 truncate text-[13px] font-semibold text-white/90 hover:text-white mr-1 sm:mr-3"
+            >
                 "Nightshade"
-            </span>
+            </a>
             <div class="hidden sm:block shrink-0 w-px h-4 bg-white/10 mx-1"></div>
             <div class=actions_class>
                 <button
