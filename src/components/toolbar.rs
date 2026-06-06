@@ -102,6 +102,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
             <span class="shrink min-w-0 truncate text-[13px] font-semibold text-white/90 mr-1 sm:mr-3">
                 "Nightshade"
             </span>
+            <div class="hidden sm:block shrink-0 w-px h-4 bg-white/10 mx-1"></div>
             <div class=actions_class>
                 <button
                     class=move || toggle_class(state.scene_open.get())
@@ -130,6 +131,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 >
                     "+ Add"
                 </button>
+                <div class="hidden sm:block shrink-0 w-px h-4 bg-white/10 mx-1"></div>
                 <button
                     class=move || toggle_class(state.grid.get())
                     on:click=move |event| {
