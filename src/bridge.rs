@@ -35,6 +35,9 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
                 state.ready.set(true);
             }
             WorkerMessage::Stats { fps } => state.fps.set(fps),
+            WorkerMessage::Camera { right, up, forward } => {
+                state.camera_basis.set([right, up, forward])
+            }
             WorkerMessage::Scene { nodes } => state.scene.set(nodes),
             WorkerMessage::Selected { detail } => state.selected.set(detail),
             WorkerMessage::Loading { active, label } => {

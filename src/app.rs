@@ -6,6 +6,7 @@ use crate::components::browser::AssetBrowser;
 use crate::components::gizmo_panel::GizmoPanel;
 use crate::components::inspector::Inspector;
 use crate::components::loader::Loader;
+use crate::components::nav_gizmo::NavGizmo;
 use crate::components::scene_tree::SceneTree;
 use crate::components::toolbar::Toolbar;
 use crate::components::viewport::Viewport;
@@ -28,6 +29,7 @@ pub fn App() -> impl IntoView {
         <Toolbar bridge state />
         <SceneTree bridge state />
         <Inspector bridge state />
+        <NavGizmo bridge state />
         <GizmoPanel bridge state />
         <AssetBrowser bridge state />
         <Loader state />

@@ -74,6 +74,10 @@ pub enum ClientMessage {
     SetGizmoMode {
         mode: GizmoKind,
     },
+    /// Snap the camera to look along a world axis (the clicked nav-gizmo axis).
+    SnapAxis {
+        axis: [f32; 3],
+    },
     /// Frame the camera on the current selection (or the whole model).
     Frame,
     /// A dropped file's bytes are in the `bytes` field of the envelope.
@@ -141,12 +145,36 @@ pub struct PolyhavenEntry {
 /// Worker to page.
 #[derive(Clone, Serialize, Deserialize)]
 pub enum WorkerMessage {
-    Ready { context: String, adapter: String },
-    Stats { fps: f32 },
-    Scene { nodes: Vec<SceneNode> },
-    Selected { detail: Option<EntityDetail> },
-    Loading { active: bool, label: String },
-    KhronosList { entries: Vec<KhronosEntry> },
-    PolyhavenList { entries: Vec<PolyhavenEntry> },
-    PolyhavenModelsList { entries: Vec<PolyhavenEntry> },
+    Ready {
+        context: String,
+        adapter: String,
+    },
+    Stats {
+        fps: f32,
+    },
+    /// The active camera's world-space basis, for the page's nav gizmo.
+    Camera {
+        right: [f32; 3],
+        up: [f32; 3],
+        forward: [f32; 3],
+    },
+    Scene {
+        nodes: Vec<SceneNode>,
+    },
+    Selected {
+        detail: Option<EntityDetail>,
+    },
+    Loading {
+        active: bool,
+        label: String,
+    },
+    KhronosList {
+        entries: Vec<KhronosEntry>,
+    },
+    PolyhavenList {
+        entries: Vec<PolyhavenEntry>,
+    },
+    PolyhavenModelsList {
+        entries: Vec<PolyhavenEntry>,
+    },
 }

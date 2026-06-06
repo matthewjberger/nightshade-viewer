@@ -146,6 +146,21 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 app.world.resources.debug_draw.show_grid = enabled;
             }
         }
+        ClientMessage::SnapAxis { axis } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut()
+                && let Some(camera) = app.world.resources.active_camera
+                && let Some(orbit) = app.world.core.get_pan_orbit_camera_mut(camera)
+            {
+                let direction = Vec3::new(axis[0], axis[1], axis[2]);
+                let unit = if direction.norm() > 0.0001 {
+                    direction.normalize()
+                } else {
+                    direction
+                };
+                orbit.target_yaw = unit.x.atan2(unit.z);
+                orbit.target_pitch = unit.y.clamp(-1.0, 1.0).asin();
+            }
+        }
         ClientMessage::Frame => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 app.state.viewer.resources.camera_input.frame_requested = true;
@@ -213,10 +228,12 @@ async fn create_app(canvas: OffscreenCanvas, width: f32, height: f32) -> App {
 
 fn start_render_loop(_scope: DedicatedWorkerGlobalScope, app_slot: AppSlot) {
     let last_push = Rc::new(RefCell::new(0.0_f64));
+    let last_basis = Rc::new(RefCell::new(None::<[[f32; 3]; 3]>));
 
     spawn_animation_frame_loop(move || {
         if let Some(app) = app_slot.borrow_mut().as_mut() {
             tick_offscreen(&mut app.world, &mut app.state, &mut app.renderer);
+            post_camera_basis(&app.world, &last_basis);
             let scope: DedicatedWorkerGlobalScope = js_sys::global().unchecked_into();
             if let Some(performance) = scope.performance() {
                 let now = performance.now();
@@ -257,6 +274,41 @@ pub(crate) fn post(message: &WorkerMessage) {
     if let Ok(value) = serde_wasm_bindgen::to_value(message) {
         let _ = scope.post_message(&value);
     }
+}
+
+fn post_camera_basis(world: &World, last_basis: &Rc<RefCell<Option<[[f32; 3]; 3]>>>) {
+    let Some(camera) = world.resources.active_camera else {
+        return;
+    };
+    let Some(global) = world.core.get_global_transform(camera) else {
+        return;
+    };
+    let right = global.right_vector();
+    let up = global.up_vector();
+    let forward = global.forward_vector();
+    let basis = [
+        [right.x, right.y, right.z],
+        [up.x, up.y, up.z],
+        [forward.x, forward.y, forward.z],
+    ];
+    let changed = last_basis
+        .borrow()
+        .map(|previous| basis_changed(&previous, &basis))
+        .unwrap_or(true);
+    if changed {
+        *last_basis.borrow_mut() = Some(basis);
+        post(&WorkerMessage::Camera {
+            right: basis[0],
+            up: basis[1],
+            forward: basis[2],
+        });
+    }
+}
+
+fn basis_changed(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> bool {
+    a.iter()
+        .zip(b)
+        .any(|(x, y)| x.iter().zip(y).any(|(p, q)| (p - q).abs() > 0.0005))
 }
 
 fn context() -> String {
