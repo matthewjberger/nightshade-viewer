@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use protocol::{ClientMessage, PbrDebug, ShadingMode, Tonemap};
 
 use crate::bridge::{Bridge, send};
-use crate::state::{PanelTab, ViewerState};
+use crate::state::{PanelTab, Validation, ViewerState};
 
 type BridgeSlot = StoredValue<Option<Bridge>, LocalStorage>;
 
@@ -208,7 +208,7 @@ fn variant_section(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
 
 fn stats_tab(state: ViewerState) -> impl IntoView {
     view! {
-        <div class="p-3 text-[12px]">
+        <div class="p-3 text-[12px] space-y-3">
             <Show
                 when=move || state.stats.get().is_some()
                 fallback=|| view! { <div class="text-white/35">"No model loaded."</div> }
@@ -235,8 +235,44 @@ fn stats_tab(state: ViewerState) -> impl IntoView {
                     }
                 }}
             </Show>
+            {move || state.validation.get().map(validation_row)}
         </div>
     }
+}
+
+fn validation_row(validation: Validation) -> impl IntoView {
+    let (text, color) = if validation.errors > 0 {
+        (
+            format!(
+                "{} error{}, {} warning{}",
+                validation.errors,
+                plural(validation.errors),
+                validation.warnings,
+                plural(validation.warnings),
+            ),
+            "text-red-300",
+        )
+    } else if validation.warnings > 0 {
+        (
+            format!(
+                "{} warning{}",
+                validation.warnings,
+                plural(validation.warnings)
+            ),
+            "text-amber-300",
+        )
+    } else {
+        ("Valid glTF".to_string(), "text-emerald-300")
+    };
+    view! {
+        <div class=format!(
+            "pt-2 border-t border-white/10 {color}",
+        )>{format!("Validator: {text}")}</div>
+    }
+}
+
+fn plural(count: u32) -> &'static str {
+    if count == 1 { "" } else { "s" }
 }
 
 fn sendc(bridge: BridgeSlot, message: ClientMessage) {

@@ -21,6 +21,13 @@ pub enum PanelTab {
     Stats,
 }
 
+/// Khronos glTF-Validator result for a dropped model.
+#[derive(Clone, Copy)]
+pub struct Validation {
+    pub errors: u32,
+    pub warnings: u32,
+}
+
 /// All page state, grouped as signals. `Copy`, so it threads into every
 /// component and closure without cloning.
 #[derive(Clone, Copy)]
@@ -60,6 +67,7 @@ pub struct ViewerState {
     pub show_sky: RwSignal<bool>,
     pub exposure: RwSignal<f32>,
     pub tonemap: RwSignal<Tonemap>,
+    pub validation: RwSignal<Option<Validation>>,
 }
 
 impl ViewerState {
@@ -100,6 +108,7 @@ impl ViewerState {
             show_sky: RwSignal::new(true),
             exposure: RwSignal::new(1.0),
             tonemap: RwSignal::new(Tonemap::Aces),
+            validation: RwSignal::new(None),
         }
     }
 }

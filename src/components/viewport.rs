@@ -135,7 +135,7 @@ pub fn Viewport(
         event.prevent_default();
         state.dragging.set(false);
         if let (Some(transfer), Some(bridge)) = (event.data_transfer(), bridge.get_value()) {
-            bridge::handle_drop(&bridge, transfer);
+            bridge::handle_drop(&bridge, transfer, state);
         }
     };
 

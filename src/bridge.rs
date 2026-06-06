@@ -11,6 +11,7 @@ use web_sys::{
 };
 
 use crate::state::ViewerState;
+use crate::validator;
 
 /// The page side of the worker conversation. Data only; behavior is the free
 /// functions below.
@@ -73,6 +74,9 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
             WorkerMessage::Selected { detail } => state.selected.set(detail),
             WorkerMessage::Loading { active, label } => {
                 state.loading.set(active.then_some(label));
+                if active {
+                    state.validation.set(None);
+                }
             }
             WorkerMessage::KhronosList { entries } => state.khronos.set(entries),
             WorkerMessage::PolyhavenList { entries } => state.hdris.set(entries),
@@ -143,7 +147,7 @@ fn send_bytes(bridge: &Bridge, message: &ClientMessage, bytes: &[u8]) {
 
 /// Reads everything in a drop (one or more files, or a `.zip`) and loads it: a
 /// single model or HDRI directly, or a multi-file glTF as a transferred bundle.
-pub fn handle_drop(bridge: &Bridge, transfer: DataTransfer) {
+pub fn handle_drop(bridge: &Bridge, transfer: DataTransfer, state: ViewerState) {
     let Some(files) = transfer.files() else {
         return;
     };
@@ -162,11 +166,11 @@ pub fn handle_drop(bridge: &Bridge, transfer: DataTransfer) {
                 }
             }
         }
-        route_dropped(&bridge, collected);
+        route_dropped(&bridge, collected, state);
     });
 }
 
-fn route_dropped(bridge: &Bridge, mut files: Vec<(String, Vec<u8>)>) {
+fn route_dropped(bridge: &Bridge, mut files: Vec<(String, Vec<u8>)>, state: ViewerState) {
     if files.len() == 1
         && files[0].0.to_lowercase().ends_with(".zip")
         && let Some(unzipped) = unzip(&files[0].1)
@@ -180,6 +184,7 @@ fn route_dropped(bridge: &Bridge, mut files: Vec<(String, Vec<u8>)>) {
     }) {
         let (name, gltf) = files.remove(index);
         if name.to_lowercase().ends_with(".glb") || files.is_empty() {
+            validator::validate(state, gltf.clone(), Vec::new());
             send_bytes(
                 bridge,
                 &ClientMessage::DropAsset {
@@ -192,7 +197,7 @@ fn route_dropped(bridge: &Bridge, mut files: Vec<(String, Vec<u8>)>) {
                 .rsplit_once('/')
                 .map(|(dir, _)| format!("{dir}/"))
                 .unwrap_or_default();
-            let resources = files
+            let resources: Vec<(String, Vec<u8>)> = files
                 .into_iter()
                 .map(|(path, bytes)| {
                     (
@@ -201,6 +206,7 @@ fn route_dropped(bridge: &Bridge, mut files: Vec<(String, Vec<u8>)>) {
                     )
                 })
                 .collect();
+            validator::validate(state, gltf.clone(), resources.clone());
             send_gltf_bundle(bridge, &gltf, resources);
         }
     } else if let Some(index) = files
