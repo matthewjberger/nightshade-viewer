@@ -15,6 +15,7 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 console_error_panic_hook = "0.1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 web-sys = { version = "0.3", features = [
     "Window",
     "Document",

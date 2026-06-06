@@ -6,6 +6,10 @@ pub const MESSAGE_KEY: &str = "message";
 pub const CANVAS_KEY: &str = "canvas";
 /// Envelope field carrying transferred binary asset bytes (drag-drop).
 pub const BYTES_KEY: &str = "bytes";
+/// Envelope field carrying the transferred glTF bytes of a multi-file bundle.
+pub const GLTF_KEY: &str = "gltf";
+/// Envelope field carrying a `{ name: Uint8Array }` object of bundle resources.
+pub const RESOURCES_KEY: &str = "resources";
 
 /// What a dropped binary payload is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,6 +192,9 @@ pub enum ClientMessage {
     DropAsset {
         kind: AssetKind,
     },
+    /// A multi-file glTF: the `gltf` field holds the document bytes and the
+    /// `resources` field a `{ name: Uint8Array }` object of buffers and images.
+    LoadGltfBundle,
     /// Load a Khronos sample model by its index name (worker fetches it).
     LoadKhronos {
         name: String,

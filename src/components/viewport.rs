@@ -5,7 +5,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::{DragEvent, HtmlCanvasElement, MouseEvent, PointerEvent, ResizeObserver, WheelEvent};
 
-use crate::bridge::{self, Bridge, send, send_file};
+use crate::bridge::{self, Bridge, send};
 use crate::state::ViewerState;
 
 #[derive(Clone, Copy, Default)]
@@ -134,11 +134,8 @@ pub fn Viewport(
     let on_drop = move |event: DragEvent| {
         event.prevent_default();
         state.dragging.set(false);
-        if let (Some(transfer), Some(bridge)) = (event.data_transfer(), bridge.get_value())
-            && let Some(files) = transfer.files()
-            && let Some(file) = files.item(0)
-        {
-            send_file(&bridge, file);
+        if let (Some(transfer), Some(bridge)) = (event.data_transfer(), bridge.get_value()) {
+            bridge::handle_drop(&bridge, transfer);
         }
     };
 

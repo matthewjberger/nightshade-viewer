@@ -3,6 +3,7 @@ mod state;
 mod systems;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use nightshade::prelude::winit::event::{
@@ -10,7 +11,10 @@ use nightshade::prelude::winit::event::{
 };
 use nightshade::prelude::*;
 use nightshade::render::wgpu::create_wgpu_renderer;
-use protocol::{AssetKind, BYTES_KEY, ClientMessage, GizmoKind, MESSAGE_KEY, WorkerMessage};
+use protocol::{
+    AssetKind, BYTES_KEY, ClientMessage, GLTF_KEY, GizmoKind, MESSAGE_KEY, RESOURCES_KEY,
+    WorkerMessage,
+};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::spawn_local;
@@ -268,6 +272,17 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 });
             }
         }
+        ClientMessage::LoadGltfBundle => {
+            if let Some(app) = app_slot.borrow_mut().as_mut()
+                && let Some(gltf) = bytes_with_key(&data, GLTF_KEY)
+                && let Ok(mut slot) = app.state.viewer.resources.incoming.asset.lock()
+            {
+                *slot = Some(PendingAsset::ModelWithResources {
+                    gltf,
+                    resources: resources_from(&data),
+                });
+            }
+        }
         ClientMessage::LoadKhronos { name } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 systems::browsers::fetch_khronos(&app.state.viewer, &name);
@@ -353,9 +368,33 @@ fn mouse_button(button: u8) -> WinitMouseButton {
 }
 
 fn bytes_from(data: &JsValue) -> Option<Vec<u8>> {
-    let value = js_sys::Reflect::get(data, &JsValue::from_str(BYTES_KEY)).ok()?;
+    bytes_with_key(data, BYTES_KEY)
+}
+
+fn bytes_with_key(data: &JsValue, key: &str) -> Option<Vec<u8>> {
+    let value = js_sys::Reflect::get(data, &JsValue::from_str(key)).ok()?;
     let array = value.dyn_into::<js_sys::Uint8Array>().ok()?;
     Some(array.to_vec())
+}
+
+fn resources_from(data: &JsValue) -> HashMap<String, Vec<u8>> {
+    let mut resources = HashMap::new();
+    let Ok(value) = js_sys::Reflect::get(data, &JsValue::from_str(RESOURCES_KEY)) else {
+        return resources;
+    };
+    if !value.is_object() {
+        return resources;
+    }
+    let object: js_sys::Object = value.clone().unchecked_into();
+    for key in js_sys::Object::keys(&object).iter() {
+        if let Some(name) = key.as_string()
+            && let Ok(entry) = js_sys::Reflect::get(&value, &key)
+            && let Ok(array) = entry.dyn_into::<js_sys::Uint8Array>()
+        {
+            resources.insert(name, array.to_vec());
+        }
+    }
+    resources
 }
 
 fn canvas_from(data: &JsValue) -> Option<OffscreenCanvas> {

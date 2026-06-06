@@ -1,9 +1,14 @@
 use leptos::prelude::*;
-use protocol::{AssetKind, BYTES_KEY, CANVAS_KEY, ClientMessage, MESSAGE_KEY, WorkerMessage};
+use protocol::{
+    AssetKind, BYTES_KEY, CANVAS_KEY, ClientMessage, GLTF_KEY, MESSAGE_KEY, RESOURCES_KEY,
+    WorkerMessage,
+};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::{Blob, File, MessageEvent, OffscreenCanvas, Worker, WorkerOptions, WorkerType};
+use web_sys::{
+    Blob, DataTransfer, File, MessageEvent, OffscreenCanvas, Worker, WorkerOptions, WorkerType,
+};
 
 use crate::state::ViewerState;
 
@@ -134,4 +139,132 @@ fn send_bytes(bridge: &Bridge, message: &ClientMessage, bytes: &[u8]) {
     let _ = bridge
         .worker
         .post_message_with_transfer(&envelope, &transfer);
+}
+
+/// Reads everything in a drop (one or more files, or a `.zip`) and loads it: a
+/// single model or HDRI directly, or a multi-file glTF as a transferred bundle.
+pub fn handle_drop(bridge: &Bridge, transfer: DataTransfer) {
+    let Some(files) = transfer.files() else {
+        return;
+    };
+    if files.length() == 0 {
+        return;
+    }
+    let bridge = bridge.clone();
+    spawn_local(async move {
+        let mut collected: Vec<(String, Vec<u8>)> = Vec::new();
+        for index in 0..files.length() {
+            if let Some(file) = files.item(index) {
+                let name = file.name();
+                let blob: &Blob = file.as_ref();
+                if let Ok(buffer) = JsFuture::from(blob.array_buffer()).await {
+                    collected.push((name, js_sys::Uint8Array::new(&buffer).to_vec()));
+                }
+            }
+        }
+        route_dropped(&bridge, collected);
+    });
+}
+
+fn route_dropped(bridge: &Bridge, mut files: Vec<(String, Vec<u8>)>) {
+    if files.len() == 1
+        && files[0].0.to_lowercase().ends_with(".zip")
+        && let Some(unzipped) = unzip(&files[0].1)
+    {
+        files = unzipped;
+    }
+
+    if let Some(index) = files.iter().position(|(name, _)| {
+        let lower = name.to_lowercase();
+        lower.ends_with(".glb") || lower.ends_with(".gltf")
+    }) {
+        let (name, gltf) = files.remove(index);
+        if name.to_lowercase().ends_with(".glb") || files.is_empty() {
+            send_bytes(
+                bridge,
+                &ClientMessage::DropAsset {
+                    kind: AssetKind::Model,
+                },
+                &gltf,
+            );
+        } else {
+            let directory = name
+                .rsplit_once('/')
+                .map(|(dir, _)| format!("{dir}/"))
+                .unwrap_or_default();
+            let resources = files
+                .into_iter()
+                .map(|(path, bytes)| {
+                    (
+                        path.strip_prefix(&directory).unwrap_or(&path).to_string(),
+                        bytes,
+                    )
+                })
+                .collect();
+            send_gltf_bundle(bridge, &gltf, resources);
+        }
+    } else if let Some(index) = files
+        .iter()
+        .position(|(name, _)| name.to_lowercase().ends_with(".hdr"))
+    {
+        let (_, bytes) = files.remove(index);
+        send_bytes(
+            bridge,
+            &ClientMessage::DropAsset {
+                kind: AssetKind::Hdri,
+            },
+            &bytes,
+        );
+    }
+}
+
+fn send_gltf_bundle(bridge: &Bridge, gltf: &[u8], resources: Vec<(String, Vec<u8>)>) {
+    let envelope = js_sys::Object::new();
+    let value =
+        serde_wasm_bindgen::to_value(&ClientMessage::LoadGltfBundle).unwrap_or(JsValue::NULL);
+    let _ = js_sys::Reflect::set(&envelope, &JsValue::from_str(MESSAGE_KEY), &value);
+
+    let gltf_array = js_sys::Uint8Array::new_with_length(gltf.len() as u32);
+    gltf_array.copy_from(gltf);
+    let _ = js_sys::Reflect::set(&envelope, &JsValue::from_str(GLTF_KEY), &gltf_array);
+
+    let transfer = js_sys::Array::new();
+    transfer.push(&gltf_array.buffer());
+
+    let resources_object = js_sys::Object::new();
+    for (name, bytes) in resources {
+        let array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
+        array.copy_from(&bytes);
+        let _ = js_sys::Reflect::set(&resources_object, &JsValue::from_str(&name), &array);
+        transfer.push(&array.buffer());
+    }
+    let _ = js_sys::Reflect::set(
+        &envelope,
+        &JsValue::from_str(RESOURCES_KEY),
+        &resources_object,
+    );
+
+    let _ = bridge
+        .worker
+        .post_message_with_transfer(&envelope, &transfer);
+}
+
+fn unzip(bytes: &[u8]) -> Option<Vec<(String, Vec<u8>)>> {
+    use std::io::Read;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    let mut out = Vec::new();
+    for index in 0..archive.len() {
+        let Ok(mut entry) = archive.by_index(index) else {
+            continue;
+        };
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry.name().to_string();
+        let mut data = Vec::new();
+        if entry.read_to_end(&mut data).is_ok() {
+            out.push((name, data));
+        }
+    }
+    Some(out)
 }
