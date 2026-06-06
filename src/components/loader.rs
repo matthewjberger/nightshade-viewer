@@ -29,7 +29,16 @@ pub fn Loader(state: ViewerState) -> impl IntoView {
             when=move || state.ready.get() && state.loading.get().is_some()
             fallback=|| ()
         >
-            <div class="fixed bottom-4 right-4 z-30 flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-[#14161d]/90 text-white/80 text-[12px] shadow-lg shadow-black/40">
+            <div class=move || {
+                let right = if state.inspector_open.get() {
+                    "right-3 sm:right-[19rem]"
+                } else {
+                    "right-3"
+                };
+                format!(
+                    "fixed bottom-4 {right} z-30 flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-[#14161d]/90 text-white/80 text-[12px] shadow-lg shadow-black/40"
+                )
+            }>
                 <span class="h-3.5 w-3.5 rounded-full border-2 border-white/20 border-t-orange-400 animate-spin"></span>
                 {move || {
                     state

@@ -82,10 +82,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
             );
         }
     };
-    let status = move || match state.loading.get() {
-        Some(label) => format!("Loading {label}…"),
-        None => format!("{:.0} fps", state.fps.get()),
-    };
+    let status = move || format!("{:.0} fps", state.fps.get());
 
     let menu_open = RwSignal::new(false);
     let toggle_menu = move |_| menu_open.update(|open| *open = !*open);
