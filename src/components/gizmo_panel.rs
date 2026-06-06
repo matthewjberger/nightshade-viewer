@@ -20,7 +20,7 @@ pub fn GizmoPanel(
 
     view! {
         <Show when=move || state.selected.get().is_some() fallback=|| ()>
-            <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 p-1 rounded-xl border border-white/10 bg-[#14161d]/85 backdrop-blur-md shadow-lg shadow-black/40">
+            <div class="fixed bottom-20 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 p-1 rounded-xl border border-white/10 bg-[#14161d]/85 backdrop-blur-md shadow-lg shadow-black/40">
                 {gizmo_button(state, GizmoKind::Translate, "Move", set_mode)}
                 {gizmo_button(state, GizmoKind::Rotate, "Rotate", set_mode)}
                 {gizmo_button(state, GizmoKind::Scale, "Scale", set_mode)}

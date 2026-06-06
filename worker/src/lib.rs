@@ -20,6 +20,7 @@ use crate::ecs::PendingAsset;
 use crate::state::Viewer;
 
 type AppSlot = Rc<RefCell<Option<App>>>;
+type AnimState = Rc<RefCell<Option<(f32, bool, Option<u32>)>>>;
 
 struct App {
     world: World,
@@ -161,6 +162,96 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 orbit.target_pitch = unit.y.clamp(-1.0, 1.0).asin();
             }
         }
+        ClientMessage::PlayAnimation { index } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                animate(app, |player| player.play(index as usize));
+            }
+        }
+        ClientMessage::PauseAnimation => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                animate(app, |player| player.pause());
+            }
+        }
+        ClientMessage::ResumeAnimation => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                animate(app, |player| player.resume());
+            }
+        }
+        ClientMessage::StopAnimation => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                animate(app, |player| player.stop());
+            }
+        }
+        ClientMessage::SeekAnimation { time } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                animate(app, |player| player.time = time.max(0.0));
+            }
+        }
+        ClientMessage::SetAnimationSpeed { speed } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                animate(app, |player| player.speed = speed);
+            }
+        }
+        ClientMessage::SetAnimationLoop { looping } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                animate(app, |player| player.looping = looping);
+            }
+        }
+        ClientMessage::SetShadingMode { mode } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut()
+                && let Some(camera) = app.world.resources.active_camera
+            {
+                app.world.core.set_viewport_shading(
+                    camera,
+                    nightshade::ecs::camera::components::ViewportShading {
+                        mode: map_shading(mode),
+                        show_overlays: true,
+                    },
+                );
+            }
+        }
+        ClientMessage::SetPbrDebug { mode } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                app.world.resources.debug_draw.pbr_debug_mode = map_pbr(mode);
+            }
+        }
+        ClientMessage::SetShowNormals { enabled } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                app.world.resources.debug_draw.show_normals = enabled;
+            }
+        }
+        ClientMessage::SetShowBounds { enabled } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                app.world.resources.debug_draw.show_bounding_volumes = enabled;
+            }
+        }
+        ClientMessage::SetExposure { exposure } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                app.world.resources.render_settings.color_grading.exposure = exposure;
+            }
+        }
+        ClientMessage::SetTonemap { algorithm } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                app.world
+                    .resources
+                    .render_settings
+                    .color_grading
+                    .tonemap_algorithm = map_tonemap(algorithm);
+            }
+        }
+        ClientMessage::SetShowSky { show } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                app.world.resources.render_settings.show_sky = show;
+            }
+        }
+        ClientMessage::SetVariant { name } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                nightshade::ecs::material::commands::material_variant_apply(
+                    &mut app.world,
+                    name.as_deref(),
+                );
+            }
+        }
         ClientMessage::Frame => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 app.state.viewer.resources.camera_input.frame_requested = true;
@@ -229,11 +320,15 @@ async fn create_app(canvas: OffscreenCanvas, width: f32, height: f32) -> App {
 fn start_render_loop(_scope: DedicatedWorkerGlobalScope, app_slot: AppSlot) {
     let last_push = Rc::new(RefCell::new(0.0_f64));
     let last_basis = Rc::new(RefCell::new(None::<[[f32; 3]; 3]>));
+    let last_anim: AnimState = Rc::new(RefCell::new(None));
 
     spawn_animation_frame_loop(move || {
         if let Some(app) = app_slot.borrow_mut().as_mut() {
             tick_offscreen(&mut app.world, &mut app.state, &mut app.renderer);
             post_camera_basis(&app.world, &last_basis);
+            if let Some(&root) = app.state.viewer.resources.model.roots.first() {
+                post_animation(&app.world, root, &last_anim);
+            }
             let scope: DedicatedWorkerGlobalScope = js_sys::global().unchecked_into();
             if let Some(performance) = scope.performance() {
                 let now = performance.now();
@@ -309,6 +404,79 @@ fn basis_changed(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> bool {
     a.iter()
         .zip(b)
         .any(|(x, y)| x.iter().zip(y).any(|(p, q)| (p - q).abs() > 0.0005))
+}
+
+fn animate(
+    app: &mut App,
+    action: impl Fn(&mut nightshade::ecs::animation::components::AnimationPlayer),
+) {
+    let roots = app.state.viewer.resources.model.roots.clone();
+    for root in roots {
+        if let Some(player) = app.world.core.get_animation_player_mut(root) {
+            action(player);
+        }
+    }
+}
+
+fn post_animation(world: &World, root: Entity, last: &AnimState) {
+    let Some(player) = world.core.get_animation_player(root) else {
+        return;
+    };
+    let clip = player.current_clip.map(|index| index as u32);
+    let duration = player.get_current_clip().map(|c| c.duration).unwrap_or(0.0);
+    let state = (player.time, player.playing, clip);
+    let changed = last
+        .borrow()
+        .map(|previous| {
+            (previous.0 - state.0).abs() > 0.01 || previous.1 != state.1 || previous.2 != state.2
+        })
+        .unwrap_or(true);
+    if changed {
+        *last.borrow_mut() = Some(state);
+        post(&WorkerMessage::Animation {
+            time: player.time,
+            duration,
+            playing: player.playing,
+            clip,
+        });
+    }
+}
+
+fn map_shading(mode: protocol::ShadingMode) -> nightshade::ecs::camera::components::ShadingMode {
+    use nightshade::ecs::camera::components::ShadingMode as Engine;
+    match mode {
+        protocol::ShadingMode::Rendered => Engine::Rendered,
+        protocol::ShadingMode::Solid => Engine::Solid,
+        protocol::ShadingMode::Flat => Engine::Flat,
+        protocol::ShadingMode::Wireframe => Engine::Wireframe,
+    }
+}
+
+fn map_pbr(mode: protocol::PbrDebug) -> nightshade::ecs::graphics::resources::PbrDebugMode {
+    use nightshade::ecs::graphics::resources::PbrDebugMode as Engine;
+    match mode {
+        protocol::PbrDebug::Off => Engine::None,
+        protocol::PbrDebug::BaseColor => Engine::BaseColor,
+        protocol::PbrDebug::Normal => Engine::Normal,
+        protocol::PbrDebug::Metallic => Engine::Metallic,
+        protocol::PbrDebug::Roughness => Engine::Roughness,
+        protocol::PbrDebug::Occlusion => Engine::Occlusion,
+        protocol::PbrDebug::Emissive => Engine::Emissive,
+    }
+}
+
+fn map_tonemap(
+    algorithm: protocol::Tonemap,
+) -> nightshade::ecs::graphics::resources::TonemapAlgorithm {
+    use nightshade::ecs::graphics::resources::TonemapAlgorithm as Engine;
+    match algorithm {
+        protocol::Tonemap::Aces => Engine::Aces,
+        protocol::Tonemap::Reinhard => Engine::Reinhard,
+        protocol::Tonemap::Uncharted2 => Engine::Uncharted2,
+        protocol::Tonemap::AgX => Engine::AgX,
+        protocol::Tonemap::Neutral => Engine::Neutral,
+        protocol::Tonemap::None => Engine::None,
+    }
 }
 
 fn context() -> String {

@@ -38,6 +38,32 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
             WorkerMessage::Camera { right, up, forward } => {
                 state.camera_basis.set([right, up, forward])
             }
+            WorkerMessage::Loaded {
+                stats,
+                clips,
+                variants,
+                exposure,
+            } => {
+                state.stats.set(Some(stats));
+                state.clips.set(clips);
+                state.variants.set(variants);
+                state.exposure.set(exposure);
+                state.active_variant.set(None);
+                state.anim_clip.set(None);
+                state.anim_playing.set(false);
+                state.anim_time.set(0.0);
+            }
+            WorkerMessage::Animation {
+                time,
+                duration,
+                playing,
+                clip,
+            } => {
+                state.anim_time.set(time);
+                state.anim_duration.set(duration);
+                state.anim_playing.set(playing);
+                state.anim_clip.set(clip);
+            }
             WorkerMessage::Scene { nodes } => state.scene.set(nodes),
             WorkerMessage::Selected { detail } => state.selected.set(detail),
             WorkerMessage::Loading { active, label } => {

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use nightshade::prelude::Entity;
+use protocol::{ClipInfo, ModelStats};
 
 /// Camera requests from the page. Orbit, pan, and zoom now come from forwarded
 /// pointer input the engine reads directly, so only framing remains here.
@@ -21,6 +22,17 @@ pub struct Selection {
 pub struct Model {
     pub roots: Vec<Entity>,
     pub entities: Vec<Entity>,
+    pub report: Option<LoadReport>,
+}
+
+/// A pending load report, sent to the page after a frame so the world-space
+/// dimensions are computed from updated global transforms.
+pub struct LoadReport {
+    pub stats: ModelStats,
+    pub clips: Vec<ClipInfo>,
+    pub variants: Vec<String>,
+    pub exposure: f32,
+    pub delay: u32,
 }
 
 /// Pending GPU pick plus the click-cycle state (repeated clicks on one spot

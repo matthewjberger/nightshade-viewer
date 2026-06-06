@@ -37,6 +37,11 @@ pub fn spawn(viewer: &mut ViewerWorld, world: &mut World) {
         "Camera".to_string(),
     );
     world.resources.active_camera = Some(camera);
+    world.core.add_components(camera, VIEWPORT_SHADING);
+    world.core.set_viewport_shading(
+        camera,
+        nightshade::ecs::camera::components::ViewportShading::default(),
+    );
 
     load::load_default(viewer, world);
 }

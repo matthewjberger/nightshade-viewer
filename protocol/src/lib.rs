@@ -24,6 +24,56 @@ pub enum GizmoKind {
     Scale,
 }
 
+/// Viewport shading mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShadingMode {
+    Rendered,
+    Solid,
+    Flat,
+    Wireframe,
+}
+
+/// PBR channel debug view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PbrDebug {
+    Off,
+    BaseColor,
+    Normal,
+    Metallic,
+    Roughness,
+    Occlusion,
+    Emissive,
+}
+
+/// Tone mapping operator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Tonemap {
+    Aces,
+    Reinhard,
+    Uncharted2,
+    AgX,
+    Neutral,
+    None,
+}
+
+/// Counts and size of the loaded model, for the stats panel.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct ModelStats {
+    pub meshes: u32,
+    pub vertices: u32,
+    pub triangles: u32,
+    pub materials: u32,
+    pub textures: u32,
+    pub dimensions: [f32; 3],
+}
+
+/// One animation clip's name and length.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ClipInfo {
+    pub name: String,
+    pub duration: f32,
+}
+
 /// Page to worker. Pixel quantities are physical surface pixels (CSS pixels
 /// times the device pixel ratio), origin at the canvas top-left.
 #[derive(Clone, Serialize, Deserialize)]
@@ -77,6 +127,60 @@ pub enum ClientMessage {
     /// Snap the camera to look along a world axis (the clicked nav-gizmo axis).
     SnapAxis {
         axis: [f32; 3],
+    },
+    /// Play an animation clip by index.
+    PlayAnimation {
+        index: u32,
+    },
+    /// Pause the current animation.
+    PauseAnimation,
+    /// Resume the current animation.
+    ResumeAnimation,
+    /// Stop and rewind the animation.
+    StopAnimation,
+    /// Scrub the animation to a time in seconds.
+    SeekAnimation {
+        time: f32,
+    },
+    /// Set animation playback speed.
+    SetAnimationSpeed {
+        speed: f32,
+    },
+    /// Toggle animation looping.
+    SetAnimationLoop {
+        looping: bool,
+    },
+    /// Set the viewport shading mode.
+    SetShadingMode {
+        mode: ShadingMode,
+    },
+    /// Set the PBR channel debug view.
+    SetPbrDebug {
+        mode: PbrDebug,
+    },
+    /// Toggle the normal-line overlay.
+    SetShowNormals {
+        enabled: bool,
+    },
+    /// Toggle the bounding-volume overlay.
+    SetShowBounds {
+        enabled: bool,
+    },
+    /// Set the exposure multiplier.
+    SetExposure {
+        exposure: f32,
+    },
+    /// Set the tone mapping operator.
+    SetTonemap {
+        algorithm: Tonemap,
+    },
+    /// Toggle the visible skybox (IBL stays on).
+    SetShowSky {
+        show: bool,
+    },
+    /// Apply a material variant by name, or `None` to reset to default.
+    SetVariant {
+        name: Option<String>,
     },
     /// Frame the camera on the current selection (or the whole model).
     Frame,
@@ -157,6 +261,20 @@ pub enum WorkerMessage {
         right: [f32; 3],
         up: [f32; 3],
         forward: [f32; 3],
+    },
+    /// Model facts sent once per load.
+    Loaded {
+        stats: ModelStats,
+        clips: Vec<ClipInfo>,
+        variants: Vec<String>,
+        exposure: f32,
+    },
+    /// Animation playhead, streamed while a clip plays.
+    Animation {
+        time: f32,
+        duration: f32,
+        playing: bool,
+        clip: Option<u32>,
     },
     Scene {
         nodes: Vec<SceneNode>,

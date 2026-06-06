@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::ecs::{PendingAsset, ViewerWorld};
+use crate::ecs::{LoadReport, PendingAsset, ViewerWorld};
 use nightshade::ecs::prefab::GltfLoadResult;
 use nightshade::prelude::*;
-use protocol::WorkerMessage;
+use protocol::{ClipInfo, ModelStats, WorkerMessage};
 
 const DEFAULT_MODEL: &[u8] = include_bytes!("../../assets/DamagedHelmet.glb");
 
@@ -105,6 +105,73 @@ fn spawn_result(viewer: &mut ViewerWorld, world: &mut World, mut result: GltfLoa
     viewer.resources.scene_sync.needs_tree = true;
     viewer.resources.scene_sync.needs_selection = true;
     viewer.resources.camera_input.frame_requested = true;
+
+    world.resources.render_settings.color_grading.exposure = result.suggested_exposure;
+    let stats = ModelStats {
+        meshes: result.meshes.len() as u32,
+        vertices: result
+            .meshes
+            .values()
+            .map(|mesh| mesh.vertices.len() as u32)
+            .sum(),
+        triangles: result
+            .meshes
+            .values()
+            .map(|mesh| (mesh.indices.len() / 3) as u32)
+            .sum(),
+        materials: result.materials.len() as u32,
+        textures: result.texture_plan.len() as u32,
+        dimensions: [0.0, 0.0, 0.0],
+    };
+    let clips = result
+        .animations
+        .iter()
+        .map(|clip| ClipInfo {
+            name: clip.name.clone(),
+            duration: clip.duration,
+        })
+        .collect();
+    let variants = result
+        .prefabs
+        .first()
+        .map(|prefab| prefab.material_variants.clone())
+        .unwrap_or_default();
+    viewer.resources.model.report = Some(LoadReport {
+        stats,
+        clips,
+        variants,
+        exposure: result.suggested_exposure,
+        delay: 1,
+    });
+}
+
+/// Sends the load report a frame after spawn, once global transforms have
+/// updated so the model dimensions are correct.
+pub fn flush_report(viewer: &mut ViewerWorld, world: &World) {
+    let delay = match &viewer.resources.model.report {
+        Some(report) => report.delay,
+        None => return,
+    };
+    if delay > 0 {
+        if let Some(report) = viewer.resources.model.report.as_mut() {
+            report.delay -= 1;
+        }
+        return;
+    }
+    let dimensions = crate::systems::camera::model_bounds(viewer, world)
+        .map(|(min, max)| {
+            let size = max - min;
+            [size.x, size.y, size.z]
+        })
+        .unwrap_or([0.0, 0.0, 0.0]);
+    let mut report = viewer.resources.model.report.take().unwrap();
+    report.stats.dimensions = dimensions;
+    crate::post(&WorkerMessage::Loaded {
+        stats: report.stats,
+        clips: report.clips,
+        variants: report.variants,
+        exposure: report.exposure,
+    });
 }
 
 /// Orders the spawned set parent-before-child (a hierarchy walk from each root),

@@ -2,12 +2,13 @@ use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
 use crate::bridge::Bridge;
+use crate::components::animation_bar::AnimationBar;
 use crate::components::browser::AssetBrowser;
 use crate::components::gizmo_panel::GizmoPanel;
 use crate::components::inspector::Inspector;
+use crate::components::left_panel::LeftPanel;
 use crate::components::loader::Loader;
 use crate::components::nav_gizmo::NavGizmo;
-use crate::components::scene_tree::SceneTree;
 use crate::components::toolbar::Toolbar;
 use crate::components::viewport::Viewport;
 use crate::state::ViewerState;
@@ -27,10 +28,11 @@ pub fn App() -> impl IntoView {
     view! {
         <Viewport bridge state />
         <Toolbar bridge state />
-        <SceneTree bridge state />
+        <LeftPanel bridge state />
         <Inspector bridge state />
         <NavGizmo bridge state />
         <GizmoPanel bridge state />
+        <AnimationBar bridge state />
         <AssetBrowser bridge state />
         <Loader state />
         <Show when=move || state.dragging.get() fallback=|| ()>

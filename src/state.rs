@@ -1,5 +1,8 @@
 use leptos::prelude::*;
-use protocol::{EntityDetail, GizmoKind, KhronosEntry, PolyhavenEntry, SceneNode};
+use protocol::{
+    ClipInfo, EntityDetail, GizmoKind, KhronosEntry, ModelStats, PbrDebug, PolyhavenEntry,
+    SceneNode, ShadingMode, Tonemap,
+};
 
 /// Which asset browser overlay, if any, is open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8,6 +11,14 @@ pub enum Browser {
     Khronos,
     Hdris,
     Models,
+}
+
+/// Which tab the left panel shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PanelTab {
+    Scene,
+    Render,
+    Stats,
 }
 
 /// All page state, grouped as signals. `Copy`, so it threads into every
@@ -31,6 +42,24 @@ pub struct ViewerState {
     pub dragging: RwSignal<bool>,
     pub grabbing: RwSignal<bool>,
     pub ready: RwSignal<bool>,
+    pub tab: RwSignal<PanelTab>,
+    pub stats: RwSignal<Option<ModelStats>>,
+    pub clips: RwSignal<Vec<ClipInfo>>,
+    pub variants: RwSignal<Vec<String>>,
+    pub active_variant: RwSignal<Option<String>>,
+    pub anim_clip: RwSignal<Option<u32>>,
+    pub anim_playing: RwSignal<bool>,
+    pub anim_time: RwSignal<f32>,
+    pub anim_duration: RwSignal<f32>,
+    pub anim_speed: RwSignal<f32>,
+    pub anim_loop: RwSignal<bool>,
+    pub shading: RwSignal<ShadingMode>,
+    pub pbr_debug: RwSignal<PbrDebug>,
+    pub show_normals: RwSignal<bool>,
+    pub show_bounds: RwSignal<bool>,
+    pub show_sky: RwSignal<bool>,
+    pub exposure: RwSignal<f32>,
+    pub tonemap: RwSignal<Tonemap>,
 }
 
 impl ViewerState {
@@ -53,6 +82,24 @@ impl ViewerState {
             dragging: RwSignal::new(false),
             grabbing: RwSignal::new(false),
             ready: RwSignal::new(false),
+            tab: RwSignal::new(PanelTab::Scene),
+            stats: RwSignal::new(None),
+            clips: RwSignal::new(Vec::new()),
+            variants: RwSignal::new(Vec::new()),
+            active_variant: RwSignal::new(None),
+            anim_clip: RwSignal::new(None),
+            anim_playing: RwSignal::new(false),
+            anim_time: RwSignal::new(0.0),
+            anim_duration: RwSignal::new(0.0),
+            anim_speed: RwSignal::new(1.0),
+            anim_loop: RwSignal::new(true),
+            shading: RwSignal::new(ShadingMode::Rendered),
+            pbr_debug: RwSignal::new(PbrDebug::Off),
+            show_normals: RwSignal::new(false),
+            show_bounds: RwSignal::new(false),
+            show_sky: RwSignal::new(true),
+            exposure: RwSignal::new(1.0),
+            tonemap: RwSignal::new(Tonemap::Aces),
         }
     }
 }

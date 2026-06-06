@@ -11,12 +11,9 @@ pub fn update(viewer: &mut ViewerWorld, world: &mut World) {
     pan_orbit_camera_system(world);
 }
 
-/// Frames the camera on the whole loaded model by fitting its bounds.
-pub fn frame_model(viewer: &mut ViewerWorld, world: &mut World) {
-    let Some(camera) = world.resources.active_camera else {
-        return;
-    };
-
+/// The loaded model's world-space bounding box, from each entity's bounding
+/// volume and global transform.
+pub fn model_bounds(viewer: &ViewerWorld, world: &World) -> Option<(Vec3, Vec3)> {
     let mut min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
     let mut max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
     let mut found = false;
@@ -38,9 +35,17 @@ pub fn frame_model(viewer: &mut ViewerWorld, world: &mut World) {
         found = true;
     }
 
-    if !found {
+    found.then_some((min, max))
+}
+
+/// Frames the camera on the whole loaded model by fitting its bounds.
+pub fn frame_model(viewer: &mut ViewerWorld, world: &mut World) {
+    let Some(camera) = world.resources.active_camera else {
         return;
-    }
+    };
+    let Some((min, max)) = model_bounds(viewer, world) else {
+        return;
+    };
 
     let center = (min + max) * 0.5;
     let half_diagonal = ((max - min) * 0.5).norm().max(0.01);
