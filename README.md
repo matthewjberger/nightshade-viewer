@@ -4,6 +4,8 @@ A glTF/GLB viewer. The whole [Nightshade](https://github.com/matthewjberger/nigh
 
 Live demo: https://matthewberger.dev/nightshade-viewer/
 
+![Nightshade Viewer](assets/screenshot.png)
+
 ## Workspace
 
 - protocol, the message and data types both sides share, plus the postMessage envelope keys.
