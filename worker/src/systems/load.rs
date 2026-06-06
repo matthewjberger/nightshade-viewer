@@ -64,6 +64,21 @@ pub fn load_model_with_resources(
 /// entity, skin joints included, regardless of the engine's child cache state.
 fn spawn_result(viewer: &mut ViewerWorld, world: &mut World, mut result: GltfLoadResult) {
     despawn_current(viewer, world);
+
+    let mesh_count = result.meshes.len() as u32;
+    let vertex_count = result
+        .meshes
+        .values()
+        .map(|mesh| mesh.vertices.len() as u32)
+        .sum();
+    let triangle_count = result
+        .meshes
+        .values()
+        .map(|mesh| (mesh.indices.len() / 3) as u32)
+        .sum();
+    let material_count = result.materials.len() as u32;
+    let texture_count = result.texture_plan.len() as u32;
+
     nightshade::ecs::loading::queue_gltf_load(world, &mut result);
 
     let before: HashSet<u32> = world
@@ -108,19 +123,11 @@ fn spawn_result(viewer: &mut ViewerWorld, world: &mut World, mut result: GltfLoa
 
     world.resources.render_settings.color_grading.exposure = result.suggested_exposure;
     let stats = ModelStats {
-        meshes: result.meshes.len() as u32,
-        vertices: result
-            .meshes
-            .values()
-            .map(|mesh| mesh.vertices.len() as u32)
-            .sum(),
-        triangles: result
-            .meshes
-            .values()
-            .map(|mesh| (mesh.indices.len() / 3) as u32)
-            .sum(),
-        materials: result.materials.len() as u32,
-        textures: result.texture_plan.len() as u32,
+        meshes: mesh_count,
+        vertices: vertex_count,
+        triangles: triangle_count,
+        materials: material_count,
+        textures: texture_count,
         dimensions: [0.0, 0.0, 0.0],
     };
     let clips = result
