@@ -28,6 +28,25 @@ pub enum GizmoKind {
     Scale,
 }
 
+/// A parametric primitive mesh the viewer can spawn from the Add menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PrimitiveKind {
+    Cube,
+    Sphere,
+    Cylinder,
+    Cone,
+    Torus,
+    Plane,
+}
+
+/// A light the viewer can spawn from the Add menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LightKind {
+    Directional,
+    Point,
+    Spot,
+}
+
 /// Lifecycle phase of a forwarded touch contact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TouchPhase {
@@ -229,6 +248,15 @@ pub enum ClientMessage {
     /// Toggle the world ground grid.
     SetGrid {
         enabled: bool,
+    },
+    /// Spawn a parametric primitive mesh at the camera focus and select it.
+    AddPrimitive {
+        kind: PrimitiveKind,
+    },
+    /// Spawn a light (with a small emissive marker) near the camera focus and
+    /// select it.
+    AddLight {
+        kind: LightKind,
     },
     /// Ask the worker to fetch the browser indices if it has not yet.
     RefreshBrowsers,

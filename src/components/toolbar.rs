@@ -168,6 +168,15 @@ pub fn Toolbar(
                 >
                     "Browse"
                 </button>
+                <button
+                    class=BUTTON
+                    on:click=move |_| {
+                        close_menu();
+                        state.add_open.set(true);
+                    }
+                >
+                    "Add"
+                </button>
                 <button class=BUTTON on:click=move |event| { close_menu(); frame(event) }>
                     "Frame"
                 </button>

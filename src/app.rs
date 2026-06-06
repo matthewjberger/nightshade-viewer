@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
 use crate::bridge::Bridge;
+use crate::components::add_menu::AddMenu;
 use crate::components::animation_bar::AnimationBar;
 use crate::components::browser::AssetBrowser;
 use crate::components::gizmo_panel::GizmoPanel;
@@ -34,6 +35,7 @@ pub fn App() -> impl IntoView {
         <GizmoPanel bridge state />
         <AnimationBar bridge state />
         <AssetBrowser bridge state />
+        <AddMenu bridge state />
         <Loader state />
         <Show when=move || state.dragging.get() fallback=|| ()>
             <div class="fixed inset-2 z-30 pointer-events-none flex items-center justify-center rounded-2xl border-4 border-dashed border-orange-400/50 bg-orange-500/10">

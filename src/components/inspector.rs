@@ -31,6 +31,7 @@ pub fn Inspector(
         RwSignal::new(1.0f32),
         RwSignal::new(1.0f32),
     ];
+    let uniform_scale = RwSignal::new(false);
 
     Effect::new(move |_| {
         if let Some(detail) = state.selected.get() {
@@ -106,9 +107,9 @@ pub fn Inspector(
                             </div>
                         </Show>
                     </div>
-                    {vec3_field("Position", translation, 0.01, push)}
-                    {vec3_field("Rotation", rotation, 0.5, push)}
-                    {vec3_field("Scale", scale, 0.01, push)}
+                    {vec3_field("Position", translation, 0.01, push, None)}
+                    {vec3_field("Rotation", rotation, 0.5, push, None)}
+                    {vec3_field("Scale", scale, 0.01, push, Some(uniform_scale))}
                 </div>
             </Show>
         </div>
@@ -128,16 +129,30 @@ fn vec3_field(
     fields: [RwSignal<f32>; 3],
     step: f32,
     push: impl Fn() + Copy + 'static,
+    link: Option<RwSignal<bool>>,
 ) -> impl IntoView {
     view! {
         <div class="px-3 py-2 border-b border-white/5">
-            <div class="text-[11px] uppercase tracking-wider text-white/40 mb-1.5">{label}</div>
+            <div class="flex items-center justify-between mb-1.5">
+                <span class="text-[11px] uppercase tracking-wider text-white/40">{label}</span>
+                {link.map(uniform_toggle)}
+            </div>
             <div class="grid grid-cols-3 gap-1.5">
                 {["X", "Y", "Z"]
                     .into_iter()
                     .enumerate()
                     .map(|(axis, glyph)| {
                         let signal = fields[axis];
+                        let apply = move |value: f32| {
+                            if link.is_some_and(|linked| linked.get_untracked()) {
+                                for field in fields {
+                                    field.set(value);
+                                }
+                            } else {
+                                signal.set(value);
+                            }
+                            push();
+                        };
                         let drag = StoredValue::new(None::<(f32, f32)>);
                         let on_down = move |event: PointerEvent| {
                             event.prevent_default();
@@ -148,8 +163,7 @@ fn vec3_field(
                         };
                         let on_move = move |event: PointerEvent| {
                             if let Some((start_value, start_x)) = drag.get_value() {
-                                signal.set(start_value + (event.client_x() as f32 - start_x) * step);
-                                push();
+                                apply(start_value + (event.client_x() as f32 - start_x) * step);
                             }
                         };
                         let on_up = move |event: PointerEvent| {
@@ -175,8 +189,7 @@ fn vec3_field(
                                     prop:value=move || format!("{:.3}", signal.get())
                                     on:input=move |event| {
                                         if let Ok(value) = input_value(&event).parse::<f32>() {
-                                            signal.set(value);
-                                            push();
+                                            apply(value);
                                         }
                                     }
                                 />
@@ -186,6 +199,24 @@ fn vec3_field(
                     .collect_view()}
             </div>
         </div>
+    }
+}
+
+fn uniform_toggle(link: RwSignal<bool>) -> impl IntoView {
+    view! {
+        <button
+            class="flex items-center gap-1 text-[10px] uppercase tracking-wider text-white/40 hover:text-white/70"
+            on:click=move |_| link.set(!link.get_untracked())
+        >
+            <span class=move || {
+                if link.get() {
+                    "h-3 w-3 rounded-sm bg-orange-400"
+                } else {
+                    "h-3 w-3 rounded-sm border border-white/25"
+                }
+            }></span>
+            "Uniform"
+        </button>
     }
 }
 

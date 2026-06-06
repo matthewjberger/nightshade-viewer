@@ -132,6 +132,16 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 systems::selection::select(&mut app.state.viewer, &mut app.world, None);
             }
         }
+        ClientMessage::AddPrimitive { kind } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                systems::spawn::add_primitive(&mut app.state.viewer, &mut app.world, kind);
+            }
+        }
+        ClientMessage::AddLight { kind } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                systems::spawn::add_light(&mut app.state.viewer, &mut app.world, kind);
+            }
+        }
         ClientMessage::SetTransform {
             id,
             translation,

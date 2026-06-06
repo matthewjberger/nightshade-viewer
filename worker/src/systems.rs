@@ -5,3 +5,4 @@ pub mod picking;
 pub mod scene;
 pub mod selection;
 pub mod setup;
+pub mod spawn;
