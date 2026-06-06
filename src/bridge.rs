@@ -32,6 +32,7 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
                     .context
                     .set(format!("{context} (off the main thread)"));
                 state.adapter.set(adapter);
+                state.ready.set(true);
             }
             WorkerMessage::Stats { fps } => state.fps.set(fps),
             WorkerMessage::Scene { nodes } => state.scene.set(nodes),

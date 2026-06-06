@@ -3,14 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use nightshade::prelude::Entity;
 
-/// Per-frame camera deltas forwarded from the page, applied then cleared.
+/// Camera requests from the page. Orbit, pan, and zoom now come from forwarded
+/// pointer input the engine reads directly, so only framing remains here.
 #[derive(Default)]
 pub struct CameraInput {
-    pub pending_yaw: f32,
-    pub pending_pitch: f32,
-    pub pending_pan_x: f32,
-    pub pending_pan_y: f32,
-    pub pending_zoom: f32,
     pub frame_requested: bool,
 }
 
@@ -27,10 +23,14 @@ pub struct Model {
     pub entities: Vec<Entity>,
 }
 
-/// Pending GPU pick request.
+/// Pending GPU pick plus the click-cycle state (repeated clicks on one spot
+/// walk from the model root down to the leaf, like the editor).
 #[derive(Default)]
 pub struct Picking {
     pub pending: bool,
+    pub last_leaf: Option<Entity>,
+    pub last_root: Option<Entity>,
+    pub cycle_depth: usize,
 }
 
 /// Set when the scene tree or selection should be re-sent to the page.

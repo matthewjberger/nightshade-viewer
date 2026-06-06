@@ -5,9 +5,12 @@ mod systems;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use nightshade::prelude::winit::event::{
+    ElementState as WinitElementState, MouseButton as WinitMouseButton,
+};
 use nightshade::prelude::*;
 use nightshade::render::wgpu::create_wgpu_renderer;
-use protocol::{AssetKind, BYTES_KEY, ClientMessage, MESSAGE_KEY, WorkerMessage};
+use protocol::{AssetKind, BYTES_KEY, ClientMessage, GizmoKind, MESSAGE_KEY, WorkerMessage};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::spawn_local;
@@ -75,23 +78,24 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 );
             }
         }
-        ClientMessage::Orbit { yaw, pitch } => {
+        ClientMessage::PointerMove { x, y } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
-                let input = &mut app.state.viewer.resources.camera_input;
-                input.pending_yaw += yaw;
-                input.pending_pitch += pitch;
+                input_inject_cursor_moved(&mut app.world, Vec2::new(x, y));
             }
         }
-        ClientMessage::Pan { dx, dy } => {
+        ClientMessage::PointerButton { button, pressed } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
-                let input = &mut app.state.viewer.resources.camera_input;
-                input.pending_pan_x += dx;
-                input.pending_pan_y += dy;
+                let state = if pressed {
+                    WinitElementState::Pressed
+                } else {
+                    WinitElementState::Released
+                };
+                input_inject_mouse_button(&mut app.world, mouse_button(button), state);
             }
         }
-        ClientMessage::Zoom { amount } => {
+        ClientMessage::Wheel { delta } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.state.viewer.resources.camera_input.pending_zoom += amount;
+                input_inject_mouse_wheel(&mut app.world, Vec2::new(0.0, -delta / 100.0));
             }
         }
         ClientMessage::Pick { x, y } => {
@@ -117,6 +121,15 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
         } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 systems::selection::set_transform(&mut app.world, id, translation, rotation, scale);
+            }
+        }
+        ClientMessage::SetGizmoMode { mode } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                app.world.resources.user_interface.gizmos.mode = match mode {
+                    GizmoKind::Translate => nightshade::ecs::gizmos::GizmoMode::LocalTranslation,
+                    GizmoKind::Rotate => nightshade::ecs::gizmos::GizmoMode::Rotation,
+                    GizmoKind::Scale => nightshade::ecs::gizmos::GizmoMode::Scale,
+                };
             }
         }
         ClientMessage::Frame => {
@@ -203,6 +216,14 @@ fn start_render_loop(_scope: DedicatedWorkerGlobalScope, app_slot: AppSlot) {
             }
         }
     });
+}
+
+fn mouse_button(button: u8) -> WinitMouseButton {
+    match button {
+        1 => WinitMouseButton::Middle,
+        2 => WinitMouseButton::Right,
+        _ => WinitMouseButton::Left,
+    }
 }
 
 fn bytes_from(data: &JsValue) -> Option<Vec<u8>> {

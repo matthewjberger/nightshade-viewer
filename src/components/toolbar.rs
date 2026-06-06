@@ -37,6 +37,34 @@ pub fn Toolbar(
             send(&bridge, &ClientMessage::Frame);
         }
     };
+    let random_model = move |_| {
+        let list = state.khronos.get_untracked();
+        if let Some(bridge) = bridge.get_value()
+            && !list.is_empty()
+        {
+            let index = ((js_sys::Math::random() * list.len() as f64) as usize).min(list.len() - 1);
+            send(
+                &bridge,
+                &ClientMessage::LoadKhronos {
+                    name: list[index].name.clone(),
+                },
+            );
+        }
+    };
+    let random_hdri = move |_| {
+        let list = state.hdris.get_untracked();
+        if let Some(bridge) = bridge.get_value()
+            && !list.is_empty()
+        {
+            let index = ((js_sys::Math::random() * list.len() as f64) as usize).min(list.len() - 1);
+            send(
+                &bridge,
+                &ClientMessage::LoadPolyhaven {
+                    slug: list[index].slug.clone(),
+                },
+            );
+        }
+    };
     let status = move || match state.loading.get() {
         Some(label) => format!("Loading {label}…"),
         None => format!("{:.0} fps", state.fps.get()),
@@ -56,6 +84,9 @@ pub fn Toolbar(
                 "Models"
             </button>
             <button class=BUTTON on:click=frame>"Frame"</button>
+            <div class="w-px h-4 bg-white/10 mx-1"></div>
+            <button class=BUTTON on:click=random_model>"Rand model"</button>
+            <button class=BUTTON on:click=random_hdri>"Rand HDRI"</button>
             <div class="flex-1"></div>
             <span class="text-[11px] text-white/45 tabular-nums">{status}</span>
             <input

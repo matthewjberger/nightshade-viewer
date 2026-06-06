@@ -16,6 +16,14 @@ pub enum AssetKind {
     Hdri,
 }
 
+/// Which transform gizmo the manipulation handles show.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GizmoKind {
+    Translate,
+    Rotate,
+    Scale,
+}
+
 /// Page to worker. Pixel quantities are physical surface pixels (CSS pixels
 /// times the device pixel ratio), origin at the canvas top-left.
 #[derive(Clone, Serialize, Deserialize)]
@@ -29,20 +37,22 @@ pub enum ClientMessage {
         width: f32,
         height: f32,
     },
-    /// Orbit deltas in raw pointer pixels.
-    Orbit {
-        yaw: f32,
-        pitch: f32,
+    /// Absolute cursor position in physical pixels. Drives the engine camera,
+    /// gizmo hover, and gizmo drag.
+    PointerMove {
+        x: f32,
+        y: f32,
     },
-    /// Pan deltas in raw pointer pixels.
-    Pan {
-        dx: f32,
-        dy: f32,
+    /// A mouse button changed. `button` is 0 left, 1 middle, 2 right.
+    PointerButton {
+        button: u8,
+        pressed: bool,
     },
-    Zoom {
-        amount: f32,
+    /// Wheel delta in raw pixels (the worker converts to scroll lines).
+    Wheel {
+        delta: f32,
     },
-    /// Pixel-perfect pick at a click position.
+    /// A click without drag: GPU-pick and select (or cycle) at this position.
     Pick {
         x: f32,
         y: f32,
@@ -59,6 +69,10 @@ pub enum ClientMessage {
         translation: [f32; 3],
         rotation: [f32; 3],
         scale: [f32; 3],
+    },
+    /// Choose which transform gizmo the handles show.
+    SetGizmoMode {
+        mode: GizmoKind,
     },
     /// Frame the camera on the current selection (or the whole model).
     Frame,

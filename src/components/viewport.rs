@@ -8,34 +8,17 @@ use web_sys::{DragEvent, HtmlCanvasElement, MouseEvent, PointerEvent, ResizeObse
 use crate::bridge::{self, Bridge, send, send_file};
 use crate::state::ViewerState;
 
-#[derive(Clone, Copy, PartialEq)]
-enum DragMode {
-    None,
-    Orbit,
-    Pan,
-}
-
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct DragState {
-    mode: DragMode,
+    button: Option<u8>,
     last_x: f32,
     last_y: f32,
     moved: f32,
 }
 
-impl Default for DragState {
-    fn default() -> Self {
-        Self {
-            mode: DragMode::None,
-            last_x: 0.0,
-            last_y: 0.0,
-            moved: 0.0,
-        }
-    }
-}
-
-/// The render surface: transfers the canvas to the worker, forwards orbit / pan
-/// / zoom / pick input, and accepts dropped files.
+/// The render surface. Forwards raw pointer and wheel input to the worker so the
+/// engine drives the camera and gizmos, detects a click (no drag) to pick, and
+/// accepts dropped files.
 #[component]
 pub fn Viewport(
     bridge: StoredValue<Option<Bridge>, LocalStorage>,
@@ -67,69 +50,64 @@ pub fn Viewport(
     });
 
     let on_pointerdown = move |event: PointerEvent| {
-        let mode = if event.button() == 0 {
-            DragMode::Orbit
-        } else {
-            DragMode::Pan
-        };
-        drag.update_value(|d| {
-            d.mode = mode;
-            d.last_x = event.client_x() as f32;
-            d.last_y = event.client_y() as f32;
-            d.moved = 0.0;
+        let button = event.button().max(0) as u8;
+        drag.update_value(|state| {
+            state.button = Some(button);
+            state.last_x = event.client_x() as f32;
+            state.last_y = event.client_y() as f32;
+            state.moved = 0.0;
         });
         if let Some(canvas) = canvas_ref.get() {
             let _ = canvas.set_pointer_capture(event.pointer_id());
+            if let Some(bridge) = bridge.get_value() {
+                let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                send(&bridge, &ClientMessage::PointerMove { x, y });
+                send(
+                    &bridge,
+                    &ClientMessage::PointerButton {
+                        button,
+                        pressed: true,
+                    },
+                );
+            }
         }
         state.grabbing.set(true);
     };
 
     let on_pointermove = move |event: PointerEvent| {
-        let message = drag
-            .try_update_value(|d| {
-                if d.mode == DragMode::None {
-                    return None;
-                }
-                let x = event.client_x() as f32;
-                let y = event.client_y() as f32;
-                let dx = x - d.last_x;
-                let dy = y - d.last_y;
-                d.last_x = x;
-                d.last_y = y;
-                d.moved += dx.abs() + dy.abs();
-                match d.mode {
-                    DragMode::Orbit => Some(ClientMessage::Orbit { yaw: dx, pitch: dy }),
-                    DragMode::Pan => Some(ClientMessage::Pan { dx, dy }),
-                    DragMode::None => None,
-                }
-            })
-            .flatten();
-        if let (Some(message), Some(bridge)) = (message, bridge.get_value()) {
-            send(&bridge, &message);
+        drag.update_value(|state| {
+            let x = event.client_x() as f32;
+            let y = event.client_y() as f32;
+            state.moved += (x - state.last_x).abs() + (y - state.last_y).abs();
+            state.last_x = x;
+            state.last_y = y;
+        });
+        if let Some(canvas) = canvas_ref.get()
+            && let Some(bridge) = bridge.get_value()
+        {
+            let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+            send(&bridge, &ClientMessage::PointerMove { x, y });
         }
     };
 
     let on_pointerup = move |event: PointerEvent| {
-        let (mode, moved) = drag.with_value(|d| (d.mode, d.moved));
-        drag.update_value(|d| d.mode = DragMode::None);
+        let (button, moved) = drag.with_value(|state| (state.button, state.moved));
+        drag.update_value(|state| state.button = None);
         state.grabbing.set(false);
         if let Some(canvas) = canvas_ref.get() {
             let _ = canvas.release_pointer_capture(event.pointer_id());
-            if mode == DragMode::Orbit
-                && moved < 4.0
-                && let Some(bridge) = bridge.get_value()
-            {
-                let dpr = web_sys::window().unwrap().device_pixel_ratio();
-                let rect = canvas.get_bounding_client_rect();
-                let x = (event.client_x() as f64 - rect.left()) * dpr;
-                let y = (event.client_y() as f64 - rect.top()) * dpr;
+            if let Some(bridge) = bridge.get_value() {
+                let (x, y) = physical(&canvas, event.client_x(), event.client_y());
                 send(
                     &bridge,
-                    &ClientMessage::Pick {
-                        x: x as f32,
-                        y: y as f32,
+                    &ClientMessage::PointerButton {
+                        button: event.button().max(0) as u8,
+                        pressed: false,
                     },
                 );
+                if button == Some(0) && moved < 5.0 {
+                    send(&bridge, &ClientMessage::Pick { x, y });
+                }
             }
         }
     };
@@ -137,8 +115,12 @@ pub fn Viewport(
     let on_wheel = move |event: WheelEvent| {
         event.prevent_default();
         if let Some(bridge) = bridge.get_value() {
-            let amount = (event.delta_y() as f32 / 100.0).clamp(-4.0, 4.0);
-            send(&bridge, &ClientMessage::Zoom { amount });
+            send(
+                &bridge,
+                &ClientMessage::Wheel {
+                    delta: event.delta_y() as f32,
+                },
+            );
         }
     };
 
@@ -188,6 +170,15 @@ pub fn Viewport(
             ></canvas>
         </div>
     }
+}
+
+fn physical(canvas: &HtmlCanvasElement, client_x: i32, client_y: i32) -> (f32, f32) {
+    let dpr = web_sys::window().unwrap().device_pixel_ratio();
+    let rect = canvas.get_bounding_client_rect();
+    (
+        ((client_x as f64 - rect.left()) * dpr) as f32,
+        ((client_y as f64 - rect.top()) * dpr) as f32,
+    )
 }
 
 fn observe_resize(canvas: HtmlCanvasElement, bridge: Bridge) {

@@ -3,7 +3,9 @@ use wasm_bindgen::JsValue;
 
 use crate::bridge::Bridge;
 use crate::components::browser::AssetBrowser;
+use crate::components::gizmo_panel::GizmoPanel;
 use crate::components::inspector::Inspector;
+use crate::components::loader::Loader;
 use crate::components::scene_tree::SceneTree;
 use crate::components::toolbar::Toolbar;
 use crate::components::viewport::Viewport;
@@ -26,7 +28,9 @@ pub fn App() -> impl IntoView {
         <Toolbar bridge state />
         <SceneTree bridge state />
         <Inspector bridge state />
+        <GizmoPanel bridge state />
         <AssetBrowser bridge state />
+        <Loader state />
         <Show when=move || state.dragging.get() fallback=|| ()>
             <div class="fixed inset-2 z-30 pointer-events-none flex items-center justify-center rounded-2xl border-4 border-dashed border-orange-400/50 bg-orange-500/10">
                 <div class="px-6 py-4 rounded-xl bg-[#14161d]/90 border border-white/10 text-white/90 text-[15px] shadow-2xl">

@@ -5,6 +5,8 @@ use nightshade::prelude::*;
 /// Builds the scene: environment, lighting, camera, render settings, selection
 /// outline, and the default model.
 pub fn spawn(viewer: &mut ViewerWorld, world: &mut World) {
+    world.resources.user_interface.enabled = true;
+    world.resources.retained_ui.enabled = true;
     world.resources.render_settings.atmosphere = Atmosphere::Sky;
     world.resources.render_settings.clear_color = [0.09, 0.10, 0.13, 1.0];
     capture_procedural_atmosphere_ibl(world, Atmosphere::Sky, 0.0);

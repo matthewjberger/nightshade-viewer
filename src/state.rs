@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use protocol::{EntityDetail, KhronosEntry, PolyhavenEntry, SceneNode};
+use protocol::{EntityDetail, GizmoKind, KhronosEntry, PolyhavenEntry, SceneNode};
 
 /// Which asset browser overlay, if any, is open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,8 +24,10 @@ pub struct ViewerState {
     pub hdris: RwSignal<Vec<PolyhavenEntry>>,
     pub models: RwSignal<Vec<PolyhavenEntry>>,
     pub browser: RwSignal<Browser>,
+    pub gizmo_mode: RwSignal<GizmoKind>,
     pub dragging: RwSignal<bool>,
     pub grabbing: RwSignal<bool>,
+    pub ready: RwSignal<bool>,
 }
 
 impl ViewerState {
@@ -41,8 +43,10 @@ impl ViewerState {
             hdris: RwSignal::new(Vec::new()),
             models: RwSignal::new(Vec::new()),
             browser: RwSignal::new(Browser::Closed),
+            gizmo_mode: RwSignal::new(GizmoKind::Translate),
             dragging: RwSignal::new(false),
             grabbing: RwSignal::new(false),
+            ready: RwSignal::new(false),
         }
     }
 }
