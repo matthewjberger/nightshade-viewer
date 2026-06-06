@@ -43,8 +43,23 @@ pub fn LeftPanel(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
         }
     };
 
+    let panel_class = move || {
+        let base = "fixed top-16 left-3 bottom-3 w-72 max-w-[85vw] z-20 flex flex-col rounded-xl border border-white/10 bg-[#14161d]/85 backdrop-blur-md shadow-2xl shadow-black/40 overflow-hidden transition-transform duration-200 sm:translate-x-0";
+        if state.scene_open.get() {
+            format!("{base} translate-x-0")
+        } else {
+            format!("{base} -translate-x-[120%]")
+        }
+    };
+
     view! {
-        <div class="fixed top-16 left-3 bottom-3 w-72 flex flex-col rounded-xl border border-white/10 bg-[#14161d]/85 backdrop-blur-md shadow-2xl shadow-black/40 overflow-hidden">
+        <Show when=move || state.scene_open.get() fallback=|| ()>
+            <div
+                class="fixed inset-0 z-10 bg-black/40 sm:hidden"
+                on:click=move |_| state.scene_open.set(false)
+            ></div>
+        </Show>
+        <div class=panel_class>
             <div class="flex border-b border-white/10">
                 <button
                     class=move || tab_class(PanelTab::Scene)
@@ -81,6 +96,7 @@ fn scene_tab(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
         if let Some(bridge) = bridge.get_value() {
             send(&bridge, &ClientMessage::Select { id });
         }
+        state.scene_open.set(false);
     };
     view! {
         <div class="py-1 text-[13px]">

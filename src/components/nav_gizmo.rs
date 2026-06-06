@@ -32,7 +32,7 @@ pub fn NavGizmo(
     };
 
     view! {
-        <div class="fixed top-16 right-[19rem] z-10 select-none">
+        <div class="fixed top-16 right-3 sm:right-[19rem] z-10 select-none">
             <svg width="76" height="76" viewBox="0 0 76 76">
                 {move || axes(state.camera_basis.get(), snap)}
             </svg>

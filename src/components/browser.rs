@@ -29,7 +29,7 @@ pub fn AssetBrowser(
                     class="w-full max-w-4xl max-h-[82vh] flex flex-col rounded-2xl border border-white/10 bg-[#111319] shadow-2xl shadow-black/60 overflow-hidden"
                     on:click=move |event: MouseEvent| event.stop_propagation()
                 >
-                    <div class="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+                    <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-white/10">
                         <div class="flex flex-col">
                             <span class="text-[14px] font-semibold text-white/90 leading-tight">
                                 {move || title(state.browser.get())}

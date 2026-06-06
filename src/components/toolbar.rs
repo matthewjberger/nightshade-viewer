@@ -7,7 +7,7 @@ use crate::bridge::{Bridge, send, send_file};
 use crate::state::{Browser, ViewerState};
 
 const BUTTON: &str =
-    "px-2.5 py-1 rounded-md text-[12px] text-white/80 hover:bg-white/10 transition-colors";
+    "shrink-0 px-2.5 py-1 rounded-md text-[12px] text-white/80 hover:bg-white/10 transition-colors";
 
 /// The top bar: open a local file, open an asset browser, frame the model, and
 /// a live status readout.
@@ -84,27 +84,124 @@ pub fn Toolbar(
         Some(label) => format!("Loading {label}…"),
         None => format!("{:.0} fps", state.fps.get()),
     };
+    let toggle_scene = move |_| {
+        let open = !state.scene_open.get_untracked();
+        state.scene_open.set(open);
+        if open {
+            state.inspector_open.set(false);
+        }
+    };
+    let toggle_inspector = move |_| {
+        let open = !state.inspector_open.get_untracked();
+        state.inspector_open.set(open);
+        if open {
+            state.scene_open.set(false);
+        }
+    };
+    let scene_class = move || {
+        if state.scene_open.get() {
+            format!("{BUTTON} sm:hidden bg-white/10 text-white")
+        } else {
+            format!("{BUTTON} sm:hidden")
+        }
+    };
+    let inspector_class = move || {
+        if state.inspector_open.get() {
+            format!("{BUTTON} sm:hidden bg-white/10 text-white")
+        } else {
+            format!("{BUTTON} sm:hidden")
+        }
+    };
+    let menu_open = RwSignal::new(false);
+    let toggle_menu = move |_| menu_open.update(|open| *open = !*open);
+    let close_menu = move || menu_open.set(false);
+    let actions_class = move || {
+        let desktop = "sm:static sm:mt-0 sm:flex sm:flex-row sm:items-center sm:gap-1 sm:p-0 sm:rounded-none sm:border-0 sm:bg-transparent sm:shadow-none";
+        if menu_open.get() {
+            format!(
+                "absolute top-full left-0 right-0 mt-2 z-10 flex flex-col items-stretch gap-1 p-2 rounded-xl border border-white/10 bg-[#14161d]/95 backdrop-blur-md shadow-lg shadow-black/40 {desktop}"
+            )
+        } else {
+            format!("hidden {desktop}")
+        }
+    };
 
     view! {
         <div class="fixed top-3 left-3 right-3 h-10 z-10 flex items-center gap-1 px-3 rounded-xl border border-white/10 bg-[#14161d]/85 backdrop-blur-md shadow-lg shadow-black/40">
-            <span class="text-[13px] font-semibold text-white/90 mr-3">"Nightshade Viewer"</span>
-            <button class=BUTTON on:click=open_file>"Open"</button>
-            <button class=BUTTON on:click=move |_| state.browser.set(Browser::Khronos)>
-                "Khronos"
+            <button
+                class=format!("{BUTTON} sm:hidden text-[15px] leading-none")
+                on:click=toggle_menu
+            >
+                "☰"
             </button>
-            <button class=BUTTON on:click=move |_| state.browser.set(Browser::Hdris)>
-                "HDRIs"
-            </button>
-            <button class=BUTTON on:click=move |_| state.browser.set(Browser::Models)>
-                "Models"
-            </button>
-            <button class=BUTTON on:click=frame>"Frame"</button>
-            <button class=grid_class on:click=toggle_grid>"Grid"</button>
-            <div class="w-px h-4 bg-white/10 mx-1"></div>
-            <button class=BUTTON on:click=random_model>"Rand model"</button>
-            <button class=BUTTON on:click=random_hdri>"Rand HDRI"</button>
-            <div class="flex-1"></div>
-            <span class="text-[11px] text-white/45 tabular-nums">{status}</span>
+            <span class="shrink min-w-0 truncate text-[13px] font-semibold text-white/90 mr-1 sm:mr-3">
+                "Nightshade"
+            </span>
+            <div class=actions_class>
+                <button
+                    class=scene_class
+                    on:click=move |event| {
+                        close_menu();
+                        toggle_scene(event);
+                    }
+                >
+                    "Scene"
+                </button>
+                <button
+                    class=inspector_class
+                    on:click=move |event| {
+                        close_menu();
+                        toggle_inspector(event);
+                    }
+                >
+                    "Inspect"
+                </button>
+                <button class=BUTTON on:click=move |event| { close_menu(); open_file(event) }>
+                    "Open"
+                </button>
+                <button
+                    class=BUTTON
+                    on:click=move |_| {
+                        close_menu();
+                        state.browser.set(Browser::Khronos);
+                    }
+                >
+                    "Khronos"
+                </button>
+                <button
+                    class=BUTTON
+                    on:click=move |_| {
+                        close_menu();
+                        state.browser.set(Browser::Hdris);
+                    }
+                >
+                    "HDRIs"
+                </button>
+                <button
+                    class=BUTTON
+                    on:click=move |_| {
+                        close_menu();
+                        state.browser.set(Browser::Models);
+                    }
+                >
+                    "Models"
+                </button>
+                <button class=BUTTON on:click=move |event| { close_menu(); frame(event) }>
+                    "Frame"
+                </button>
+                <button class=grid_class on:click=move |event| { close_menu(); toggle_grid(event) }>
+                    "Grid"
+                </button>
+            </div>
+            <div class="shrink-0 flex items-center gap-1">
+                <span class="text-[11px] text-white/40 pl-1">"Random:"</span>
+                <button class=BUTTON on:click=random_model>"Model"</button>
+                <button class=BUTTON on:click=random_hdri>"Sky"</button>
+            </div>
+            <div class="hidden sm:block flex-1"></div>
+            <span class="hidden sm:inline shrink-0 text-[11px] text-white/45 tabular-nums pl-1">
+                {status}
+            </span>
             <input
                 type="file"
                 node_ref=file_ref
