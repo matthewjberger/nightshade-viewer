@@ -44,15 +44,16 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
     };
     let browse = move |_| state.browser.set(Browser::Khronos);
     let random_model = move |_| {
-        let list = state.khronos.get_untracked();
+        let list = state.models.get_untracked();
         if let Some(bridge) = bridge.get_value()
             && !list.is_empty()
         {
             let index = ((js_sys::Math::random() * list.len() as f64) as usize).min(list.len() - 1);
             send(
                 &bridge,
-                &ClientMessage::LoadKhronos {
-                    name: list[index].name.clone(),
+                &ClientMessage::LoadPolyhavenModel {
+                    slug: list[index].slug.clone(),
+                    resolution: 2,
                 },
             );
         }

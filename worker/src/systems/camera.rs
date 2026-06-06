@@ -77,6 +77,13 @@ pub fn frame_model(viewer: &mut ViewerWorld, world: &mut World) {
         .unwrap_or(45.0_f32.to_radians());
     let radius = half_diagonal / (fov * 0.5).sin() * 1.4;
 
+    let near = (radius / 500.0).clamp(0.001, 1.0);
+    if let Some(camera_component) = world.core.get_camera_mut(camera)
+        && let Projection::Perspective(perspective) = &mut camera_component.projection
+    {
+        perspective.z_near = near;
+    }
+
     if let Some(orbit) = world.core.get_pan_orbit_camera_mut(camera) {
         orbit.target_focus = center;
         orbit.target_radius = radius;

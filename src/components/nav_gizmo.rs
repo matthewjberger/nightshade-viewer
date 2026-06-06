@@ -31,8 +31,16 @@ pub fn NavGizmo(
         }
     };
 
+    let nav_class = move || {
+        if state.inspector_open.get() {
+            "fixed top-16 right-3 sm:right-[19rem] z-10 select-none"
+        } else {
+            "fixed top-16 right-3 z-10 select-none"
+        }
+    };
+
     view! {
-        <div class="fixed top-16 right-3 sm:right-[19rem] z-10 select-none">
+        <div class=nav_class>
             <svg width="76" height="76" viewBox="0 0 76 76">
                 {move || axes(state.camera_basis.get(), snap)}
             </svg>
