@@ -7,4 +7,5 @@ pub mod left_panel;
 pub mod loader;
 pub mod nav_gizmo;
 pub mod toolbar;
+pub mod view_controls;
 pub mod viewport;

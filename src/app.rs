@@ -11,6 +11,7 @@ use crate::components::left_panel::LeftPanel;
 use crate::components::loader::Loader;
 use crate::components::nav_gizmo::NavGizmo;
 use crate::components::toolbar::Toolbar;
+use crate::components::view_controls::ViewControls;
 use crate::components::viewport::Viewport;
 use crate::state::ViewerState;
 
@@ -40,7 +41,8 @@ pub fn App() -> impl IntoView {
     view! {
         <Viewport bridge state />
         <Show when=move || !state.ui_hidden.get() fallback=|| ()>
-            <Toolbar bridge state />
+            <Toolbar state />
+            <ViewControls bridge state />
             <LeftPanel bridge state />
             <Inspector bridge state />
             <NavGizmo bridge state />

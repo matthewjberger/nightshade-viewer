@@ -1,49 +1,115 @@
+use leptos::html;
 use leptos::prelude::*;
 use protocol::{ClientMessage, LightKind, PrimitiveKind};
-use web_sys::MouseEvent;
+use web_sys::{Event, HtmlElement, MouseEvent};
 
-use crate::bridge::{Bridge, send};
-use crate::state::ViewerState;
+use crate::bridge::{Bridge, send, send_file};
+use crate::state::{Browser, ViewerState};
 
 type BridgeSlot = StoredValue<Option<Bridge>, LocalStorage>;
 
 const ITEM: &str = "px-3 py-2 rounded-lg border border-white/10 bg-black/30 text-[12px] text-white/80 hover:border-orange-400/60 hover:bg-white/5 transition-colors";
 
-/// A modal palette for spawning primitive geometry and lights into the scene.
+/// The single place to bring content into the scene: create primitive geometry
+/// and lights, import a local file, browse the asset library, or load a random
+/// model or sky.
 #[component]
 pub fn AddMenu(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
-    let send_msg = move |message: ClientMessage| {
+    let file_ref = NodeRef::<html::Input>::new();
+    let on_file = move |_event: Event| {
+        if let (Some(input), Some(bridge)) = (file_ref.get(), bridge.get_value())
+            && let Some(files) = input.files()
+            && let Some(file) = files.item(0)
+        {
+            send_file(&bridge, file);
+        }
+        state.add_open.set(false);
+    };
+    let import_file = move |_| {
+        if let Some(input) = file_ref.get() {
+            let element: &HtmlElement = input.as_ref();
+            element.click();
+        }
+    };
+
+    // Geometry and lights are editable entities, so opening the inspector after
+    // adding one closes the loop without auto-opening it on a viewport pick.
+    let add_entity = move |message: ClientMessage| {
         if let Some(bridge) = bridge.get_value() {
             send(&bridge, &message);
+        }
+        state.inspector_open.set(true);
+        state.add_open.set(false);
+    };
+
+    let browse = move |_| {
+        state.browser.set(Browser::Khronos);
+        state.add_open.set(false);
+    };
+    let random_model = move |_| {
+        let list = state.khronos.get_untracked();
+        if let Some(bridge) = bridge.get_value()
+            && !list.is_empty()
+        {
+            let index = ((js_sys::Math::random() * list.len() as f64) as usize).min(list.len() - 1);
+            send(
+                &bridge,
+                &ClientMessage::LoadKhronos {
+                    name: list[index].name.clone(),
+                },
+            );
+        }
+        state.add_open.set(false);
+    };
+    let random_sky = move |_| {
+        let list = state.hdris.get_untracked();
+        if let Some(bridge) = bridge.get_value()
+            && !list.is_empty()
+        {
+            let index = ((js_sys::Math::random() * list.len() as f64) as usize).min(list.len() - 1);
+            send(
+                &bridge,
+                &ClientMessage::LoadPolyhaven {
+                    slug: list[index].slug.clone(),
+                    resolution: 4,
+                },
+            );
         }
         state.add_open.set(false);
     };
 
     view! {
+        <input
+            type="file"
+            node_ref=file_ref
+            accept=".glb,.gltf,.hdr"
+            class="hidden"
+            on:change=on_file
+        />
         <Show when=move || state.add_open.get() fallback=|| ()>
             <div
                 class="fixed inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6"
                 on:click=move |_| state.add_open.set(false)
             >
                 <div
-                    class="w-full max-w-sm flex flex-col rounded-2xl border border-white/10 bg-[#111319] shadow-2xl shadow-black/60 overflow-hidden"
+                    class="w-full max-w-sm max-h-[82vh] flex flex-col rounded-2xl border border-white/10 bg-[#111319] shadow-2xl shadow-black/60 overflow-hidden"
                     on:click=move |event: MouseEvent| event.stop_propagation()
                 >
                     <div class="px-4 py-3 border-b border-white/10 text-[14px] font-semibold text-white/90">
                         "Add"
                     </div>
-                    <div class="p-4 space-y-4">
+                    <div class="p-4 space-y-4 overflow-y-auto">
                         <div class="space-y-2">
                             <div class="text-[11px] uppercase tracking-wider text-white/40">
                                 "Geometry"
                             </div>
                             <div class="grid grid-cols-3 gap-2">
-                                {primitive_button(send_msg, PrimitiveKind::Cube, "Cube")}
-                                {primitive_button(send_msg, PrimitiveKind::Sphere, "Sphere")}
-                                {primitive_button(send_msg, PrimitiveKind::Cylinder, "Cylinder")}
-                                {primitive_button(send_msg, PrimitiveKind::Cone, "Cone")}
-                                {primitive_button(send_msg, PrimitiveKind::Torus, "Torus")}
-                                {primitive_button(send_msg, PrimitiveKind::Plane, "Plane")}
+                                {primitive_button(add_entity, PrimitiveKind::Cube, "Cube")}
+                                {primitive_button(add_entity, PrimitiveKind::Sphere, "Sphere")}
+                                {primitive_button(add_entity, PrimitiveKind::Cylinder, "Cylinder")}
+                                {primitive_button(add_entity, PrimitiveKind::Cone, "Cone")}
+                                {primitive_button(add_entity, PrimitiveKind::Torus, "Torus")}
+                                {primitive_button(add_entity, PrimitiveKind::Plane, "Plane")}
                             </div>
                         </div>
                         <div class="space-y-2">
@@ -51,9 +117,20 @@ pub fn AddMenu(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                                 "Lights"
                             </div>
                             <div class="grid grid-cols-3 gap-2">
-                                {light_button(send_msg, LightKind::Directional, "Directional")}
-                                {light_button(send_msg, LightKind::Point, "Point")}
-                                {light_button(send_msg, LightKind::Spot, "Spot")}
+                                {light_button(add_entity, LightKind::Directional, "Directional")}
+                                {light_button(add_entity, LightKind::Point, "Point")}
+                                {light_button(add_entity, LightKind::Spot, "Spot")}
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="text-[11px] uppercase tracking-wider text-white/40">
+                                "Models & environments"
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button class=ITEM on:click=import_file>"Import file…"</button>
+                                <button class=ITEM on:click=browse>"Browse library…"</button>
+                                <button class=ITEM on:click=random_model>"Random model"</button>
+                                <button class=ITEM on:click=random_sky>"Random sky"</button>
                             </div>
                         </div>
                     </div>
@@ -64,24 +141,24 @@ pub fn AddMenu(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
 }
 
 fn primitive_button(
-    send_msg: impl Fn(ClientMessage) + Copy + 'static,
+    add: impl Fn(ClientMessage) + Copy + 'static,
     kind: PrimitiveKind,
     label: &'static str,
 ) -> impl IntoView {
     view! {
-        <button class=ITEM on:click=move |_| send_msg(ClientMessage::AddPrimitive { kind })>
+        <button class=ITEM on:click=move |_| add(ClientMessage::AddPrimitive { kind })>
             {label}
         </button>
     }
 }
 
 fn light_button(
-    send_msg: impl Fn(ClientMessage) + Copy + 'static,
+    add: impl Fn(ClientMessage) + Copy + 'static,
     kind: LightKind,
     label: &'static str,
 ) -> impl IntoView {
     view! {
-        <button class=ITEM on:click=move |_| send_msg(ClientMessage::AddLight { kind })>
+        <button class=ITEM on:click=move |_| add(ClientMessage::AddLight { kind })>
             {label}
         </button>
     }
