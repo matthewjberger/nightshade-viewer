@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast;
-use web_sys::Event;
+use web_sys::{Element, Event, PointerEvent};
 
 use crate::bridge::{Bridge, send};
 use crate::state::ViewerState;
@@ -85,9 +85,9 @@ pub fn Inspector(
                             </div>
                         </Show>
                     </div>
-                    {vec3_field("Position", translation, push)}
-                    {vec3_field("Rotation", rotation, push)}
-                    {vec3_field("Scale", scale, push)}
+                    {vec3_field("Position", translation, 0.01, push)}
+                    {vec3_field("Rotation", rotation, 0.5, push)}
+                    {vec3_field("Scale", scale, 0.01, push)}
                 </div>
             </Show>
         </div>
@@ -105,6 +105,7 @@ fn read(fields: [RwSignal<f32>; 3]) -> [f32; 3] {
 fn vec3_field(
     label: &'static str,
     fields: [RwSignal<f32>; 3],
+    step: f32,
     push: impl Fn() + Copy + 'static,
 ) -> impl IntoView {
     view! {
@@ -116,9 +117,36 @@ fn vec3_field(
                     .enumerate()
                     .map(|(axis, glyph)| {
                         let signal = fields[axis];
+                        let drag = StoredValue::new(None::<(f32, f32)>);
+                        let on_down = move |event: PointerEvent| {
+                            event.prevent_default();
+                            drag.set_value(Some((signal.get_untracked(), event.client_x() as f32)));
+                            if let Some(element) = pointer_target(&event) {
+                                let _ = element.set_pointer_capture(event.pointer_id());
+                            }
+                        };
+                        let on_move = move |event: PointerEvent| {
+                            if let Some((start_value, start_x)) = drag.get_value() {
+                                signal.set(start_value + (event.client_x() as f32 - start_x) * step);
+                                push();
+                            }
+                        };
+                        let on_up = move |event: PointerEvent| {
+                            drag.set_value(None);
+                            if let Some(element) = pointer_target(&event) {
+                                let _ = element.release_pointer_capture(event.pointer_id());
+                            }
+                        };
                         view! {
                             <label class="flex items-center gap-1 rounded-md bg-black/30 border border-white/10 px-1.5 focus-within:border-orange-400/60">
-                                <span class="text-[10px] text-white/35">{glyph}</span>
+                                <span
+                                    class="text-[10px] text-white/35 cursor-ew-resize select-none px-0.5 hover:text-orange-300"
+                                    on:pointerdown=on_down
+                                    on:pointermove=on_move
+                                    on:pointerup=on_up
+                                >
+                                    {glyph}
+                                </span>
                                 <input
                                     type="number"
                                     step="0.05"
@@ -138,6 +166,12 @@ fn vec3_field(
             </div>
         </div>
     }
+}
+
+fn pointer_target(event: &PointerEvent) -> Option<Element> {
+    event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
 }
 
 fn input_value(event: &Event) -> String {

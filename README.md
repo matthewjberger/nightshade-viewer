@@ -4,12 +4,6 @@ A glTF/GLB viewer. The whole [Nightshade](https://github.com/matthewjberger/nigh
 
 Live demo: https://matthewberger.dev/nightshade-viewer/
 
-## How it works
-
-The worker builds Nightshade's renderer straight from the transferred canvas and drives the frame loop through the engine's offscreen driver. It owns the engine world and the networking. Asset indices and bytes are fetched in the worker with ehttp. The page forwards input, renders the panels and browsers from messages the worker streams back, and posts dropped file bytes across as a transferred ArrayBuffer.
-
-The engine does the hard parts. glTF parsing, PBR rendering, IBL, GPU picking, and the selection outline are all Nightshade.
-
 ## Workspace
 
 - protocol, the message and data types both sides share, plus the postMessage envelope keys.

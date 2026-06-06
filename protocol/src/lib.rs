@@ -84,13 +84,19 @@ pub enum ClientMessage {
     LoadKhronos {
         name: String,
     },
-    /// Load a Polyhaven HDRI by its slug (worker fetches it).
+    /// Load a Polyhaven HDRI by its slug at the given resolution in k (1, 2, 4…).
     LoadPolyhaven {
         slug: String,
+        resolution: u32,
     },
-    /// Load a Polyhaven model by its slug (worker fetches glTF plus textures).
+    /// Load a Polyhaven model by its slug at the given texture resolution in k.
     LoadPolyhavenModel {
         slug: String,
+        resolution: u32,
+    },
+    /// Toggle the world ground grid.
+    SetGrid {
+        enabled: bool,
     },
     /// Ask the worker to fetch the browser indices if it has not yet.
     RefreshBrowsers,

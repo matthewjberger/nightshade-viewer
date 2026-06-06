@@ -45,6 +45,23 @@ pub fn AssetBrowser(
                             prop:value=move || search.get()
                             on:input=move |event| search.set(input_value(&event))
                         />
+                        <Show when=move || state.browser.get() != Browser::Khronos fallback=|| ()>
+                            <select
+                                class="rounded-md bg-black/40 border border-white/10 px-2 py-1.5 text-[12px] text-white/90 outline-none focus:border-orange-400/60"
+                                title="Resolution"
+                                prop:value=move || state.resolution.get().to_string()
+                                on:change=move |event| {
+                                    if let Ok(value) = event_target_value(&event).parse::<u32>() {
+                                        state.resolution.set(value);
+                                    }
+                                }
+                            >
+                                <option value="1">"1k"</option>
+                                <option value="2">"2k"</option>
+                                <option value="4">"4k"</option>
+                                <option value="8">"8k"</option>
+                            </select>
+                        </Show>
                         <div class="flex-1"></div>
                         <button
                             class="px-2.5 py-1 rounded-md text-[12px] text-white/70 hover:bg-white/10"
@@ -162,10 +179,11 @@ fn poly_grid(
 ) -> impl IntoView {
     let load = move |slug: String| {
         if let Some(bridge) = bridge.get_value() {
+            let resolution = state.resolution.get_untracked();
             let message = if is_model {
-                ClientMessage::LoadPolyhavenModel { slug }
+                ClientMessage::LoadPolyhavenModel { slug, resolution }
             } else {
-                ClientMessage::LoadPolyhaven { slug }
+                ClientMessage::LoadPolyhaven { slug, resolution }
             };
             send(&bridge, &message);
         }

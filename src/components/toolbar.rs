@@ -61,8 +61,23 @@ pub fn Toolbar(
                 &bridge,
                 &ClientMessage::LoadPolyhaven {
                     slug: list[index].slug.clone(),
+                    resolution: state.resolution.get_untracked(),
                 },
             );
+        }
+    };
+    let toggle_grid = move |_| {
+        let enabled = !state.grid.get_untracked();
+        state.grid.set(enabled);
+        if let Some(bridge) = bridge.get_value() {
+            send(&bridge, &ClientMessage::SetGrid { enabled });
+        }
+    };
+    let grid_class = move || {
+        if state.grid.get() {
+            format!("{BUTTON} bg-white/10 text-white")
+        } else {
+            BUTTON.to_string()
         }
     };
     let status = move || match state.loading.get() {
@@ -84,6 +99,7 @@ pub fn Toolbar(
                 "Models"
             </button>
             <button class=BUTTON on:click=frame>"Frame"</button>
+            <button class=grid_class on:click=toggle_grid>"Grid"</button>
             <div class="w-px h-4 bg-white/10 mx-1"></div>
             <button class=BUTTON on:click=random_model>"Rand model"</button>
             <button class=BUTTON on:click=random_hdri>"Rand HDRI"</button>

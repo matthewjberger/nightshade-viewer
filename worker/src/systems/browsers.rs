@@ -160,8 +160,9 @@ pub fn fetch_khronos(viewer: &ViewerWorld, name: &str) {
     download_single(url, PendingAsset::Model, asset, loading);
 }
 
-/// Fetches a Polyhaven HDRI by slug: resolve the file list, then download.
-pub fn fetch_polyhaven(viewer: &ViewerWorld, slug: &str) {
+/// Fetches a Polyhaven HDRI by slug at a preferred resolution (in k): resolve
+/// the file list, then download.
+pub fn fetch_polyhaven(viewer: &ViewerWorld, slug: &str, resolution: u32) {
     if !begin_loading(viewer, slug) {
         return;
     }
@@ -172,7 +173,7 @@ pub fn fetch_polyhaven(viewer: &ViewerWorld, slug: &str) {
             .ok()
             .filter(|response| response.ok)
             .and_then(|response| serde_json::from_slice::<HdriFiles>(&response.bytes).ok())
-            .and_then(pick_hdr);
+            .and_then(|files| pick_hdr(files, resolution));
         match url {
             Some(url) => download_single(url, PendingAsset::Hdri, asset, loading),
             None => clear(&loading),
@@ -180,9 +181,9 @@ pub fn fetch_polyhaven(viewer: &ViewerWorld, slug: &str) {
     });
 }
 
-/// Fetches a Polyhaven model by slug: resolve the glTF plus its textures, then
-/// download them all into a resource map.
-pub fn fetch_polyhaven_model(viewer: &ViewerWorld, slug: &str) {
+/// Fetches a Polyhaven model by slug at a preferred texture resolution (in k):
+/// resolve the glTF plus its textures, then download them all into a map.
+pub fn fetch_polyhaven_model(viewer: &ViewerWorld, slug: &str, resolution: u32) {
     if !begin_loading(viewer, slug) {
         return;
     }
@@ -193,7 +194,7 @@ pub fn fetch_polyhaven_model(viewer: &ViewerWorld, slug: &str) {
             .ok()
             .filter(|response| response.ok)
             .and_then(|response| serde_json::from_slice::<ModelFiles>(&response.bytes).ok())
-            .and_then(pick_model);
+            .and_then(|files| pick_model(files, resolution));
         match gltf {
             Some(gltf) => {
                 let includes: Vec<(String, String)> = gltf
@@ -404,8 +405,8 @@ fn poly_entries(raw: std::collections::BTreeMap<String, PolyRaw>) -> Vec<PolyAss
     entries
 }
 
-fn pick_hdr(files: HdriFiles) -> Option<String> {
-    let mut entries: Vec<(u32, String)> = files
+fn pick_hdr(files: HdriFiles, preferred: u32) -> Option<String> {
+    let entries: Vec<(u32, String)> = files
         .hdri
         .into_iter()
         .filter_map(|(key, resolution)| {
@@ -414,22 +415,29 @@ fn pick_hdr(files: HdriFiles) -> Option<String> {
                 .map(|link| (resolution_value(&key), link.url))
         })
         .collect();
-    entries.sort_by_key(|(value, _)| *value);
-    entries
-        .iter()
-        .find(|(value, _)| *value == 1)
-        .map(|(_, url)| url.clone())
-        .or_else(|| entries.into_iter().next().map(|(_, url)| url))
+    pick_resolution(entries, preferred)
 }
 
-fn pick_model(files: ModelFiles) -> Option<GltfFile> {
-    let mut entries: Vec<(u32, GltfFile)> = files
+fn pick_model(files: ModelFiles, preferred: u32) -> Option<GltfFile> {
+    let entries: Vec<(u32, GltfFile)> = files
         .gltf
         .into_iter()
         .map(|(key, resolution)| (resolution_value(&key), resolution.gltf))
         .collect();
+    pick_resolution(entries, preferred)
+}
+
+/// Picks the exact requested resolution, else the highest available below it,
+/// else the smallest.
+fn pick_resolution<T>(mut entries: Vec<(u32, T)>, preferred: u32) -> Option<T> {
     entries.sort_by_key(|(value, _)| *value);
-    entries.into_iter().next().map(|(_, gltf)| gltf)
+    if let Some(index) = entries.iter().position(|(value, _)| *value == preferred) {
+        return Some(entries.swap_remove(index).1);
+    }
+    if let Some(index) = entries.iter().rposition(|(value, _)| *value <= preferred) {
+        return Some(entries.swap_remove(index).1);
+    }
+    entries.into_iter().next().map(|(_, value)| value)
 }
 
 fn resolution_value(key: &str) -> u32 {

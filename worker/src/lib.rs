@@ -141,6 +141,11 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 };
             }
         }
+        ClientMessage::SetGrid { enabled } => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                app.world.resources.debug_draw.show_grid = enabled;
+            }
+        }
         ClientMessage::Frame => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 app.state.viewer.resources.camera_input.frame_requested = true;
@@ -162,14 +167,14 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 systems::browsers::fetch_khronos(&app.state.viewer, &name);
             }
         }
-        ClientMessage::LoadPolyhaven { slug } => {
+        ClientMessage::LoadPolyhaven { slug, resolution } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::browsers::fetch_polyhaven(&app.state.viewer, &slug);
+                systems::browsers::fetch_polyhaven(&app.state.viewer, &slug, resolution);
             }
         }
-        ClientMessage::LoadPolyhavenModel { slug } => {
+        ClientMessage::LoadPolyhavenModel { slug, resolution } => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::browsers::fetch_polyhaven_model(&app.state.viewer, &slug);
+                systems::browsers::fetch_polyhaven_model(&app.state.viewer, &slug, resolution);
             }
         }
         ClientMessage::RefreshBrowsers => {
