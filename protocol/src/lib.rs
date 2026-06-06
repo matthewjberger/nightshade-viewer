@@ -98,6 +98,12 @@ pub enum ClientMessage {
     SetGrid {
         enabled: bool,
     },
+    /// Shift the nav gizmo by a screen-space offset (physical pixels) so it
+    /// clears the page's overlay UI.
+    SetNavGizmoOffset {
+        x: f32,
+        y: f32,
+    },
     /// Ask the worker to fetch the browser indices if it has not yet.
     RefreshBrowsers,
 }
