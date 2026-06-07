@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
 const WS_ADDR: &str = "127.0.0.1:8787";
-const REQUEST_TIMEOUT_SECS: u64 = 15;
+const REQUEST_TIMEOUT_SECS: u64 = 30;
 const RING_CAPACITY: usize = 4096;
 
 struct Subscription {
@@ -130,6 +130,10 @@ async fn route_response(shared: &Arc<Shared>, response: AgentResponse) {
         }
         return;
     }
+    // Progress is informational, not the terminal reply; keep waiting.
+    if let AgentResponse::CommandProgress { .. } = response {
+        return;
+    }
     if let Some(correlation_id) = response_correlation(&response) {
         let sender = shared.pending.lock().await.remove(&correlation_id);
         if let Some(sender) = sender {
@@ -144,6 +148,7 @@ fn response_correlation(response: &AgentResponse) -> Option<CorrelationId> {
         | AgentResponse::QueryResult { correlation_id, .. }
         | AgentResponse::GetResult { correlation_id, .. }
         | AgentResponse::CommandApplied { correlation_id, .. }
+        | AgentResponse::Loaded { correlation_id, .. }
         | AgentResponse::CommandFailed { correlation_id, .. }
         | AgentResponse::CommandProgress { correlation_id, .. }
         | AgentResponse::Subscribed { correlation_id, .. }
@@ -360,13 +365,37 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                 .and_then(Value::as_str)
                 .ok_or("missing string field: uri")?
                 .to_string();
-            command(shared, AgentCommand::LoadGltf { uri }).await
+            let correlation_id = shared.correlation();
+            let response = send_request(
+                shared,
+                AgentRequest::Command {
+                    correlation_id,
+                    command: AgentCommand::LoadGltf { uri },
+                },
+            )
+            .await?;
+            match response {
+                AgentResponse::Loaded { version, roots, .. } => {
+                    Ok(json!({ "applied": true, "version": version, "roots": roots }).to_string())
+                }
+                AgentResponse::CommandFailed { error, .. } => Err(error),
+                other => Ok(pretty(&response_payload(other))),
+            }
         }
         "viewer_action" => {
             let action = arguments
                 .get("action")
                 .cloned()
-                .ok_or("missing object field: action")?;
+                .ok_or("missing field: action")?;
+            // Accept the action as a real object ({"SetGrid":{"enabled":false}})
+            // or as a JSON string of one; a bare string ("Frame") stays a unit
+            // variant name.
+            let action = match action {
+                Value::String(text) => {
+                    serde_json::from_str::<Value>(&text).unwrap_or(Value::String(text))
+                }
+                other => other,
+            };
             let message: ClientMessage = serde_json::from_value(action)
                 .map_err(|error| format!("not a valid viewer action: {error}"))?;
             let correlation_id = shared.correlation();

@@ -255,6 +255,13 @@ pub enum AgentResponse {
         correlation_id: CorrelationId,
         version: Version,
     },
+    /// An additive glTF load finished, reporting the spawned root handles so the
+    /// agent can position the model by its root.
+    Loaded {
+        correlation_id: CorrelationId,
+        version: Version,
+        roots: Vec<EntityRef>,
+    },
     CommandFailed {
         correlation_id: CorrelationId,
         error: String,

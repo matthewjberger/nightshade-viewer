@@ -365,14 +365,15 @@ fn start_load(viewer: &mut Viewer, uri: &str, correlation_id: CorrelationId) {
     });
 }
 
-/// Acknowledges an additive agent load once the model has spawned. Called from
-/// the load poll, which holds the viewer and world the apply systems cannot see.
-pub fn ack_load(correlation_id: CorrelationId, entity_count: usize) {
-    post(&WorkerMessage::Agent(AgentResponse::CommandProgress {
+/// Acknowledges an additive agent load once the model has spawned, reporting the
+/// spawned root handles so the agent can position the model by its root. Called
+/// from the load poll, which holds the viewer the apply systems cannot see.
+pub fn ack_load(correlation_id: CorrelationId, roots: &[Entity]) {
+    post(&WorkerMessage::Agent(AgentResponse::Loaded {
         correlation_id,
-        stage: format!("spawned {entity_count} entities"),
+        version: current_version(),
+        roots: roots.iter().map(|entity| to_ref(*entity)).collect(),
     }));
-    ack(correlation_id, current_version());
 }
 
 fn agent_apply_system(world: &mut World) {

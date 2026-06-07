@@ -53,8 +53,8 @@ pub fn poll_agent_loads(viewer: &mut ViewerWorld, world: &mut World) {
     for (correlation_id, bytes) in loads {
         match import_gltf_from_bytes(&bytes) {
             Ok(result) => {
-                let count = spawn_additive(viewer, world, result);
-                crate::agent::ack_load(correlation_id, count);
+                let roots = spawn_additive(viewer, world, result);
+                crate::agent::ack_load(correlation_id, &roots);
             }
             Err(error) => {
                 crate::agent::fail(correlation_id, &format!("import failed: {error}"));
@@ -80,12 +80,12 @@ pub fn poll_agent_hdris(viewer: &mut ViewerWorld, world: &mut World) {
 }
 
 /// Imports and spawns a model without despawning the current scene, appending
-/// the spawned entities to the tracked model. Returns the entity count.
+/// the spawned entities to the tracked model. Returns the spawned root entities.
 fn spawn_additive(
     viewer: &mut ViewerWorld,
     world: &mut World,
     mut result: GltfLoadResult,
-) -> usize {
+) -> Vec<Entity> {
     nightshade::ecs::loading::queue_gltf_load(world, &mut result);
 
     let before: HashSet<u32> = world
@@ -105,7 +105,7 @@ fn spawn_additive(
         ));
     }
     if roots.is_empty() {
-        return 0;
+        return roots;
     }
 
     let spawned: HashSet<u32> = world
@@ -115,14 +115,16 @@ fn spawn_additive(
         .filter(|id| !before.contains(id))
         .collect();
     let entities = ordered_entities(world, &roots, &spawned);
-    let count = entities.len();
 
-    viewer.resources.model.roots.extend(roots);
+    viewer.resources.model.roots.extend(roots.iter().copied());
     viewer.resources.model.entities.extend(entities);
     viewer.resources.scene_sync.needs_tree = true;
 
+    // Force the child cache to rebuild so a later transform edit on a root
+    // propagates to the newly spawned descendants.
+    world.resources.transform_state.children_cache_valid = false;
     world.resources.render_settings.color_grading.exposure = result.suggested_exposure;
-    count
+    roots
 }
 
 /// Imports a self-contained glTF/GLB and spawns it.
