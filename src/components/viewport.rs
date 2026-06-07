@@ -38,6 +38,7 @@ pub fn Viewport(
     let canvas_ref = NodeRef::<html::Canvas>::new();
     let drag = StoredValue::new(DragState::default());
     let touches = StoredValue::new(HashMap::<i32, TouchTrack>::new());
+    let rect_offset = StoredValue::new((0.0_f64, 0.0_f64));
 
     Effect::new(move |_| {
         let Some(canvas) = canvas_ref.get() else {
@@ -62,6 +63,10 @@ pub fn Viewport(
     });
 
     let on_pointerdown = move |event: PointerEvent| {
+        if let Some(canvas) = canvas_ref.get() {
+            let rect = canvas.get_bounding_client_rect();
+            rect_offset.set_value((rect.left(), rect.top()));
+        }
         if event.pointer_type() == "touch" {
             let id = event.pointer_id();
             touches.update_value(|map| {
@@ -77,7 +82,8 @@ pub fn Viewport(
             if let Some(canvas) = canvas_ref.get() {
                 let _ = canvas.set_pointer_capture(id);
                 if let Some(bridge) = bridge.get_value() {
-                    let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                    let (x, y) =
+                        physical(rect_offset.get_value(), event.client_x(), event.client_y());
                     send(
                         &bridge,
                         &ClientMessage::Touch {
@@ -102,7 +108,7 @@ pub fn Viewport(
         if let Some(canvas) = canvas_ref.get() {
             let _ = canvas.set_pointer_capture(event.pointer_id());
             if let Some(bridge) = bridge.get_value() {
-                let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                let (x, y) = physical(rect_offset.get_value(), event.client_x(), event.client_y());
                 send(&bridge, &ClientMessage::PointerMove { x, y });
                 send(
                     &bridge,
@@ -128,10 +134,8 @@ pub fn Viewport(
                     track.last_y = y;
                 }
             });
-            if let Some(canvas) = canvas_ref.get()
-                && let Some(bridge) = bridge.get_value()
-            {
-                let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+            if let Some(bridge) = bridge.get_value() {
+                let (x, y) = physical(rect_offset.get_value(), event.client_x(), event.client_y());
                 send(
                     &bridge,
                     &ClientMessage::Touch {
@@ -151,10 +155,8 @@ pub fn Viewport(
             state.last_x = x;
             state.last_y = y;
         });
-        if let Some(canvas) = canvas_ref.get()
-            && let Some(bridge) = bridge.get_value()
-        {
-            let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+        if let Some(bridge) = bridge.get_value() {
+            let (x, y) = physical(rect_offset.get_value(), event.client_x(), event.client_y());
             send(&bridge, &ClientMessage::PointerMove { x, y });
         }
     };
@@ -174,7 +176,8 @@ pub fn Viewport(
             if let Some(canvas) = canvas_ref.get() {
                 let _ = canvas.release_pointer_capture(id);
                 if let Some(bridge) = bridge.get_value() {
-                    let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                    let (x, y) =
+                        physical(rect_offset.get_value(), event.client_x(), event.client_y());
                     send(
                         &bridge,
                         &ClientMessage::Touch {
@@ -200,7 +203,7 @@ pub fn Viewport(
         if let Some(canvas) = canvas_ref.get() {
             let _ = canvas.release_pointer_capture(event.pointer_id());
             if let Some(bridge) = bridge.get_value() {
-                let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                let (x, y) = physical(rect_offset.get_value(), event.client_x(), event.client_y());
                 send(
                     &bridge,
                     &ClientMessage::PointerButton {
@@ -226,7 +229,7 @@ pub fn Viewport(
         if let Some(canvas) = canvas_ref.get() {
             let _ = canvas.release_pointer_capture(id);
             if let Some(bridge) = bridge.get_value() {
-                let (x, y) = physical(&canvas, event.client_x(), event.client_y());
+                let (x, y) = physical(rect_offset.get_value(), event.client_x(), event.client_y());
                 send(
                     &bridge,
                     &ClientMessage::Touch {
@@ -297,12 +300,15 @@ fn render_dpr() -> f64 {
         .min(MAX_RENDER_DPR)
 }
 
-fn physical(canvas: &HtmlCanvasElement, client_x: i32, client_y: i32) -> (f32, f32) {
+/// Maps a client-space pointer position to physical canvas pixels using the
+/// canvas offset captured at gesture start, so the input hot path never forces a
+/// synchronous layout (a `getBoundingClientRect` per move stutters multi-touch
+/// gestures, where every contact fires its own move stream).
+fn physical(offset: (f64, f64), client_x: i32, client_y: i32) -> (f32, f32) {
     let dpr = render_dpr();
-    let rect = canvas.get_bounding_client_rect();
     (
-        ((client_x as f64 - rect.left()) * dpr) as f32,
-        ((client_y as f64 - rect.top()) * dpr) as f32,
+        ((client_x as f64 - offset.0) * dpr) as f32,
+        ((client_y as f64 - offset.1) * dpr) as f32,
     )
 }
 
