@@ -79,7 +79,9 @@ pub fn add_light(
 }
 
 /// Spawns a bare transformable entity (no mesh) at `position`, for a light that
-/// needs no visible marker.
+/// needs no visible marker. The engine derives a point/spot light's effective
+/// range from the entity scale, so this matches the toolbar light's 0.15 scale
+/// (otherwise a unit-scale light floods a small scene).
 fn spawn_light_entity(world: &mut World, position: Vec3) -> Entity {
     let mask = LOCAL_TRANSFORM | GLOBAL_TRANSFORM | LOCAL_TRANSFORM_DIRTY;
     let entity = nightshade::ecs::world::commands::spawn_entities(world, mask, 1)
@@ -88,6 +90,7 @@ fn spawn_light_entity(world: &mut World, position: Vec3) -> Entity {
         .expect("spawn light entity");
     if let Some(transform) = world.core.get_local_transform_mut(entity) {
         transform.translation = position;
+        transform.scale = Vec3::new(0.15, 0.15, 0.15);
     }
     mark_local_transform_dirty(world, entity);
     entity
