@@ -20,7 +20,7 @@ src/state.rs      grouped signals     worker/src/systems/*  camera, load, pickin
 
 ## Crates
 
-protocol holds the message and data types, the one place the wire is defined. worker is the wasm module: the engine World plus a ViewerWorld, a freecs world that holds the viewer's own state (selection, the loaded model, camera input, the browser fetch state), driven by free functions in worker/src/systems. The root crate is the Leptos UI. Nightshade is the published crate with its default features.
+protocol holds the message and data types, the one place the wire is defined. worker is the wasm module: the engine World plus a ViewerWorld, a freecs world that holds the viewer's own state (selection, the loaded model, camera input, the browser fetch state), driven by free functions in worker/src/systems. The root crate is the Leptos UI. host is the native nightshade-mcp bridge that exposes the viewer to an external MCP agent, built only with the optional agent feature. Nightshade is the published crate with its default features.
 
 ## The message protocol
 
@@ -40,6 +40,10 @@ The inbox carries a kind. A model goes through import_gltf_from_bytes, queue_glt
 
 After a load the worker walks the spawned entities from the root with query_descendants, records each node's depth and name, and posts Scene. Selection is one engine entity. A tree click and a viewport pick both resolve to it: the pick goes through the engine's GPU picking, request_pick then take_result, and the entity_id maps back to a freecs::Entity by its raw id. The worker writes that entity into editor_selection.bounding_volume_selected_entity, which the engine's selection mask and outline passes read to draw the highlight, then posts Selected with the entity's transform, the rotation converted from a quaternion to Euler degrees for the inspector fields. An inspector edit comes back as SetTransform, which writes the local transform and marks it dirty.
 
+## The agent surface
+
+Behind the optional agent feature, an external MCP agent can read and mutate the live world with the same access a user has plus structured queries and a delta stream. It is a fourth process: the agent speaks MCP to the native host bridge, which relays over a websocket to the page (src/relay.rs), which forwards onto the same worker postMessage path as the UI. The bridge holds no engine state; the world stays in the worker, where agent_apply (before transform propagation) and agent_collect (last in the frame) systems handle commands and diff the world into version-stamped delta batches. The Agent variant on ClientMessage and WorkerMessage carries the requests and responses. The whole surface compiles out by default, so a deployed build opens no localhost socket. See agent-mcp.md for the full design, tool list, and how to drive it.
+
 ## Build
 
-just run builds the worker to wasm with wasm-bindgen and wasm-opt, generates the Tailwind stylesheet, and serves the bundle with Trunk. A push to main runs the same steps in .github/workflows/deploy.yml and publishes dist/ to GitHub Pages.
+just run builds the worker to wasm with wasm-bindgen and wasm-opt, generates the Tailwind stylesheet, and serves the bundle with Trunk. A push to main runs the same steps in .github/workflows/deploy.yml and publishes dist/ to GitHub Pages. just run-agent does the same with the agent feature on, for both the worker and the page.
