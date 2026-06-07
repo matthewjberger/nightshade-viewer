@@ -391,13 +391,19 @@ fn handle_command(
                 correlation_id,
             );
         }
-        AgentCommand::AddPrimitive { kind } => {
+        AgentCommand::AddPrimitive { kind, components } => {
             let entity = crate::systems::spawn::add_primitive(&mut viewer.viewer, world, kind);
-            spawned(correlation_id, entity);
+            match apply_bag(world, &registry(), entity, &components) {
+                Ok(()) => spawned(correlation_id, entity),
+                Err(error) => fail(correlation_id, &error),
+            }
         }
-        AgentCommand::AddLight { kind } => {
+        AgentCommand::AddLight { kind, components } => {
             let entity = crate::systems::spawn::add_light(&mut viewer.viewer, world, kind);
-            spawned(correlation_id, entity);
+            match apply_bag(world, &registry(), entity, &components) {
+                Ok(()) => spawned(correlation_id, entity),
+                Err(error) => fail(correlation_id, &error),
+            }
         }
         other => AGENT.with(|agent| agent.borrow_mut().inbound.push((correlation_id, other))),
     }
@@ -800,6 +806,28 @@ fn find<'registry>(
         .iter()
         .find(|entry| entry.name == name)
         .ok_or_else(|| format!("unknown component: {name}"))
+}
+
+/// Applies a Free component bag to an entity, adding any missing components
+/// first so the writes land, and running each component's cascade.
+fn apply_bag(
+    world: &mut World,
+    registry: &[ComponentEntry],
+    entity: Entity,
+    components: &[(String, Value)],
+) -> Result<(), String> {
+    let mut mask = 0u64;
+    for (name, _) in components {
+        mask |= writable(registry, name)?;
+    }
+    if mask != 0 {
+        world.core.add_components(entity, mask);
+    }
+    for (name, value) in components {
+        let entry = find(registry, name)?;
+        (entry.deserialize)(world, entity, value)?;
+    }
+    Ok(())
 }
 
 fn writable(registry: &[ComponentEntry], name: &str) -> Result<u64, String> {

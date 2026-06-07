@@ -484,7 +484,8 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                     .ok_or("missing field: kind")?,
             )
             .map_err(|error| format!("invalid primitive kind: {error}"))?;
-            spawn_command(shared, AgentCommand::AddPrimitive { kind }).await
+            let components = parse_component_bag(&arguments, "components")?;
+            spawn_command(shared, AgentCommand::AddPrimitive { kind, components }).await
         }
         "add_light" => {
             let kind: LightKind = serde_json::from_value(
@@ -494,8 +495,10 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                     .ok_or("missing field: kind")?,
             )
             .map_err(|error| format!("invalid light kind: {error}"))?;
-            spawn_command(shared, AgentCommand::AddLight { kind }).await
+            let components = parse_component_bag(&arguments, "components")?;
+            spawn_command(shared, AgentCommand::AddLight { kind, components }).await
         }
+        "batch" => batch_tool(shared, arguments).await,
         "set_material" => {
             let material: MaterialSpec = serde_json::from_value(arguments)
                 .map_err(|error| format!("invalid material: {error}"))?;
@@ -553,6 +556,37 @@ async fn command(shared: &Arc<Shared>, command: AgentCommand) -> Result<String, 
         AgentResponse::CommandFailed { error, .. } => Err(error),
         other => Ok(pretty(&response_payload(other))),
     }
+}
+
+/// Runs a list of tool calls in one MCP round trip, returning each result.
+/// Independent ops (set_material, add_primitive with its transform/material,
+/// set_components on known handles) collapse from N agent round trips to one.
+async fn batch_tool(shared: &Arc<Shared>, arguments: Value) -> Result<String, String> {
+    let ops = arguments
+        .get("ops")
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or("missing array field: ops")?;
+    let mut results = Vec::with_capacity(ops.len());
+    for op in ops {
+        let name = op
+            .get("tool")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let op_arguments = op.get("arguments").cloned().unwrap_or(json!({}));
+        if name == "batch" {
+            results
+                .push(json!({ "tool": name, "ok": false, "error": "nested batch is not allowed" }));
+            continue;
+        }
+        let entry = match Box::pin(run_tool(shared, &name, op_arguments)).await {
+            Ok(text) => json!({ "tool": name, "ok": true, "result": text }),
+            Err(error) => json!({ "tool": name, "ok": false, "error": error }),
+        };
+        results.push(entry);
+    }
+    Ok(serde_json::to_string_pretty(&Value::Array(results)).unwrap_or_default())
 }
 
 async fn spawn_command(shared: &Arc<Shared>, command: AgentCommand) -> Result<String, String> {
@@ -867,20 +901,44 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "add_primitive",
-            "description": "Spawn a parametric primitive mesh (Cube, Sphere, Cylinder, Cone, Torus, Plane) and return its root handle to position with set_components. New primitives use the default gray material; assign a material with set_material + set_components material_ref to color them.",
+            "description": "Spawn a parametric primitive mesh (Cube, Sphere, Cylinder, Cone, Torus, Plane), apply the optional components bag to it in the same call (e.g. local_transform to place/scale it and material_ref to color it), and return its root handle. Passing components avoids a separate set_components round trip, so it is batchable.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "kind": { "type": "string", "enum": ["Cube", "Sphere", "Cylinder", "Cone", "Torus", "Plane"] } },
+                "properties": {
+                    "kind": { "type": "string", "enum": ["Cube", "Sphere", "Cylinder", "Cone", "Torus", "Plane"] },
+                    "components": { "type": "object", "description": "Free component bag, e.g. {\"local_transform\":{...},\"material_ref\":{\"name\":\"...\"}}", "additionalProperties": true }
+                },
                 "required": ["kind"]
             }
         }),
         json!({
             "name": "add_light",
-            "description": "Spawn a light (Directional, Point, or Spot) with a visible marker and return its handle.",
+            "description": "Spawn a light (Directional, Point, or Spot) with a visible marker, apply the optional components bag (local_transform, light) in the same call, and return its handle.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "kind": { "type": "string", "enum": ["Directional", "Point", "Spot"] } },
+                "properties": {
+                    "kind": { "type": "string", "enum": ["Directional", "Point", "Spot"] },
+                    "components": { "type": "object", "additionalProperties": true }
+                },
                 "required": ["kind"]
+            }
+        }),
+        json!({
+            "name": "batch",
+            "description": "Run many tool calls in ONE round trip. ops is an array of {\"tool\":\"<name>\",\"arguments\":{...}}, executed in order; returns each result. Use this for the bulk of scene building (multiple set_material, add_primitive with transform+material, set_components, add_light, load_polyhaven_model) to avoid one slow agent round trip per call. Ops cannot reference handles returned by earlier ops in the same batch, so put self-contained ops here (add_primitive/add_light carry their own components) and use load_* results in a following batch.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ops": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": { "tool": { "type": "string" }, "arguments": { "type": "object", "additionalProperties": true } },
+                            "required": ["tool"]
+                        }
+                    }
+                },
+                "required": ["ops"]
             }
         }),
         json!({

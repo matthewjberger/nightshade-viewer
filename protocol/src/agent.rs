@@ -71,13 +71,17 @@ pub enum AgentCommand {
         slug: String,
         resolution: u32,
     },
-    /// Spawn a parametric primitive mesh and return its handle.
+    /// Spawn a parametric primitive mesh, apply a component bag (e.g.
+    /// local_transform, material_ref) to it, and return its handle.
     AddPrimitive {
         kind: crate::PrimitiveKind,
+        components: Vec<(String, Value)>,
     },
-    /// Spawn a light (with a visible marker) and return its handle.
+    /// Spawn a light (with a visible marker), apply a component bag, and return
+    /// its handle.
     AddLight {
         kind: crate::LightKind,
+        components: Vec<(String, Value)>,
     },
     SpawnEntity {
         components: Vec<(String, Value)>,
