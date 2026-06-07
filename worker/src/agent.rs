@@ -10,7 +10,6 @@ use protocol::{
     WorkerMessage, WritePolicyInfo,
 };
 
-use crate::ecs::PendingAsset;
 use crate::post;
 use crate::state::Viewer;
 
@@ -332,17 +331,12 @@ fn start_load(viewer: &mut Viewer, uri: &str, correlation_id: CorrelationId) {
         correlation_id,
         stage: format!("fetching {uri}"),
     }));
-    let slot = viewer.viewer.resources.incoming.asset.clone();
-    let version = current_version();
+    let queue = viewer.viewer.resources.incoming.agent_loads.clone();
     ehttp::fetch(ehttp::Request::get(uri), move |result| match result {
         Ok(response) if response.ok => {
-            if let Ok(mut guard) = slot.lock() {
-                *guard = Some(PendingAsset::Model(response.bytes));
+            if let Ok(mut guard) = queue.lock() {
+                guard.push((correlation_id, response.bytes));
             }
-            post(&WorkerMessage::Agent(AgentResponse::CommandApplied {
-                correlation_id,
-                version,
-            }));
         }
         Ok(response) => fail(
             correlation_id,
@@ -350,6 +344,16 @@ fn start_load(viewer: &mut Viewer, uri: &str, correlation_id: CorrelationId) {
         ),
         Err(error) => fail(correlation_id, &format!("fetch error: {error}")),
     });
+}
+
+/// Acknowledges an additive agent load once the model has spawned. Called from
+/// the load poll, which holds the viewer and world the apply systems cannot see.
+pub fn ack_load(correlation_id: CorrelationId, entity_count: usize) {
+    post(&WorkerMessage::Agent(AgentResponse::CommandProgress {
+        correlation_id,
+        stage: format!("spawned {entity_count} entities"),
+    }));
+    ack(correlation_id, current_version());
 }
 
 fn agent_apply_system(world: &mut World) {
@@ -753,7 +757,7 @@ fn ack(correlation_id: CorrelationId, version: Version) {
     }));
 }
 
-fn fail(correlation_id: CorrelationId, error: &str) {
+pub fn fail(correlation_id: CorrelationId, error: &str) {
     post(&WorkerMessage::Agent(AgentResponse::CommandFailed {
         correlation_id,
         error: error.to_string(),

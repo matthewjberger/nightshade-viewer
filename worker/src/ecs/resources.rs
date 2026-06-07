@@ -64,12 +64,21 @@ pub enum PendingAsset {
     Hdri(Vec<u8>),
 }
 
+/// A queue of fetched agent assets, each paired with the command correlation id
+/// to acknowledge once it has spawned.
+pub type AgentLoadQueue = Arc<Mutex<Vec<(u64, Vec<u8>)>>>;
+
 /// Inbox for asset bytes from drops or browser fetches, plus the loading label
 /// that drives the page's progress indicator. The `Arc<Mutex<…>>` lets `ehttp`
 /// callbacks (which require `Send + 'static`) write results back.
+///
+/// `agent_loads` is a separate queue for the external agent's `load_gltf`: those
+/// spawn additively (they do not wipe the current scene), and each carries the
+/// correlation id to acknowledge once the model has spawned.
 pub struct Incoming {
     pub asset: Arc<Mutex<Option<PendingAsset>>>,
     pub loading: Arc<Mutex<Option<String>>>,
+    pub agent_loads: AgentLoadQueue,
 }
 
 impl Default for Incoming {
@@ -77,6 +86,7 @@ impl Default for Incoming {
         Self {
             asset: Arc::new(Mutex::new(None)),
             loading: Arc::new(Mutex::new(None)),
+            agent_loads: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }

@@ -37,6 +37,78 @@ pub fn poll(viewer: &mut ViewerWorld, world: &mut World) {
     });
 }
 
+/// Spawns the external agent's fetched glTF assets additively, leaving the
+/// current scene in place. Each spawned model's entities are appended to the
+/// tracked model so the scene tree and future despawns include them, then the
+/// agent command is acknowledged.
+pub fn poll_agent_loads(viewer: &mut ViewerWorld, world: &mut World) {
+    let loads = viewer
+        .resources
+        .incoming
+        .agent_loads
+        .lock()
+        .ok()
+        .map(|mut queue| std::mem::take(&mut *queue))
+        .unwrap_or_default();
+    for (correlation_id, bytes) in loads {
+        match import_gltf_from_bytes(&bytes) {
+            Ok(result) => {
+                let count = spawn_additive(viewer, world, result);
+                crate::agent::ack_load(correlation_id, count);
+            }
+            Err(error) => {
+                crate::agent::fail(correlation_id, &format!("import failed: {error}"));
+            }
+        }
+    }
+}
+
+/// Imports and spawns a model without despawning the current scene, appending
+/// the spawned entities to the tracked model. Returns the entity count.
+fn spawn_additive(
+    viewer: &mut ViewerWorld,
+    world: &mut World,
+    mut result: GltfLoadResult,
+) -> usize {
+    nightshade::ecs::loading::queue_gltf_load(world, &mut result);
+
+    let before: HashSet<u32> = world
+        .core
+        .query_entities(LOCAL_TRANSFORM)
+        .map(|entity| entity.id)
+        .collect();
+
+    let mut roots = Vec::new();
+    for prefab in &result.prefabs {
+        roots.push(nightshade::ecs::prefab::spawn_prefab_with_skins(
+            world,
+            prefab,
+            &result.animations,
+            &result.skins,
+            Vec3::new(0.0, 0.0, 0.0),
+        ));
+    }
+    if roots.is_empty() {
+        return 0;
+    }
+
+    let spawned: HashSet<u32> = world
+        .core
+        .query_entities(LOCAL_TRANSFORM)
+        .map(|entity| entity.id)
+        .filter(|id| !before.contains(id))
+        .collect();
+    let entities = ordered_entities(world, &roots, &spawned);
+    let count = entities.len();
+
+    viewer.resources.model.roots.extend(roots);
+    viewer.resources.model.entities.extend(entities);
+    viewer.resources.scene_sync.needs_tree = true;
+
+    world.resources.render_settings.color_grading.exposure = result.suggested_exposure;
+    count
+}
+
 /// Imports a self-contained glTF/GLB and spawns it.
 pub fn load_model(viewer: &mut ViewerWorld, world: &mut World, bytes: &[u8]) {
     match import_gltf_from_bytes(bytes) {
