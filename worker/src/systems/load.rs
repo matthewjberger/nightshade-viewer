@@ -63,6 +63,22 @@ pub fn poll_agent_loads(viewer: &mut ViewerWorld, world: &mut World) {
     }
 }
 
+/// Loads the external agent's fetched HDRIs as the skybox, acknowledging each.
+pub fn poll_agent_hdris(viewer: &mut ViewerWorld, world: &mut World) {
+    let hdris = viewer
+        .resources
+        .incoming
+        .agent_hdris
+        .lock()
+        .ok()
+        .map(|mut queue| std::mem::take(&mut *queue))
+        .unwrap_or_default();
+    for (correlation_id, bytes) in hdris {
+        load_hdr_skybox(world, bytes);
+        crate::agent::ack_hdri(correlation_id);
+    }
+}
+
 /// Imports and spawns a model without despawning the current scene, appending
 /// the spawned entities to the tracked model. Returns the entity count.
 fn spawn_additive(

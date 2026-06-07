@@ -93,195 +93,6 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                     });
             }
         }
-        ClientMessage::PointerMove { x, y } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                input_inject_cursor_moved(&mut app.world, Vec2::new(x, y));
-            }
-        }
-        ClientMessage::PointerButton { button, pressed } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                let state = if pressed {
-                    WinitElementState::Pressed
-                } else {
-                    WinitElementState::Released
-                };
-                input_inject_mouse_button(&mut app.world, mouse_button(button), state);
-            }
-        }
-        ClientMessage::Wheel { delta } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                input_inject_mouse_wheel(&mut app.world, Vec2::new(0.0, -delta / 100.0));
-            }
-        }
-        ClientMessage::Touch { id, phase, x, y } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                input_inject_touch(&mut app.world, id, touch_phase(phase), Vec2::new(x, y));
-            }
-        }
-        ClientMessage::Pick { x, y } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::picking::request(&mut app.state.viewer, &mut app.world, x, y);
-            }
-        }
-        ClientMessage::Select { id } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::selection::select_by_id(&mut app.state.viewer, &mut app.world, id);
-            }
-        }
-        ClientMessage::Deselect => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::selection::select(&mut app.state.viewer, &mut app.world, None);
-            }
-        }
-        ClientMessage::AddPrimitive { kind } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::spawn::add_primitive(&mut app.state.viewer, &mut app.world, kind);
-            }
-        }
-        ClientMessage::AddLight { kind } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::spawn::add_light(&mut app.state.viewer, &mut app.world, kind);
-            }
-        }
-        ClientMessage::SetTransform {
-            id,
-            translation,
-            rotation,
-            scale,
-        } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::selection::set_transform(&mut app.world, id, translation, rotation, scale);
-            }
-        }
-        ClientMessage::SetGizmoMode { mode } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.world.resources.user_interface.gizmos.mode = match mode {
-                    GizmoKind::Translate => nightshade::ecs::gizmos::GizmoMode::LocalTranslation,
-                    GizmoKind::Rotate => nightshade::ecs::gizmos::GizmoMode::Rotation,
-                    GizmoKind::Scale => nightshade::ecs::gizmos::GizmoMode::Scale,
-                };
-            }
-        }
-        ClientMessage::SetGrid { enabled } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.world.resources.debug_draw.show_grid = enabled;
-            }
-        }
-        ClientMessage::SnapAxis { axis } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut()
-                && let Some(camera) = app.world.resources.active_camera
-                && let Some(orbit) = app.world.core.get_pan_orbit_camera_mut(camera)
-            {
-                let direction = Vec3::new(axis[0], axis[1], axis[2]);
-                let unit = if direction.norm() > 0.0001 {
-                    direction.normalize()
-                } else {
-                    direction
-                };
-                orbit.target_yaw = unit.x.atan2(unit.z);
-                orbit.target_pitch = unit.y.clamp(-1.0, 1.0).asin();
-            }
-        }
-        ClientMessage::PlayAnimation { index } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                animate(app, |player| player.play(index as usize));
-            }
-        }
-        ClientMessage::PauseAnimation => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                animate(app, |player| player.pause());
-            }
-        }
-        ClientMessage::ResumeAnimation => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                animate(app, |player| player.resume());
-            }
-        }
-        ClientMessage::StopAnimation => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                animate(app, |player| player.stop());
-            }
-        }
-        ClientMessage::SeekAnimation { time } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                animate(app, |player| player.time = time.max(0.0));
-            }
-        }
-        ClientMessage::SetAnimationSpeed { speed } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                animate(app, |player| player.speed = speed);
-            }
-        }
-        ClientMessage::SetAnimationLoop { looping } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                animate(app, |player| player.looping = looping);
-            }
-        }
-        ClientMessage::SetShadingMode { mode } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut()
-                && let Some(camera) = app.world.resources.active_camera
-            {
-                app.world.core.set_viewport_shading(
-                    camera,
-                    nightshade::ecs::camera::components::ViewportShading {
-                        mode: map_shading(mode),
-                        show_overlays: true,
-                    },
-                );
-            }
-        }
-        ClientMessage::SetPbrDebug { mode } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.world.resources.debug_draw.pbr_debug_mode = map_pbr(mode);
-            }
-        }
-        ClientMessage::SetShowNormals { enabled } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.world.resources.debug_draw.show_normals = enabled;
-            }
-        }
-        ClientMessage::SetShowBounds { enabled } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.world.resources.debug_draw.show_bounding_volumes = enabled;
-            }
-        }
-        ClientMessage::SetExposure { exposure } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.world.resources.render_settings.color_grading.exposure = exposure;
-            }
-        }
-        ClientMessage::SetTonemap { algorithm } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.world
-                    .resources
-                    .render_settings
-                    .color_grading
-                    .tonemap_algorithm = map_tonemap(algorithm);
-            }
-        }
-        ClientMessage::SetShowSky { show } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.world.resources.render_settings.show_sky = show;
-            }
-        }
-        ClientMessage::SetVariant { name } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                nightshade::ecs::material::commands::material_variant_apply(
-                    &mut app.world,
-                    name.as_deref(),
-                );
-            }
-        }
-        ClientMessage::Frame => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.state.viewer.resources.camera_input.frame_requested = true;
-            }
-        }
-        ClientMessage::SetTurntable { enabled } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                app.state.viewer.resources.camera_input.turntable = enabled;
-            }
-        }
         ClientMessage::DropAsset { kind } => {
             if let Some(app) = app_slot.borrow_mut().as_mut()
                 && let Some(bytes) = bytes_from(&data)
@@ -304,31 +115,162 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 });
             }
         }
-        ClientMessage::LoadKhronos { name } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::browsers::fetch_khronos(&app.state.viewer, &name);
-            }
-        }
-        ClientMessage::LoadPolyhaven { slug, resolution } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::browsers::fetch_polyhaven(&app.state.viewer, &slug, resolution);
-            }
-        }
-        ClientMessage::LoadPolyhavenModel { slug, resolution } => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::browsers::fetch_polyhaven_model(&app.state.viewer, &slug, resolution);
-            }
-        }
-        ClientMessage::RefreshBrowsers => {
-            if let Some(app) = app_slot.borrow_mut().as_mut() {
-                systems::browsers::resend(&mut app.state.viewer);
-            }
-        }
         ClientMessage::Agent(request) => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 agent::handle_agent_request(&mut app.world, &mut app.state, request);
             }
         }
+        other => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                apply_client_message(&mut app.world, &mut app.state, other);
+            }
+        }
+    }
+}
+
+/// Applies one viewer action that needs neither the transferred envelope data
+/// nor the renderer. Shared by the page (user clicks) and the external agent
+/// (`ViewerAction`), so both drive the viewer through exactly the same code.
+pub(crate) fn apply_client_message(world: &mut World, viewer: &mut Viewer, message: ClientMessage) {
+    match message {
+        ClientMessage::PointerMove { x, y } => {
+            input_inject_cursor_moved(world, Vec2::new(x, y));
+        }
+        ClientMessage::PointerButton { button, pressed } => {
+            let state = if pressed {
+                WinitElementState::Pressed
+            } else {
+                WinitElementState::Released
+            };
+            input_inject_mouse_button(world, mouse_button(button), state);
+        }
+        ClientMessage::Wheel { delta } => {
+            input_inject_mouse_wheel(world, Vec2::new(0.0, -delta / 100.0));
+        }
+        ClientMessage::Touch { id, phase, x, y } => {
+            input_inject_touch(world, id, touch_phase(phase), Vec2::new(x, y));
+        }
+        ClientMessage::Pick { x, y } => {
+            systems::picking::request(&mut viewer.viewer, world, x, y);
+        }
+        ClientMessage::Select { id } => {
+            systems::selection::select_by_id(&mut viewer.viewer, world, id);
+        }
+        ClientMessage::Deselect => {
+            systems::selection::select(&mut viewer.viewer, world, None);
+        }
+        ClientMessage::AddPrimitive { kind } => {
+            systems::spawn::add_primitive(&mut viewer.viewer, world, kind);
+        }
+        ClientMessage::AddLight { kind } => {
+            systems::spawn::add_light(&mut viewer.viewer, world, kind);
+        }
+        ClientMessage::SetTransform {
+            id,
+            translation,
+            rotation,
+            scale,
+        } => {
+            systems::selection::set_transform(world, id, translation, rotation, scale);
+        }
+        ClientMessage::SetGizmoMode { mode } => {
+            world.resources.user_interface.gizmos.mode = match mode {
+                GizmoKind::Translate => nightshade::ecs::gizmos::GizmoMode::LocalTranslation,
+                GizmoKind::Rotate => nightshade::ecs::gizmos::GizmoMode::Rotation,
+                GizmoKind::Scale => nightshade::ecs::gizmos::GizmoMode::Scale,
+            };
+        }
+        ClientMessage::SetGrid { enabled } => {
+            world.resources.debug_draw.show_grid = enabled;
+        }
+        ClientMessage::SnapAxis { axis } => {
+            if let Some(camera) = world.resources.active_camera
+                && let Some(orbit) = world.core.get_pan_orbit_camera_mut(camera)
+            {
+                let direction = Vec3::new(axis[0], axis[1], axis[2]);
+                let unit = if direction.norm() > 0.0001 {
+                    direction.normalize()
+                } else {
+                    direction
+                };
+                orbit.target_yaw = unit.x.atan2(unit.z);
+                orbit.target_pitch = unit.y.clamp(-1.0, 1.0).asin();
+            }
+        }
+        ClientMessage::PlayAnimation { index } => {
+            animate(world, viewer, |player| player.play(index as usize));
+        }
+        ClientMessage::PauseAnimation => animate(world, viewer, |player| player.pause()),
+        ClientMessage::ResumeAnimation => animate(world, viewer, |player| player.resume()),
+        ClientMessage::StopAnimation => animate(world, viewer, |player| player.stop()),
+        ClientMessage::SeekAnimation { time } => {
+            animate(world, viewer, |player| player.time = time.max(0.0));
+        }
+        ClientMessage::SetAnimationSpeed { speed } => {
+            animate(world, viewer, |player| player.speed = speed);
+        }
+        ClientMessage::SetAnimationLoop { looping } => {
+            animate(world, viewer, |player| player.looping = looping);
+        }
+        ClientMessage::SetShadingMode { mode } => {
+            if let Some(camera) = world.resources.active_camera {
+                world.core.set_viewport_shading(
+                    camera,
+                    nightshade::ecs::camera::components::ViewportShading {
+                        mode: map_shading(mode),
+                        show_overlays: true,
+                    },
+                );
+            }
+        }
+        ClientMessage::SetPbrDebug { mode } => {
+            world.resources.debug_draw.pbr_debug_mode = map_pbr(mode);
+        }
+        ClientMessage::SetShowNormals { enabled } => {
+            world.resources.debug_draw.show_normals = enabled;
+        }
+        ClientMessage::SetShowBounds { enabled } => {
+            world.resources.debug_draw.show_bounding_volumes = enabled;
+        }
+        ClientMessage::SetExposure { exposure } => {
+            world.resources.render_settings.color_grading.exposure = exposure;
+        }
+        ClientMessage::SetTonemap { algorithm } => {
+            world
+                .resources
+                .render_settings
+                .color_grading
+                .tonemap_algorithm = map_tonemap(algorithm);
+        }
+        ClientMessage::SetShowSky { show } => {
+            world.resources.render_settings.show_sky = show;
+        }
+        ClientMessage::SetVariant { name } => {
+            nightshade::ecs::material::commands::material_variant_apply(world, name.as_deref());
+        }
+        ClientMessage::Frame => {
+            viewer.viewer.resources.camera_input.frame_requested = true;
+        }
+        ClientMessage::SetTurntable { enabled } => {
+            viewer.viewer.resources.camera_input.turntable = enabled;
+        }
+        ClientMessage::LoadKhronos { name } => {
+            systems::browsers::fetch_khronos(&viewer.viewer, &name);
+        }
+        ClientMessage::LoadPolyhaven { slug, resolution } => {
+            systems::browsers::fetch_polyhaven(&viewer.viewer, &slug, resolution);
+        }
+        ClientMessage::LoadPolyhavenModel { slug, resolution } => {
+            systems::browsers::fetch_polyhaven_model(&viewer.viewer, &slug, resolution);
+        }
+        ClientMessage::RefreshBrowsers => {
+            systems::browsers::resend(&mut viewer.viewer);
+        }
+        ClientMessage::Init { .. }
+        | ClientMessage::Resize { .. }
+        | ClientMessage::DropAsset { .. }
+        | ClientMessage::LoadGltfBundle
+        | ClientMessage::Agent(_) => {}
     }
 }
 
@@ -482,12 +424,13 @@ fn basis_changed(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> bool {
 }
 
 fn animate(
-    app: &mut App,
+    world: &mut World,
+    viewer: &Viewer,
     action: impl Fn(&mut nightshade::ecs::animation::components::AnimationPlayer),
 ) {
-    let roots = app.state.viewer.resources.model.roots.clone();
+    let roots = viewer.viewer.resources.model.roots.clone();
     for root in roots {
-        if let Some(player) = app.world.core.get_animation_player_mut(root) {
+        if let Some(player) = world.core.get_animation_player_mut(root) {
             action(player);
         }
     }

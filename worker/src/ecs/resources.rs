@@ -79,6 +79,7 @@ pub struct Incoming {
     pub asset: Arc<Mutex<Option<PendingAsset>>>,
     pub loading: Arc<Mutex<Option<String>>>,
     pub agent_loads: AgentLoadQueue,
+    pub agent_hdris: AgentLoadQueue,
 }
 
 impl Default for Incoming {
@@ -87,6 +88,7 @@ impl Default for Incoming {
             asset: Arc::new(Mutex::new(None)),
             loading: Arc::new(Mutex::new(None)),
             agent_loads: Arc::new(Mutex::new(Vec::new())),
+            agent_hdris: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }

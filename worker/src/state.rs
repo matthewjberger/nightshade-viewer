@@ -20,6 +20,7 @@ impl State for Viewer {
         systems::browsers::poll(&mut self.viewer);
         systems::load::poll(&mut self.viewer, world);
         systems::load::poll_agent_loads(&mut self.viewer, world);
+        systems::load::poll_agent_hdris(&mut self.viewer, world);
         systems::load::flush_report(&mut self.viewer, world);
         systems::picking::apply(&mut self.viewer, world);
         systems::scene::sync(&mut self.viewer, world);

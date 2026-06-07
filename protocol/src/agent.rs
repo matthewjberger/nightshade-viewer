@@ -86,6 +86,22 @@ pub struct SubscriptionFilter {
     pub entities: Option<Vec<EntityRef>>,
 }
 
+/// Global sky and environment controls, beyond what the UI buttons expose. Every
+/// field is optional; only the set ones are applied.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Environment {
+    /// One of: None, Sky, CloudySky, Space, Nebula, Sunset, DayNight, Hdr.
+    pub atmosphere: Option<String>,
+    pub show_sky: Option<bool>,
+    /// Linear RGBA background used when the atmosphere is None.
+    pub clear_color: Option<[f32; 4]>,
+    /// Hour of day (0..24) for the DayNight atmosphere.
+    pub hour: Option<f32>,
+    pub exposure: Option<f32>,
+    /// Fetch an .hdr from this URL and use it as the skybox (sets atmosphere Hdr).
+    pub hdri_uri: Option<String>,
+}
+
 /// Host to worker. Every variant carries a correlation id except the resync
 /// request, which is keyed by subscription.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -118,6 +134,23 @@ pub enum AgentRequest {
     Resync {
         subscription_id: SubscriptionId,
         known_version: Version,
+    },
+    /// Forward any existing viewer UI action (the same ones the page sends when a
+    /// user clicks a button): grid, shading, animation, framing, variants, add
+    /// primitive or light, and asset-browser grabs (Khronos and Polyhaven).
+    ViewerAction {
+        correlation_id: CorrelationId,
+        message: Box<crate::ClientMessage>,
+    },
+    /// Read the full viewer state: render settings, selection, loaded model, and
+    /// the asset-browser index lists (what is available to grab).
+    GetViewerState {
+        correlation_id: CorrelationId,
+    },
+    /// Set the sky and environment.
+    SetEnvironment {
+        correlation_id: CorrelationId,
+        environment: Environment,
     },
 }
 
@@ -238,6 +271,11 @@ pub enum AgentResponse {
     Unsubscribed {
         correlation_id: CorrelationId,
         subscription_id: SubscriptionId,
+    },
+    /// The current viewer state, including the asset-browser index lists.
+    ViewerState {
+        correlation_id: CorrelationId,
+        state: Value,
     },
     /// One batch per tracking-on frame, broadcast to the host fan-out.
     Batch { batch: DeltaBatch },

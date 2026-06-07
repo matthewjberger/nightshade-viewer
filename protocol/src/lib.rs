@@ -111,7 +111,7 @@ pub struct ClipInfo {
 
 /// Page to worker. Pixel quantities are physical surface pixels (CSS pixels
 /// times the device pixel ratio), origin at the canvas top-left.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMessage {
     /// Sent once with the `OffscreenCanvas` in the transfer list.
     Init {

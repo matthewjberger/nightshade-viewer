@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::{SinkExt, StreamExt};
 use protocol::{
-    AgentCommand, AgentRequest, AgentResponse, CorrelationId, DeltaBatch, EntityRef,
-    SubscriptionFilter, SubscriptionId, Version,
+    AgentCommand, AgentRequest, AgentResponse, ClientMessage, CorrelationId, DeltaBatch, EntityRef,
+    Environment, SubscriptionFilter, SubscriptionId, Version,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -147,7 +147,8 @@ fn response_correlation(response: &AgentResponse) -> Option<CorrelationId> {
         | AgentResponse::CommandFailed { correlation_id, .. }
         | AgentResponse::CommandProgress { correlation_id, .. }
         | AgentResponse::Subscribed { correlation_id, .. }
-        | AgentResponse::Unsubscribed { correlation_id, .. } => Some(*correlation_id),
+        | AgentResponse::Unsubscribed { correlation_id, .. }
+        | AgentResponse::ViewerState { correlation_id, .. } => Some(*correlation_id),
         AgentResponse::Batch { .. }
         | AgentResponse::Replay { .. }
         | AgentResponse::Resnapshot { .. } => None,
@@ -193,7 +194,10 @@ fn request_correlation(request: &AgentRequest) -> CorrelationId {
         | AgentRequest::GetComponents { correlation_id, .. }
         | AgentRequest::Command { correlation_id, .. }
         | AgentRequest::Subscribe { correlation_id, .. }
-        | AgentRequest::Unsubscribe { correlation_id, .. } => *correlation_id,
+        | AgentRequest::Unsubscribe { correlation_id, .. }
+        | AgentRequest::ViewerAction { correlation_id, .. }
+        | AgentRequest::GetViewerState { correlation_id }
+        | AgentRequest::SetEnvironment { correlation_id, .. } => *correlation_id,
         AgentRequest::Resync { .. } => 0,
     }
 }
@@ -357,6 +361,60 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                 .ok_or("missing string field: uri")?
                 .to_string();
             command(shared, AgentCommand::LoadGltf { uri }).await
+        }
+        "viewer_action" => {
+            let action = arguments
+                .get("action")
+                .cloned()
+                .ok_or("missing object field: action")?;
+            let message: ClientMessage = serde_json::from_value(action)
+                .map_err(|error| format!("not a valid viewer action: {error}"))?;
+            let correlation_id = shared.correlation();
+            let response = send_request(
+                shared,
+                AgentRequest::ViewerAction {
+                    correlation_id,
+                    message: Box::new(message),
+                },
+            )
+            .await?;
+            match response {
+                AgentResponse::CommandApplied { version, .. } => {
+                    Ok(json!({ "applied": true, "version": version }).to_string())
+                }
+                AgentResponse::CommandFailed { error, .. } => Err(error),
+                other => Ok(pretty(&response_payload(other))),
+            }
+        }
+        "get_viewer_state" => {
+            let correlation_id = shared.correlation();
+            let response =
+                send_request(shared, AgentRequest::GetViewerState { correlation_id }).await?;
+            if let AgentResponse::ViewerState { state, .. } = response {
+                Ok(pretty(&state))
+            } else {
+                Ok(pretty(&response_payload(response)))
+            }
+        }
+        "set_environment" => {
+            let environment: Environment = serde_json::from_value(arguments)
+                .map_err(|error| format!("invalid environment: {error}"))?;
+            let correlation_id = shared.correlation();
+            let response = send_request(
+                shared,
+                AgentRequest::SetEnvironment {
+                    correlation_id,
+                    environment,
+                },
+            )
+            .await?;
+            match response {
+                AgentResponse::CommandApplied { version, .. } => {
+                    Ok(json!({ "applied": true, "version": version }).to_string())
+                }
+                AgentResponse::CommandFailed { error, .. } => Err(error),
+                other => Ok(pretty(&response_payload(other))),
+            }
         }
         "subscribe" => subscribe_tool(shared, arguments).await,
         "poll_deltas" => poll_deltas_tool(shared, arguments).await,
@@ -703,6 +761,35 @@ fn tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": { "subscription_id": { "type": "integer" } },
                 "required": ["subscription_id"]
+            }
+        }),
+        json!({
+            "name": "get_viewer_state",
+            "description": "Read the full viewer state: render settings (atmosphere, sky, grid, exposure, tonemap, debug overlays), current selection, loaded model counts, and the asset-browser index lists (Khronos models with glb_url, Polyhaven hdris and models with slugs) so you can see what is available to grab. If a list is idle, run a refresh_browsers viewer_action first.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "set_environment",
+            "description": "Set the sky and environment. All fields optional. atmosphere is one of None, Sky, CloudySky, Space, Nebula, Sunset, DayNight, Hdr. hour (0-24) drives the DayNight sun. clear_color is linear RGBA used when atmosphere is None. hdri_uri fetches an .hdr and uses it as the skybox.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "atmosphere": { "type": "string" },
+                    "show_sky": { "type": "boolean" },
+                    "clear_color": { "type": "array", "items": { "type": "number" } },
+                    "hour": { "type": "number" },
+                    "exposure": { "type": "number" },
+                    "hdri_uri": { "type": "string" }
+                }
+            }
+        }),
+        json!({
+            "name": "viewer_action",
+            "description": "Perform any viewer UI action (everything a user can click). The action is an externally tagged ClientMessage object, e.g. {\"SetGrid\":{\"enabled\":false}}, {\"AddPrimitive\":{\"kind\":\"Cube\"}}, {\"AddLight\":{\"kind\":\"Point\"}}, {\"Frame\":null} or \"Frame\", {\"SetTurntable\":{\"enabled\":true}}, {\"SetShadingMode\":{\"mode\":\"Rendered\"}}, {\"SetExposure\":{\"exposure\":1.2}}, {\"SetTonemap\":{\"algorithm\":\"Aces\"}}, {\"SetShowSky\":{\"show\":true}}, {\"SetShowBounds\":{\"enabled\":true}}, {\"SetShowNormals\":{\"enabled\":true}}, {\"SetVariant\":{\"name\":\"red\"}}, {\"SetGizmoMode\":{\"mode\":\"Translate\"}}, {\"PlayAnimation\":{\"index\":0}}, \"PauseAnimation\", \"ResumeAnimation\", \"StopAnimation\", {\"SeekAnimation\":{\"time\":1.0}}, {\"SetAnimationSpeed\":{\"speed\":2.0}}, {\"SetAnimationLoop\":{\"looping\":true}}, {\"Select\":{\"id\":3}}, \"Deselect\", {\"LoadKhronos\":{\"name\":\"Duck\"}}, {\"LoadPolyhaven\":{\"slug\":\"kloofendal_48d_partly_cloudy_puresky\",\"resolution\":2}}, {\"LoadPolyhavenModel\":{\"slug\":\"...\",\"resolution\":2}}, \"RefreshBrowsers\". Use get_viewer_state to discover Khronos and Polyhaven slugs. Khronos and Polyhaven model loads via these actions replace the scene; use load_gltf for additive model loads.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "action": { "description": "An externally tagged ClientMessage." } },
+                "required": ["action"]
             }
         }),
     ]

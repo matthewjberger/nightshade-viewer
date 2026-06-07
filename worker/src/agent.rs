@@ -6,10 +6,11 @@ use nightshade::prelude::serde_json::{self, Value};
 use nightshade::prelude::{ehttp, *};
 use protocol::{
     AgentCommand, AgentRequest, AgentResponse, ComponentInfo, CorrelationId, Delta, DeltaBatch,
-    EntityRef, GetResult, Snapshot, SnapshotEntity, SubscriptionFilter, SubscriptionId, Version,
-    WorkerMessage, WritePolicyInfo,
+    EntityRef, Environment, GetResult, Snapshot, SnapshotEntity, SubscriptionFilter,
+    SubscriptionId, Version, WorkerMessage, WritePolicyInfo,
 };
 
+use crate::ecs::FetchState;
 use crate::post;
 use crate::state::Viewer;
 
@@ -300,6 +301,24 @@ pub fn handle_agent_request(world: &mut World, viewer: &mut Viewer, request: Age
                 subscription_id,
             }));
         }
+        AgentRequest::ViewerAction {
+            correlation_id,
+            message,
+        } => {
+            crate::apply_client_message(world, viewer, *message);
+            ack(correlation_id, current_version());
+        }
+        AgentRequest::GetViewerState { correlation_id } => {
+            let state = build_viewer_state(world, viewer);
+            post(&WorkerMessage::Agent(AgentResponse::ViewerState {
+                correlation_id,
+                state,
+            }));
+        }
+        AgentRequest::SetEnvironment {
+            correlation_id,
+            environment,
+        } => apply_environment(world, viewer, environment, correlation_id),
         AgentRequest::Resync { .. } => {}
     }
 }
@@ -762,4 +781,170 @@ pub fn fail(correlation_id: CorrelationId, error: &str) {
         correlation_id,
         error: error.to_string(),
     }));
+}
+
+/// Acknowledges an agent HDRI load once the skybox has been queued. Called from
+/// the load poll, which holds the viewer the apply systems cannot see.
+pub fn ack_hdri(correlation_id: CorrelationId) {
+    ack(correlation_id, current_version());
+}
+
+fn build_viewer_state(world: &World, viewer: &Viewer) -> Value {
+    let settings = &world.resources.render_settings;
+    let debug = &world.resources.debug_draw;
+    let selection = viewer
+        .viewer
+        .resources
+        .selection
+        .selected
+        .map(|entity| serde_json::to_value(to_ref(entity)).unwrap_or(Value::Null));
+    serde_json::json!({
+        "fps": world.resources.window.timing.frames_per_second,
+        "render": {
+            "atmosphere": format!("{:?}", settings.atmosphere),
+            "show_sky": settings.show_sky,
+            "clear_color": settings.clear_color,
+            "exposure": settings.color_grading.exposure,
+            "tonemap": format!("{:?}", settings.color_grading.tonemap_algorithm),
+            "show_grid": debug.show_grid,
+            "show_normals": debug.show_normals,
+            "show_bounds": debug.show_bounding_volumes,
+            "pbr_debug": format!("{:?}", debug.pbr_debug_mode),
+        },
+        "model": {
+            "roots": viewer.viewer.resources.model.roots.len(),
+            "entities": viewer.viewer.resources.model.entities.len(),
+        },
+        "selected": selection,
+        "assets": {
+            "khronos": khronos_list(viewer),
+            "hdris": polyhaven_list(&viewer.viewer.resources.browsers.hdris),
+            "models": polyhaven_list(&viewer.viewer.resources.browsers.models),
+        },
+    })
+}
+
+fn khronos_list(viewer: &Viewer) -> Value {
+    let Ok(state) = viewer.viewer.resources.browsers.khronos.lock() else {
+        return Value::Null;
+    };
+    match &*state {
+        FetchState::Loaded(entries) => Value::Array(
+            entries
+                .iter()
+                .map(|asset| {
+                    serde_json::json!({
+                        "name": asset.name,
+                        "label": asset.label,
+                        "glb_url": asset.glb_url,
+                    })
+                })
+                .collect(),
+        ),
+        FetchState::Loading => Value::String("loading".to_string()),
+        FetchState::Failed => Value::String("failed".to_string()),
+        FetchState::Idle => Value::String("idle (call refresh_browsers)".to_string()),
+    }
+}
+
+fn polyhaven_list(
+    handle: &std::sync::Arc<std::sync::Mutex<FetchState<Vec<crate::ecs::PolyAsset>>>>,
+) -> Value {
+    let Ok(state) = handle.lock() else {
+        return Value::Null;
+    };
+    match &*state {
+        FetchState::Loaded(entries) => Value::Array(
+            entries
+                .iter()
+                .map(|asset| serde_json::json!({ "slug": asset.slug, "name": asset.name }))
+                .collect(),
+        ),
+        FetchState::Loading => Value::String("loading".to_string()),
+        FetchState::Failed => Value::String("failed".to_string()),
+        FetchState::Idle => Value::String("idle (call refresh_browsers)".to_string()),
+    }
+}
+
+fn apply_environment(
+    world: &mut World,
+    viewer: &mut Viewer,
+    environment: Environment,
+    correlation_id: CorrelationId,
+) {
+    if let Some(show) = environment.show_sky {
+        world.resources.render_settings.show_sky = show;
+    }
+    if let Some(color) = environment.clear_color {
+        world.resources.render_settings.clear_color = color;
+    }
+    if let Some(exposure) = environment.exposure {
+        world.resources.render_settings.color_grading.exposure = exposure;
+    }
+    if let Some(hour) = environment.hour {
+        world.resources.renderer_state.day_night.hour = hour;
+    }
+    if let Some(name) = &environment.atmosphere {
+        let Some(atmosphere) = parse_atmosphere(name) else {
+            fail(correlation_id, &format!("unknown atmosphere: {name}"));
+            return;
+        };
+        world.resources.render_settings.atmosphere = atmosphere;
+        if is_procedural(atmosphere) {
+            let hour = world.resources.renderer_state.day_night.hour;
+            capture_procedural_atmosphere_ibl(world, atmosphere, hour);
+        }
+    }
+    if let Some(uri) = environment.hdri_uri {
+        world.resources.render_settings.atmosphere = Atmosphere::Hdr;
+        start_hdri(viewer, &uri, correlation_id);
+        return;
+    }
+    ack(correlation_id, current_version());
+}
+
+fn start_hdri(viewer: &mut Viewer, uri: &str, correlation_id: CorrelationId) {
+    post(&WorkerMessage::Agent(AgentResponse::CommandProgress {
+        correlation_id,
+        stage: format!("fetching {uri}"),
+    }));
+    let queue = viewer.viewer.resources.incoming.agent_hdris.clone();
+    ehttp::fetch(ehttp::Request::get(uri), move |result| match result {
+        Ok(response) if response.ok => {
+            if let Ok(mut guard) = queue.lock() {
+                guard.push((correlation_id, response.bytes));
+            }
+        }
+        Ok(response) => fail(
+            correlation_id,
+            &format!("fetch failed: {}", response.status),
+        ),
+        Err(error) => fail(correlation_id, &format!("fetch error: {error}")),
+    });
+}
+
+fn parse_atmosphere(name: &str) -> Option<Atmosphere> {
+    match name.to_lowercase().replace(['_', ' ', '-'], "").as_str() {
+        "none" => Some(Atmosphere::None),
+        "sky" => Some(Atmosphere::Sky),
+        "cloudysky" | "cloudy" => Some(Atmosphere::CloudySky),
+        "space" => Some(Atmosphere::Space),
+        "nebula" => Some(Atmosphere::Nebula),
+        "sunset" => Some(Atmosphere::Sunset),
+        "daynight" => Some(Atmosphere::DayNight),
+        "hdr" => Some(Atmosphere::Hdr),
+        _ => None,
+    }
+}
+
+fn is_procedural(atmosphere: Atmosphere) -> bool {
+    matches!(
+        atmosphere,
+        Atmosphere::Sky
+            | Atmosphere::CloudySky
+            | Atmosphere::Space
+            | Atmosphere::Nebula
+            | Atmosphere::Sunset
+            | Atmosphere::DayNight
+    )
 }
