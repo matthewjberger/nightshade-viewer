@@ -67,6 +67,10 @@ pub enum AgentCommand {
     SelectNode {
         entity: EntityRef,
     },
+    /// Make the given camera entity the active viewport camera.
+    SetActiveCamera {
+        entity: EntityRef,
+    },
     /// Browse-and-grab a Polyhaven model by slug, loaded additively.
     LoadPolyhavenModel {
         slug: String,

@@ -522,6 +522,16 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             )
             .await
         }
+        "set_active_camera" => {
+            let typed: args::Entity = parse(arguments)?;
+            command(
+                shared,
+                AgentCommand::SetActiveCamera {
+                    entity: typed.entity,
+                },
+            )
+            .await
+        }
         "load_gltf" => {
             let typed: args::LoadGltf = parse(arguments)?;
             spawn_command(shared, AgentCommand::LoadGltf { uri: typed.uri }).await
@@ -925,6 +935,10 @@ fn tool_definitions() -> Vec<Value> {
         tool::<args::Entity>(
             "select_node",
             "Select an entity in the viewer (drives the inspector and gizmo).",
+        ),
+        tool::<args::Entity>(
+            "set_active_camera",
+            "Make a camera entity the active viewport camera. Query entities with a camera component to find one. The viewer always keeps a controllable pan-orbit camera alive, so use this to switch between cameras you have spawned or loaded.",
         ),
         tool::<args::LoadGltf>(
             "load_gltf",

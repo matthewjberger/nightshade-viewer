@@ -384,7 +384,7 @@ fn handle_command(
         },
         AgentCommand::ClearScene => {
             crate::systems::load::despawn_current(&mut viewer.viewer, world);
-            crate::systems::setup::ensure_camera(world);
+            crate::systems::camera::ensure_active(world);
             ack(correlation_id, current_version());
         }
         AgentCommand::LoadGltf { uri } => start_load(viewer, &uri, correlation_id),
@@ -516,6 +516,14 @@ fn apply_command(
         AgentCommand::DeleteEntity { entity } => {
             let handle = live(world, entity).ok_or("entity not live")?;
             nightshade::ecs::world::commands::despawn_recursive_immediate(world, handle);
+            Ok(())
+        }
+        AgentCommand::SetActiveCamera { entity } => {
+            let handle = live(world, entity).ok_or("entity not live")?;
+            if !world.core.entity_has_components(handle, CAMERA) {
+                return Err("entity is not a camera".to_string());
+            }
+            world.resources.active_camera = Some(handle);
             Ok(())
         }
         AgentCommand::ClearScene

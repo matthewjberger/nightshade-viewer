@@ -4,6 +4,34 @@ use nightshade::prelude::*;
 /// Angular speed of the turntable: one full revolution every twenty seconds.
 const TURNTABLE_RADIANS_PER_SECOND: f32 = std::f32::consts::TAU / 20.0;
 
+/// Guarantees a controllable active camera every frame. If the active camera is
+/// missing or has been despawned (an agent can delete or clear the entity that
+/// held it), a fresh pan-orbit camera is spawned and made active so viewer
+/// control is never lost.
+pub fn ensure_active(world: &mut World) {
+    let valid = world
+        .resources
+        .active_camera
+        .is_some_and(|camera| world.core.entity_has_components(camera, CAMERA));
+    if valid {
+        return;
+    }
+    let camera = spawn_pan_orbit_camera(
+        world,
+        Vec3::new(0.0, 0.0, 0.0),
+        4.0,
+        0.7,
+        0.5,
+        "Camera".to_string(),
+    );
+    world.resources.active_camera = Some(camera);
+    world.core.add_components(camera, VIEWPORT_SHADING);
+    world.core.set_viewport_shading(
+        camera,
+        nightshade::ecs::camera::components::ViewportShading::default(),
+    );
+}
+
 /// Runs the engine pan-orbit controller (which reads the forwarded pointer
 /// input and respects the gizmo's `hud_wants_pointer`), frames the model when
 /// requested, and advances the turntable when it is enabled.

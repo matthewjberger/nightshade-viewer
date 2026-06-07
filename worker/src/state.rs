@@ -15,6 +15,7 @@ impl State for Viewer {
     }
 
     fn run_systems(&mut self, world: &mut World) {
+        systems::camera::ensure_active(world);
         systems::camera::update(&mut self.viewer, world);
         systems::browsers::ensure_indices(&self.viewer);
         systems::browsers::poll(&mut self.viewer);
