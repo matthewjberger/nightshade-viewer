@@ -211,18 +211,16 @@ fn registry() -> Vec<ComponentEntry> {
     ]
 }
 
-/// Per-worker agent state. Lives in a `thread_local` because the collection and
-/// apply systems are `fn(&mut World)` and cannot carry it.
+/// Per-worker agent state. Lives in a `thread_local` because the collection
+/// system is `fn(&mut World)` and cannot carry it.
 #[derive(Default)]
 struct AgentState {
-    inbound: Vec<(CorrelationId, AgentCommand)>,
     pending_subscribes: Vec<(CorrelationId, SubscriptionFilter)>,
     subscriptions: HashMap<SubscriptionId, SubscriptionFilter>,
     next_subscription_id: SubscriptionId,
     version: Version,
     shadow: HashMap<Entity, u64>,
     baseline_set: bool,
-    applied_this_frame: Vec<CorrelationId>,
 }
 
 thread_local! {
@@ -232,16 +230,12 @@ thread_local! {
     });
 }
 
-/// Inserts the agent systems into the engine frame schedule. Apply runs before
-/// transform propagation so cascades resolve the same frame; collection runs
-/// last so it sees every mutation in this frame's change-detection window.
+/// Inserts the agent delta-collection system last in the frame schedule, so it
+/// sees every mutation in this frame's change-detection window. Commands apply
+/// immediately when their request arrives (between frames), so acknowledgement
+/// never waits on a render tick; this system only diffs the world for
+/// subscribers.
 pub fn install_systems(world: &mut World) {
-    schedule_insert_before(
-        &mut world.resources.schedules.frame,
-        system_names::TRANSFORM_SYSTEMS,
-        "agent_apply",
-        agent_apply_system,
-    );
     schedule_push(
         &mut world.resources.schedules.frame,
         "agent_collect",
@@ -249,9 +243,10 @@ pub fn install_systems(world: &mut World) {
     );
 }
 
-/// Routes one agent request. Reads answer immediately from the idle world;
-/// mutating commands queue for the apply system; select and load need the
-/// viewer resources and run here.
+/// Routes one agent request. Everything runs immediately against the idle world
+/// the moment the request arrives: reads answer in place, mutating commands
+/// apply and acknowledge here (no wait for a render frame), and loads kick off
+/// their fetch. Only delta collection for subscribers stays on the frame.
 pub fn handle_agent_request(world: &mut World, viewer: &mut Viewer, request: AgentRequest) {
     match request {
         AgentRequest::ListComponentTypes { correlation_id } => {
@@ -359,6 +354,13 @@ pub fn handle_agent_request(world: &mut World, viewer: &mut Viewer, request: Age
                 materials,
             }));
         }
+        AgentRequest::ListAssets { correlation_id } => {
+            let assets = build_assets(viewer);
+            post(&WorkerMessage::Agent(AgentResponse::Assets {
+                correlation_id,
+                assets,
+            }));
+        }
         AgentRequest::Resync { .. } => {}
     }
 }
@@ -407,7 +409,13 @@ fn handle_command(
                 Err(error) => fail(correlation_id, &error),
             }
         }
-        other => AGENT.with(|agent| agent.borrow_mut().inbound.push((correlation_id, other))),
+        other => {
+            let registry = registry();
+            match apply_command(world, &registry, other) {
+                Ok(()) => ack(correlation_id, current_version()),
+                Err(error) => fail(correlation_id, &error),
+            }
+        }
     }
 }
 
@@ -440,22 +448,6 @@ pub fn ack_load(correlation_id: CorrelationId, roots: &[Entity]) {
         version: current_version(),
         roots: roots.iter().map(|entity| to_ref(*entity)).collect(),
     }));
-}
-
-fn agent_apply_system(world: &mut World) {
-    let commands = AGENT.with(|agent| std::mem::take(&mut agent.borrow_mut().inbound));
-    if commands.is_empty() {
-        return;
-    }
-    let registry = registry();
-    for (correlation_id, command) in commands {
-        match apply_command(world, &registry, command) {
-            Ok(()) => {
-                AGENT.with(|agent| agent.borrow_mut().applied_this_frame.push(correlation_id))
-            }
-            Err(error) => fail(correlation_id, &error),
-        }
-    }
 }
 
 fn apply_command(
@@ -533,14 +525,8 @@ fn agent_collect_system(world: &mut World) {
     AGENT.with(|agent| {
         let mut state = agent.borrow_mut();
         let pending = std::mem::take(&mut state.pending_subscribes);
-        let applied = std::mem::take(&mut state.applied_this_frame);
 
         if state.subscriptions.is_empty() && pending.is_empty() {
-            let version = state.version;
-            drop(state);
-            for correlation_id in applied {
-                ack(correlation_id, version);
-            }
             return;
         }
 
@@ -580,9 +566,6 @@ fn agent_collect_system(world: &mut World) {
         state.shadow = current;
         state.baseline_set = true;
         state.version = new_version;
-        for correlation_id in applied {
-            ack(correlation_id, new_version);
-        }
     });
 }
 
@@ -921,12 +904,16 @@ fn list_materials(world: &World) -> Value {
 fn build_viewer_state(world: &World, viewer: &Viewer) -> Value {
     let settings = &world.resources.render_settings;
     let debug = &world.resources.debug_draw;
-    let selection = viewer
-        .viewer
-        .resources
-        .selection
-        .selected
-        .map(|entity| serde_json::to_value(to_ref(entity)).unwrap_or(Value::Null));
+    let selection = viewer.viewer.resources.selection.selected.map(|entity| {
+        serde_json::json!({
+            "entity": to_ref(entity),
+            "name": world.core.get_name(entity).map(|name| name.0.clone()),
+            "local_transform": world
+                .core
+                .get_local_transform(entity)
+                .and_then(|transform| serde_json::to_value(transform).ok()),
+        })
+    });
     serde_json::json!({
         "fps": world.resources.window.timing.frames_per_second,
         "render": {
@@ -945,11 +932,14 @@ fn build_viewer_state(world: &World, viewer: &Viewer) -> Value {
             "entities": viewer.viewer.resources.model.entities.len(),
         },
         "selected": selection,
-        "assets": {
-            "khronos": khronos_list(viewer),
-            "hdris": polyhaven_list(&viewer.viewer.resources.browsers.hdris),
-            "models": polyhaven_list(&viewer.viewer.resources.browsers.models),
-        },
+    })
+}
+
+fn build_assets(viewer: &Viewer) -> Value {
+    serde_json::json!({
+        "khronos": khronos_list(viewer),
+        "hdris": polyhaven_list(&viewer.viewer.resources.browsers.hdris),
+        "models": polyhaven_list(&viewer.viewer.resources.browsers.models),
     })
 }
 

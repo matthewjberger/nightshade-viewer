@@ -48,7 +48,7 @@ Three steps:
    claude mcp add nightshade-viewer -- C:\Users\matth\code\nightshade-viewer\host\target\debug\nightshade-mcp.exe
    ```
 
-   You run this **once**. After that Claude Code spawns and owns the `nightshade-mcp.exe` process itself (over stdio) every time it starts — you never launch the bridge by hand. The bridge binds `ws://127.0.0.1:8787`; the agent-enabled page reconnects automatically, so start order does not matter. To stop it, `claude mcp remove nightshade-viewer`.
+   You run this **once**. After that Claude Code spawns and owns the `nightshade-mcp.exe` process itself (over stdio) every time it starts. You never launch the bridge by hand. The bridge binds `ws://127.0.0.1:8787`; the agent-enabled page reconnects automatically, so start order does not matter. To stop it, `claude mcp remove nightshade-viewer`.
 
 The worker and the page must share the same `agent` setting; the `*-agent` recipes handle that. See [docs/agent-mcp.md](docs/agent-mcp.md) for the architecture, the full MCP tool surface, and how to drive it.
 

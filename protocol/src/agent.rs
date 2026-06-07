@@ -178,8 +178,9 @@ pub enum AgentRequest {
         correlation_id: CorrelationId,
         message: Box<crate::ClientMessage>,
     },
-    /// Read the full viewer state: render settings, selection, loaded model, and
-    /// the asset-browser index lists (what is available to grab).
+    /// Read the viewer state: render settings, the current selection (with its
+    /// name and transform), and loaded-model counts. The asset catalog is
+    /// separate (see ListAssets) so this stays small.
     GetViewerState {
         correlation_id: CorrelationId,
     },
@@ -195,6 +196,12 @@ pub enum AgentRequest {
     },
     /// List every material in the library with its core PBR properties.
     ListMaterials {
+        correlation_id: CorrelationId,
+    },
+    /// The asset-browser index lists (Khronos models, Polyhaven HDRIs and
+    /// models). Split out of the viewer state because the catalog is large and
+    /// rarely needed.
+    ListAssets {
         correlation_id: CorrelationId,
     },
 }
@@ -324,7 +331,7 @@ pub enum AgentResponse {
         correlation_id: CorrelationId,
         subscription_id: SubscriptionId,
     },
-    /// The current viewer state, including the asset-browser index lists.
+    /// The current viewer state (render settings, selection, model counts).
     ViewerState {
         correlation_id: CorrelationId,
         state: Value,
@@ -333,6 +340,11 @@ pub enum AgentResponse {
     Materials {
         correlation_id: CorrelationId,
         materials: Value,
+    },
+    /// The asset-browser index lists.
+    Assets {
+        correlation_id: CorrelationId,
+        assets: Value,
     },
     /// One batch per tracking-on frame, broadcast to the host fan-out.
     Batch { batch: DeltaBatch },

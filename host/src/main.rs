@@ -155,7 +155,8 @@ fn response_correlation(response: &AgentResponse) -> Option<CorrelationId> {
         | AgentResponse::Subscribed { correlation_id, .. }
         | AgentResponse::Unsubscribed { correlation_id, .. }
         | AgentResponse::ViewerState { correlation_id, .. }
-        | AgentResponse::Materials { correlation_id, .. } => Some(*correlation_id),
+        | AgentResponse::Materials { correlation_id, .. }
+        | AgentResponse::Assets { correlation_id, .. } => Some(*correlation_id),
         AgentResponse::Batch { .. }
         | AgentResponse::Replay { .. }
         | AgentResponse::Resnapshot { .. } => None,
@@ -206,7 +207,8 @@ fn request_correlation(request: &AgentRequest) -> CorrelationId {
         | AgentRequest::GetViewerState { correlation_id }
         | AgentRequest::SetEnvironment { correlation_id, .. }
         | AgentRequest::SetMaterial { correlation_id, .. }
-        | AgentRequest::ListMaterials { correlation_id } => *correlation_id,
+        | AgentRequest::ListMaterials { correlation_id }
+        | AgentRequest::ListAssets { correlation_id } => *correlation_id,
         AgentRequest::Resync { .. } => 0,
     }
 }
@@ -417,7 +419,7 @@ fn applied_result(response: AgentResponse) -> Result<String, String> {
             Ok(json!({ "applied": true, "version": version }).to_string())
         }
         AgentResponse::CommandFailed { error, .. } => Err(error),
-        other => Ok(pretty(&response_payload(other))),
+        other => Ok(compact(&response_payload(other))),
     }
 }
 
@@ -427,7 +429,7 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             let correlation_id = shared.correlation();
             let response =
                 send_request(shared, AgentRequest::ListComponentTypes { correlation_id }).await?;
-            Ok(pretty(&response_payload(response)))
+            Ok(compact(&response_payload(response)))
         }
         "query" => {
             let typed: args::Query = parse(arguments)?;
@@ -440,7 +442,7 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                 },
             )
             .await?;
-            Ok(pretty(&response_payload(response)))
+            Ok(compact(&response_payload(response)))
         }
         "get_components" => {
             let typed: args::GetComponents = parse(arguments)?;
@@ -454,7 +456,7 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                 },
             )
             .await?;
-            Ok(pretty(&response_payload(response)))
+            Ok(compact(&response_payload(response)))
         }
         "spawn_entity" => {
             let typed: args::Spawn = parse(arguments)?;
@@ -541,9 +543,9 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             let response =
                 send_request(shared, AgentRequest::GetViewerState { correlation_id }).await?;
             if let AgentResponse::ViewerState { state, .. } = response {
-                Ok(pretty(&state))
+                Ok(compact(&state))
             } else {
-                Ok(pretty(&response_payload(response)))
+                Ok(compact(&response_payload(response)))
             }
         }
         "set_environment" => {
@@ -614,9 +616,19 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             let response =
                 send_request(shared, AgentRequest::ListMaterials { correlation_id }).await?;
             if let AgentResponse::Materials { materials, .. } = response {
-                Ok(pretty(&materials))
+                Ok(compact(&materials))
             } else {
-                Ok(pretty(&response_payload(response)))
+                Ok(compact(&response_payload(response)))
+            }
+        }
+        "list_assets" => {
+            let correlation_id = shared.correlation();
+            let response =
+                send_request(shared, AgentRequest::ListAssets { correlation_id }).await?;
+            if let AgentResponse::Assets { assets, .. } = response {
+                Ok(compact(&assets))
+            } else {
+                Ok(compact(&response_payload(response)))
             }
         }
         "subscribe" => {
@@ -688,7 +700,7 @@ async fn batch_tool(shared: &Arc<Shared>, arguments: Value) -> Result<String, St
             }
         }
     }
-    Ok(serde_json::to_string_pretty(&Value::Array(report)).unwrap_or_default())
+    Ok(serde_json::to_string(&Value::Array(report)).unwrap_or_default())
 }
 
 /// Replaces every {"$ref":"<index>.<path>"} placeholder in `value` with the
@@ -753,7 +765,7 @@ async fn spawn_command(shared: &Arc<Shared>, command: AgentCommand) -> Result<St
             Ok(json!({ "applied": true, "version": version, "roots": roots }).to_string())
         }
         AgentResponse::CommandFailed { error, .. } => Err(error),
-        other => Ok(pretty(&response_payload(other))),
+        other => Ok(compact(&response_payload(other))),
     }
 }
 
@@ -791,7 +803,7 @@ async fn subscribe_tool(
             .to_string())
         }
         AgentResponse::CommandFailed { error, .. } => Err(error),
-        other => Ok(pretty(&response_payload(other))),
+        other => Ok(compact(&response_payload(other))),
     }
 }
 
@@ -842,7 +854,7 @@ async fn unsubscribe_tool(shared: &Arc<Shared>, subscription_id: u64) -> Result<
         },
     )
     .await?;
-    Ok(pretty(&response_payload(response)))
+    Ok(compact(&response_payload(response)))
 }
 
 fn filter_batch(batch: &DeltaBatch, filter: &SubscriptionFilter) -> DeltaBatch {
@@ -933,9 +945,13 @@ fn tool_definitions() -> Vec<Value> {
             "list_materials",
             "List every material in the library with its core PBR properties.",
         ),
+        tool::<args::Empty>(
+            "list_assets",
+            "List the asset catalog the viewer can grab: Khronos models (with glb_url), Polyhaven hdris and models (with slugs). Large, so call it only when browsing; it is not part of get_viewer_state. If a list reads idle, run a RefreshBrowsers viewer_action first.",
+        ),
         tool::<args::LoadPolyhavenModel>(
             "load_polyhaven_model",
-            "Grab a Polyhaven model by slug (from get_viewer_state's models list) and load it additively, returning the spawned root handle(s) to position with set_components.",
+            "Grab a Polyhaven model by slug (from list_assets' models list) and load it additively, returning the spawned root handle(s) to position with set_components.",
         ),
         tool::<SubscriptionFilter>(
             "subscribe",
@@ -948,7 +964,7 @@ fn tool_definitions() -> Vec<Value> {
         tool::<args::SubscriptionId>("unsubscribe", "Tear down a subscription."),
         tool::<args::Empty>(
             "get_viewer_state",
-            "Read render settings, current selection, loaded model counts, and the asset-browser lists (Khronos models with glb_url, Polyhaven hdris and models with slugs).",
+            "Read render settings, the current selection (entity handle plus its name and local_transform), and loaded-model counts. Small and cheap; this is the one call for questions like what is selected. The asset catalog is separate (list_assets).",
         ),
         tool::<Environment>(
             "set_environment",
@@ -956,7 +972,7 @@ fn tool_definitions() -> Vec<Value> {
         ),
         tool::<args::ViewerAction>(
             "viewer_action",
-            "Perform any viewer UI action (everything a user can click), e.g. {\"SetGrid\":{\"enabled\":false}}, {\"SetTurntable\":{\"enabled\":true}}, {\"SetShadingMode\":{\"mode\":\"Rendered\"}}, {\"PlayAnimation\":{\"index\":0}}, \"Frame\", {\"LoadPolyhaven\":{\"slug\":\"...\",\"resolution\":2}}, \"RefreshBrowsers\". Use get_viewer_state to discover slugs.",
+            "Perform any viewer UI action (everything a user can click), e.g. {\"SetGrid\":{\"enabled\":false}}, {\"SetTurntable\":{\"enabled\":true}}, {\"SetShadingMode\":{\"mode\":\"Rendered\"}}, {\"PlayAnimation\":{\"index\":0}}, \"Frame\", {\"LoadPolyhaven\":{\"slug\":\"...\",\"resolution\":2}}, \"RefreshBrowsers\". Use list_assets to discover slugs.",
         ),
     ]
 }
@@ -969,8 +985,8 @@ fn rpc_error(id: Option<Value>, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id.unwrap_or(Value::Null), "error": { "code": code, "message": message } })
 }
 
-fn pretty(value: &Value) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
+fn compact(value: &Value) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
 }
 
 fn log(message: &str) {
