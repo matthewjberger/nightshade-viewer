@@ -165,7 +165,7 @@ pub(crate) fn apply_client_message(world: &mut World, viewer: &mut Viewer, messa
             systems::spawn::add_primitive(&mut viewer.viewer, world, kind);
         }
         ClientMessage::AddLight { kind } => {
-            systems::spawn::add_light(&mut viewer.viewer, world, kind);
+            systems::spawn::add_light(&mut viewer.viewer, world, kind, true);
         }
         ClientMessage::SetTransform {
             id,

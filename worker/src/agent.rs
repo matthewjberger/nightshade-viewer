@@ -403,7 +403,7 @@ fn handle_command(
             }
         }
         AgentCommand::AddLight { kind, components } => {
-            let entity = crate::systems::spawn::add_light(&mut viewer.viewer, world, kind);
+            let entity = crate::systems::spawn::add_light(&mut viewer.viewer, world, kind, false);
             match apply_bag(world, &registry(), entity, &components) {
                 Ok(()) => spawned(correlation_id, entity),
                 Err(error) => fail(correlation_id, &error),
