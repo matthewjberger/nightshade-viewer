@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use futures_util::{SinkExt, StreamExt};
 use protocol::{
     AgentCommand, AgentRequest, AgentResponse, ClientMessage, CorrelationId, DeltaBatch, EntityRef,
-    Environment, SubscriptionFilter, SubscriptionId, Version,
+    Environment, LightKind, MaterialSpec, PrimitiveKind, SubscriptionFilter, SubscriptionId,
+    Version,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -153,7 +154,8 @@ fn response_correlation(response: &AgentResponse) -> Option<CorrelationId> {
         | AgentResponse::CommandProgress { correlation_id, .. }
         | AgentResponse::Subscribed { correlation_id, .. }
         | AgentResponse::Unsubscribed { correlation_id, .. }
-        | AgentResponse::ViewerState { correlation_id, .. } => Some(*correlation_id),
+        | AgentResponse::ViewerState { correlation_id, .. }
+        | AgentResponse::Materials { correlation_id, .. } => Some(*correlation_id),
         AgentResponse::Batch { .. }
         | AgentResponse::Replay { .. }
         | AgentResponse::Resnapshot { .. } => None,
@@ -202,7 +204,9 @@ fn request_correlation(request: &AgentRequest) -> CorrelationId {
         | AgentRequest::Unsubscribe { correlation_id, .. }
         | AgentRequest::ViewerAction { correlation_id, .. }
         | AgentRequest::GetViewerState { correlation_id }
-        | AgentRequest::SetEnvironment { correlation_id, .. } => *correlation_id,
+        | AgentRequest::SetEnvironment { correlation_id, .. }
+        | AgentRequest::SetMaterial { correlation_id, .. }
+        | AgentRequest::ListMaterials { correlation_id } => *correlation_id,
         AgentRequest::Resync { .. } => 0,
     }
 }
@@ -472,6 +476,59 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                 other => Ok(pretty(&response_payload(other))),
             }
         }
+        "add_primitive" => {
+            let kind: PrimitiveKind = serde_json::from_value(
+                arguments
+                    .get("kind")
+                    .cloned()
+                    .ok_or("missing field: kind")?,
+            )
+            .map_err(|error| format!("invalid primitive kind: {error}"))?;
+            spawn_command(shared, AgentCommand::AddPrimitive { kind }).await
+        }
+        "add_light" => {
+            let kind: LightKind = serde_json::from_value(
+                arguments
+                    .get("kind")
+                    .cloned()
+                    .ok_or("missing field: kind")?,
+            )
+            .map_err(|error| format!("invalid light kind: {error}"))?;
+            spawn_command(shared, AgentCommand::AddLight { kind }).await
+        }
+        "set_material" => {
+            let material: MaterialSpec = serde_json::from_value(arguments)
+                .map_err(|error| format!("invalid material: {error}"))?;
+            if material.name.is_empty() {
+                return Err("material name is required".to_string());
+            }
+            let correlation_id = shared.correlation();
+            let response = send_request(
+                shared,
+                AgentRequest::SetMaterial {
+                    correlation_id,
+                    material,
+                },
+            )
+            .await?;
+            match response {
+                AgentResponse::CommandApplied { version, .. } => {
+                    Ok(json!({ "applied": true, "version": version }).to_string())
+                }
+                AgentResponse::CommandFailed { error, .. } => Err(error),
+                other => Ok(pretty(&response_payload(other))),
+            }
+        }
+        "list_materials" => {
+            let correlation_id = shared.correlation();
+            let response =
+                send_request(shared, AgentRequest::ListMaterials { correlation_id }).await?;
+            if let AgentResponse::Materials { materials, .. } = response {
+                Ok(pretty(&materials))
+            } else {
+                Ok(pretty(&response_payload(response)))
+            }
+        }
         "subscribe" => subscribe_tool(shared, arguments).await,
         "poll_deltas" => poll_deltas_tool(shared, arguments).await,
         "unsubscribe" => unsubscribe_tool(shared, arguments).await,
@@ -492,6 +549,25 @@ async fn command(shared: &Arc<Shared>, command: AgentCommand) -> Result<String, 
     match response {
         AgentResponse::CommandApplied { version, .. } => {
             Ok(json!({ "applied": true, "version": version }).to_string())
+        }
+        AgentResponse::CommandFailed { error, .. } => Err(error),
+        other => Ok(pretty(&response_payload(other))),
+    }
+}
+
+async fn spawn_command(shared: &Arc<Shared>, command: AgentCommand) -> Result<String, String> {
+    let correlation_id = shared.correlation();
+    let response = send_request(
+        shared,
+        AgentRequest::Command {
+            correlation_id,
+            command,
+        },
+    )
+    .await?;
+    match response {
+        AgentResponse::Loaded { version, roots, .. } => {
+            Ok(json!({ "applied": true, "version": version, "roots": roots }).to_string())
         }
         AgentResponse::CommandFailed { error, .. } => Err(error),
         other => Ok(pretty(&response_payload(other))),
@@ -788,6 +864,48 @@ fn tool_definitions() -> Vec<Value> {
                 "properties": { "uri": { "type": "string" } },
                 "required": ["uri"]
             }
+        }),
+        json!({
+            "name": "add_primitive",
+            "description": "Spawn a parametric primitive mesh (Cube, Sphere, Cylinder, Cone, Torus, Plane) and return its root handle to position with set_components. New primitives use the default gray material; assign a material with set_material + set_components material_ref to color them.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "kind": { "type": "string", "enum": ["Cube", "Sphere", "Cylinder", "Cone", "Torus", "Plane"] } },
+                "required": ["kind"]
+            }
+        }),
+        json!({
+            "name": "add_light",
+            "description": "Spawn a light (Directional, Point, or Spot) with a visible marker and return its handle.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "kind": { "type": "string", "enum": ["Directional", "Point", "Spot"] } },
+                "required": ["kind"]
+            }
+        }),
+        json!({
+            "name": "set_material",
+            "description": "Create or edit a named material in the library, then assign it to entities with set_components material_ref {\"name\":\"<name>\"}. Only the fields you set are written, so editing keeps the rest (including textures). base_color is linear RGBA.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" },
+                    "base_color": { "type": "array", "items": { "type": "number" } },
+                    "metallic": { "type": "number" },
+                    "roughness": { "type": "number" },
+                    "emissive_factor": { "type": "array", "items": { "type": "number" } },
+                    "emissive_strength": { "type": "number" },
+                    "unlit": { "type": "boolean" },
+                    "double_sided": { "type": "boolean" },
+                    "base_texture": { "type": "string" }
+                },
+                "required": ["name"]
+            }
+        }),
+        json!({
+            "name": "list_materials",
+            "description": "List every material in the library with its core PBR properties. Use it to find the name of a loaded model's material (also visible via get_components material_ref) so you can edit it.",
+            "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
             "name": "load_polyhaven_model",

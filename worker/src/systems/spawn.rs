@@ -4,8 +4,8 @@ use nightshade::ecs::material::components::Material;
 use nightshade::prelude::*;
 use protocol::{LightKind, PrimitiveKind};
 
-/// Spawns a primitive mesh at the camera focus, then selects it.
-pub fn add_primitive(viewer: &mut ViewerWorld, world: &mut World, kind: PrimitiveKind) {
+/// Spawns a primitive mesh at the camera focus, selects it, and returns it.
+pub fn add_primitive(viewer: &mut ViewerWorld, world: &mut World, kind: PrimitiveKind) -> Entity {
     let position = focus(world);
     let entity = match kind {
         PrimitiveKind::Cube => spawn_cube_at(world, position),
@@ -16,11 +16,12 @@ pub fn add_primitive(viewer: &mut ViewerWorld, world: &mut World, kind: Primitiv
         PrimitiveKind::Plane => spawn_plane_at(world, position),
     };
     register(viewer, world, entity);
+    entity
 }
 
 /// Spawns a light above the camera focus, marked by a small emissive sphere so
-/// it is visible and pickable in the viewport, then selects it.
-pub fn add_light(viewer: &mut ViewerWorld, world: &mut World, kind: LightKind) {
+/// it is visible and pickable in the viewport, selects it, and returns it.
+pub fn add_light(viewer: &mut ViewerWorld, world: &mut World, kind: LightKind) -> Entity {
     let position = focus(world) + Vec3::new(0.0, 2.0, 0.0);
     let color = Vec3::new(1.0, 0.95, 0.8);
     let (name, light_type, intensity, range) = match kind {
@@ -61,6 +62,7 @@ pub fn add_light(viewer: &mut ViewerWorld, world: &mut World, kind: LightKind) {
         },
     );
     register(viewer, world, entity);
+    entity
 }
 
 /// The world-space point the active pan-orbit camera orbits, or the origin.

@@ -1,12 +1,13 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
+use nightshade::ecs::material::resources::{material_registry_insert, material_registry_iter};
 use nightshade::ecs::transform::components::{LocalTransform, Parent};
 use nightshade::prelude::serde_json::{self, Value};
 use nightshade::prelude::{ehttp, *};
 use protocol::{
     AgentCommand, AgentRequest, AgentResponse, ComponentInfo, CorrelationId, Delta, DeltaBatch,
-    EntityRef, Environment, GetResult, Snapshot, SnapshotEntity, SubscriptionFilter,
+    EntityRef, Environment, GetResult, MaterialSpec, Snapshot, SnapshotEntity, SubscriptionFilter,
     SubscriptionId, Version, WorkerMessage, WritePolicyInfo,
 };
 
@@ -319,6 +320,17 @@ pub fn handle_agent_request(world: &mut World, viewer: &mut Viewer, request: Age
             correlation_id,
             environment,
         } => apply_environment(world, viewer, environment, correlation_id),
+        AgentRequest::SetMaterial {
+            correlation_id,
+            material,
+        } => apply_material(world, material, correlation_id),
+        AgentRequest::ListMaterials { correlation_id } => {
+            let materials = list_materials(world);
+            post(&WorkerMessage::Agent(AgentResponse::Materials {
+                correlation_id,
+                materials,
+            }));
+        }
         AgentRequest::Resync { .. } => {}
     }
 }
@@ -352,6 +364,14 @@ fn handle_command(
                 resolution,
                 correlation_id,
             );
+        }
+        AgentCommand::AddPrimitive { kind } => {
+            let entity = crate::systems::spawn::add_primitive(&mut viewer.viewer, world, kind);
+            spawned(correlation_id, entity);
+        }
+        AgentCommand::AddLight { kind } => {
+            let entity = crate::systems::spawn::add_light(&mut viewer.viewer, world, kind);
+            spawned(correlation_id, entity);
         }
         other => AGENT.with(|agent| agent.borrow_mut().inbound.push((correlation_id, other))),
     }
@@ -469,7 +489,9 @@ fn apply_command(
         }
         AgentCommand::SelectNode { .. }
         | AgentCommand::LoadGltf { .. }
-        | AgentCommand::LoadPolyhavenModel { .. } => Err("command handled out of band".to_string()),
+        | AgentCommand::LoadPolyhavenModel { .. }
+        | AgentCommand::AddPrimitive { .. }
+        | AgentCommand::AddLight { .. } => Err("command handled out of band".to_string()),
     }
 }
 
@@ -800,6 +822,67 @@ pub fn fail(correlation_id: CorrelationId, error: &str) {
 /// the load poll, which holds the viewer the apply systems cannot see.
 pub fn ack_hdri(correlation_id: CorrelationId) {
     ack(correlation_id, current_version());
+}
+
+fn spawned(correlation_id: CorrelationId, entity: Entity) {
+    post(&WorkerMessage::Agent(AgentResponse::Loaded {
+        correlation_id,
+        version: current_version(),
+        roots: vec![to_ref(entity)],
+    }));
+}
+
+fn apply_material(world: &mut World, spec: MaterialSpec, correlation_id: CorrelationId) {
+    let registry = &mut world.resources.assets.material_registry;
+    let mut material = material_registry_iter(registry)
+        .find(|(name, _)| **name == spec.name)
+        .map(|(_, material)| material.clone())
+        .unwrap_or_default();
+    if let Some(base_color) = spec.base_color {
+        material.base_color = base_color;
+    }
+    if let Some(metallic) = spec.metallic {
+        material.metallic = metallic;
+    }
+    if let Some(roughness) = spec.roughness {
+        material.roughness = roughness;
+    }
+    if let Some(emissive_factor) = spec.emissive_factor {
+        material.emissive_factor = emissive_factor;
+    }
+    if let Some(emissive_strength) = spec.emissive_strength {
+        material.emissive_strength = emissive_strength;
+    }
+    if let Some(unlit) = spec.unlit {
+        material.unlit = unlit;
+    }
+    if let Some(double_sided) = spec.double_sided {
+        material.double_sided = double_sided;
+    }
+    if let Some(base_texture) = spec.base_texture {
+        material.base_texture = Some(base_texture);
+    }
+    material_registry_insert(registry, spec.name, material);
+    world.resources.mesh_render_state.request_full_rebuild();
+    ack(correlation_id, current_version());
+}
+
+fn list_materials(world: &World) -> Value {
+    let materials: Vec<Value> = material_registry_iter(&world.resources.assets.material_registry)
+        .map(|(name, material)| {
+            serde_json::json!({
+                "name": name,
+                "base_color": material.base_color,
+                "metallic": material.metallic,
+                "roughness": material.roughness,
+                "emissive_factor": material.emissive_factor,
+                "emissive_strength": material.emissive_strength,
+                "unlit": material.unlit,
+                "base_texture": material.base_texture,
+            })
+        })
+        .collect();
+    Value::Array(materials)
 }
 
 fn build_viewer_state(world: &World, viewer: &Viewer) -> Value {

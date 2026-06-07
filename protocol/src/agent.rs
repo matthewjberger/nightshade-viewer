@@ -71,6 +71,14 @@ pub enum AgentCommand {
         slug: String,
         resolution: u32,
     },
+    /// Spawn a parametric primitive mesh and return its handle.
+    AddPrimitive {
+        kind: crate::PrimitiveKind,
+    },
+    /// Spawn a light (with a visible marker) and return its handle.
+    AddLight {
+        kind: crate::LightKind,
+    },
     SpawnEntity {
         components: Vec<(String, Value)>,
     },
@@ -89,6 +97,24 @@ pub enum AgentCommand {
 pub struct SubscriptionFilter {
     pub component_types: Vec<String>,
     pub entities: Option<Vec<EntityRef>>,
+}
+
+/// A material to create or edit in the material library. `name` keys the
+/// material; every other field is optional and only the set ones are written, so
+/// editing leaves untouched fields (including textures) intact.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct MaterialSpec {
+    pub name: String,
+    /// Linear RGBA albedo.
+    pub base_color: Option<[f32; 4]>,
+    pub metallic: Option<f32>,
+    pub roughness: Option<f32>,
+    pub emissive_factor: Option<[f32; 3]>,
+    pub emissive_strength: Option<f32>,
+    pub unlit: Option<bool>,
+    pub double_sided: Option<bool>,
+    /// Name of an already-loaded texture to use as the base-color map.
+    pub base_texture: Option<String>,
 }
 
 /// Global sky and environment controls, beyond what the UI buttons expose. Every
@@ -156,6 +182,15 @@ pub enum AgentRequest {
     SetEnvironment {
         correlation_id: CorrelationId,
         environment: Environment,
+    },
+    /// Create or edit a named material in the library.
+    SetMaterial {
+        correlation_id: CorrelationId,
+        material: MaterialSpec,
+    },
+    /// List every material in the library with its core PBR properties.
+    ListMaterials {
+        correlation_id: CorrelationId,
     },
 }
 
@@ -288,6 +323,11 @@ pub enum AgentResponse {
     ViewerState {
         correlation_id: CorrelationId,
         state: Value,
+    },
+    /// The material library.
+    Materials {
+        correlation_id: CorrelationId,
+        materials: Value,
     },
     /// One batch per tracking-on frame, broadcast to the host fan-out.
     Batch { batch: DeltaBatch },
