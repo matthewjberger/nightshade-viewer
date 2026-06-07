@@ -19,6 +19,28 @@ pub fn select_by_id(viewer: &mut ViewerWorld, world: &mut World, id: u32) {
     select(viewer, world, entity);
 }
 
+/// Deletes the selected entity and its descendants, drops the dead handles from
+/// the tracked model, clears the selection, and refreshes the tree.
+pub fn delete_selected(viewer: &mut ViewerWorld, world: &mut World) {
+    let Some(entity) = viewer.resources.selection.selected else {
+        return;
+    };
+    despawn_recursive_immediate(world, entity);
+    viewer
+        .resources
+        .model
+        .entities
+        .retain(|tracked| world.core.entity_has_components(*tracked, LOCAL_TRANSFORM));
+    viewer
+        .resources
+        .model
+        .roots
+        .retain(|root| world.core.entity_has_components(*root, LOCAL_TRANSFORM));
+    select(viewer, world, None);
+    viewer.resources.scene_sync.needs_tree = true;
+    world.resources.mesh_render_state.request_full_rebuild();
+}
+
 /// Applies an edited transform (Euler degrees) to a model entity.
 pub fn set_transform(
     world: &mut World,

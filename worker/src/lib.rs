@@ -161,6 +161,9 @@ pub(crate) fn apply_client_message(world: &mut World, viewer: &mut Viewer, messa
         ClientMessage::Deselect => {
             systems::selection::select(&mut viewer.viewer, world, None);
         }
+        ClientMessage::DeleteSelected => {
+            systems::selection::delete_selected(&mut viewer.viewer, world);
+        }
         ClientMessage::AddPrimitive { kind } => {
             systems::spawn::add_primitive(&mut viewer.viewer, world, kind);
         }

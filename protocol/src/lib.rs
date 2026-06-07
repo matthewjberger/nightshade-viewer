@@ -167,6 +167,8 @@ pub enum ClientMessage {
     },
     /// Clear the current selection.
     Deselect,
+    /// Delete the selected entity and its descendants.
+    DeleteSelected,
     /// Edit the selected entity's local transform. Rotation is Euler degrees.
     SetTransform {
         id: u32,

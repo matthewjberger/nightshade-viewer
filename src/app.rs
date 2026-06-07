@@ -1,7 +1,9 @@
 use leptos::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
 
-use crate::bridge::Bridge;
+use protocol::ClientMessage;
+
+use crate::bridge::{Bridge, send};
 use crate::components::add_menu::AddMenu;
 use crate::components::animation_bar::AnimationBar;
 use crate::components::browser::AssetBrowser;
@@ -34,6 +36,11 @@ pub fn App() -> impl IntoView {
         match event.key().as_str() {
             "h" | "H" => state.ui_hidden.update(|hidden| *hidden = !*hidden),
             "Escape" => state.ui_hidden.set(false),
+            "x" | "X" => {
+                if let Some(bridge) = bridge.get_value() {
+                    send(&bridge, &ClientMessage::DeleteSelected);
+                }
+            }
             _ => {}
         }
     });
