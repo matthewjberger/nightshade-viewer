@@ -33,13 +33,13 @@ download) never blocks a fast read. A long command may emit `CommandProgress`
 notes before its terminal reply; the bridge treats those as informational and
 keeps waiting.
 
-**Reads are immediate; writes are scheduled.** A query or a `get_components` runs
-against the idle world the instant it arrives. Mutating commands queue and are
-applied by an `agent_apply` system inserted *before* transform propagation, so a
-write and its cascade (e.g. a `local_transform` edit re-deriving the world
-matrix, or a `material_ref` write rebinding the renderer) resolve in the same
-frame. Loads, selection, and anything needing the viewer's own resources run out
-of band on the load-poll path.
+**Everything applies immediately.** A query, a `get_components`, *and* a mutating
+command all run against the idle world the instant the request arrives (between
+frames) and acknowledge right away. Writes never wait on a render tick, so they
+stay fast even when the browser tab is backgrounded, which throttles the frame
+loop. A write's cascade (a `local_transform` edit re-deriving the world matrix, a
+`material_ref` write rebinding the renderer) is applied with it. Loads fetch
+asynchronously and acknowledge once their bytes land and spawn.
 
 **The delta stream.** An `agent_collect` system runs last each frame. It keeps a
 shadow copy of every tracked entity's component mask and diffs it against the
@@ -52,7 +52,7 @@ the ring, the poll returns `resync_required` and the agent re-subscribes.
 
 ## What the agent can do
 
-The bridge exposes 22 tools. Entities are always full generational handles:
+The bridge exposes 25 tools. Entities are always full generational handles:
 `{ "id": <int>, "generation": <int> }`. A reused slot reads as a *different*
 handle, so a command against a stale handle fails rather than hitting whatever
 now occupies the slot.
@@ -68,10 +68,14 @@ now occupies the slot.
 - **`get_components { entity, component_types }`**: the serialized values for one
   entity. A stale handle returns a not-live marker, never another entity's data.
 - **`get_viewer_state`**: render settings (atmosphere, sky, grid, exposure,
-  tonemap, debug overlays), current selection, loaded model counts, FPS, and the
-  asset-browser index lists: Khronos models (with `glb_url`), Polyhaven HDRIs and
-  models (with `slug`s). This is how the agent sees what assets are available to
-  pull. If a list reads `idle`, run a `RefreshBrowsers` `viewer_action` first.
+  tonemap, debug overlays), the current selection (handle plus its name and
+  `local_transform`), loaded-model counts, and FPS. Small and cheap, so it is the
+  one call for questions like "what is selected". The asset catalog is separate
+  (`list_assets`) to keep this lightweight.
+- **`list_assets`**: the asset-browser index lists, Khronos models (with
+  `glb_url`) and Polyhaven HDRIs and models (with `slug`s). Large, so it is its
+  own tool; call it only when browsing. If a list reads `idle`, run a
+  `RefreshBrowsers` `viewer_action` first, then call it again.
 
 ### Spawn and edit entities
 
@@ -94,17 +98,30 @@ now occupies the slot.
   (e.g. `local_transform` to place/scale, `material_ref` to color it) *at spawn*.
   Returns the new entity's root handle.
 - **`add_light { kind, components? }`**: spawn a light (`Directional`, `Point`,
-  `Spot`) with a visible marker and the optional bag, returning its handle.
+  `Spot`) and the optional bag (e.g. `local_transform` to place it), returning its
+  handle. The agent's lights are bare (no marker mesh), so they illuminate without
+  adding a stray object to the scene.
 - **`load_gltf { uri }`**: load a glTF/GLB by URI **additively**, returning the
   spawned root handle(s).
 - **`load_polyhaven_model { slug, resolution? }`**: pull a Polyhaven model by
-  slug (from `get_viewer_state`'s `models` list) and load it **additively**,
-  returning its root handle(s) to position with `set_components`. `resolution` is
-  texture k (default 2).
+  slug (from `list_assets`' `models` list) and load it **additively**, returning
+  its root handle(s) to position with `set_components`. `resolution` is texture k
+  (default 2).
 
 `add_primitive`, `add_light`, and the loaders all return
 `{ applied, version, roots: [entity] }`, so the agent can place what it just made
-in the next call (or the same batch - see below).
+in the next call (or the same batch, see below).
+
+### Scene and camera
+
+- **`clear_scene`**: despawn the whole current scene (the default startup model
+  and everything the agent has spawned), leaving an empty stage with the camera,
+  sun, and environment intact. Call it first to build from scratch instead of
+  around whatever is already loaded.
+- **`set_active_camera { entity }`**: make a camera entity the active viewport
+  camera (find cameras by querying the `camera` component). The viewer keeps a
+  controllable pan-orbit camera alive at all times, respawning one the moment the
+  active camera is deleted or cleared, so viewer control is never lost.
 
 ### Materials
 
@@ -112,9 +129,13 @@ in the next call (or the same batch - see below).
   Only the fields you set are written, so editing keeps the rest (including
   textures): `base_color` (linear RGBA), `metallic`, `roughness`,
   `emissive_factor`, `emissive_strength`, `unlit`, `double_sided`,
-  `base_texture`. Assign it to entities with `set_components`
-  `material_ref { "name": "<name>" }`; that write rebinds the renderer so the new
-  material actually shows.
+  `base_texture`. `base_texture` is the name of a loaded texture: the engine ships
+  three prototype textures always available, `checkerboard`, `gradient`, and
+  `uv_test`, and any texture from a loaded model is referenceable by its name
+  (visible via `list_materials`). Assign the material to entities with
+  `set_components` `material_ref { "name": "<name>" }` (a bare string
+  `material_ref: "<name>"` is also accepted); the write rebinds the renderer so
+  the new material actually shows.
 - **`list_materials`**: every material in the library with its core PBR
   properties. Use it to find a loaded model's material name (also visible via
   `get_components material_ref`) so you can edit it in place.
@@ -246,13 +267,14 @@ this for you.
 
 With the server registered, in a Claude Code session:
 
-- "List the component types, then query entities with a `local_transform` and a
-  `name` and show the first few."
-- "Spawn a row of five cubes one unit apart, each with its own colored material."
-  (one `batch`: a `set_material` and an `add_primitive` with `material_ref` +
-  `local_transform` per cube)
-- "Pull the Polyhaven `wooden_crate` model and scatter four copies around the
-  origin." (a `batch` of `load_polyhaven_model` ops, each followed by a
+- "What is selected, and what is its transform?" (one `get_viewer_state`).
+- "Clear the scene, then spawn a row of five cubes one unit apart, each with its
+  own colored material." (a `clear_scene`, then one `batch` of a `set_material`
+  and an `add_primitive` with `material_ref` + `local_transform` per cube)
+- "Give the floor the checkerboard prototype texture." (`set_material` with
+  `base_texture: "checkerboard"`, then `set_components material_ref`)
+- "Pull a Polyhaven model and scatter four copies around the origin." (`list_assets`
+  for a slug, then a `batch` of `load_polyhaven_model` ops each followed by a
   `set_components` referencing `{"$ref":"<i>.roots.0"}`)
 - "Set an HDRI sky from this `.hdr` URL and turn the grid off."
 - "Subscribe to `local_transform`, play the first animation, then poll a few
