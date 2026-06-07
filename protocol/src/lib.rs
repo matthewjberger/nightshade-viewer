@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+mod agent;
+pub use agent::*;
+
 /// Envelope field carrying the serialized message in every `postMessage`.
 pub const MESSAGE_KEY: &str = "message";
 /// Envelope field carrying the transferred `OffscreenCanvas` (on `Init` only).
@@ -264,6 +267,9 @@ pub enum ClientMessage {
     },
     /// Ask the worker to fetch the browser indices if it has not yet.
     RefreshBrowsers,
+    /// External agent traffic (Claude Code via the MCP host), forwarded over the
+    /// page's WebSocket relay onto this same postMessage path.
+    Agent(AgentRequest),
 }
 
 /// One row of the flattened scene tree.
@@ -351,4 +357,6 @@ pub enum WorkerMessage {
     PolyhavenModelsList {
         entries: Vec<PolyhavenEntry>,
     },
+    /// External agent responses and delta batches, relayed back to the MCP host.
+    Agent(AgentResponse),
 }
