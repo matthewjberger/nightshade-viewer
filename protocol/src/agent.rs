@@ -210,9 +210,11 @@ pub enum AgentRequest {
     },
     /// The asset-browser index lists (Khronos models, Polyhaven HDRIs and
     /// models). Split out of the viewer state because the catalog is large and
-    /// rarely needed.
+    /// rarely needed. `search` filters Polyhaven and Khronos entries by a
+    /// case-insensitive substring of the name, slug, category, or tag.
     ListAssets {
         correlation_id: CorrelationId,
+        search: Option<String>,
     },
 }
 

@@ -32,6 +32,12 @@ struct KhronosRaw {
 #[derive(Deserialize)]
 struct PolyRaw {
     name: String,
+    #[cfg(feature = "agent")]
+    #[serde(default)]
+    categories: Vec<String>,
+    #[cfg(feature = "agent")]
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -493,6 +499,10 @@ fn poly_entries(raw: std::collections::BTreeMap<String, PolyRaw>) -> Vec<PolyAss
             thumbnail: format!("{POLYHAVEN_THUMB}{slug}.png?width=256&height=256"),
             slug,
             name: asset.name,
+            #[cfg(feature = "agent")]
+            categories: asset.categories,
+            #[cfg(feature = "agent")]
+            tags: asset.tags,
         })
         .collect();
     entries.sort_by_key(|entry| entry.name.to_lowercase());

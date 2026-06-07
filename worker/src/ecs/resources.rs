@@ -130,6 +130,10 @@ pub struct PolyAsset {
     pub slug: String,
     pub name: String,
     pub thumbnail: String,
+    #[cfg(feature = "agent")]
+    pub categories: Vec<String>,
+    #[cfg(feature = "agent")]
+    pub tags: Vec<String>,
 }
 
 /// Async fetch state for a browser index.

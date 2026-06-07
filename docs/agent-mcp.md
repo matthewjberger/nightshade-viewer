@@ -72,11 +72,15 @@ now occupies the slot.
   `local_transform`), loaded-model counts, and FPS. Small and cheap, so it is the
   one call for questions like "what is selected". The asset catalog is separate
   (`list_assets`) to keep this lightweight.
-- **`list_assets`**: the asset-browser index lists, Khronos models (with
-  `glb_url`) and Polyhaven HDRIs and models (with `slug`s). The viewer fetches
-  these once at startup; the call waits for that fetch to finish, so a single
-  call returns the full catalog (no `idle`/retry handling needed). Large, so it
-  is its own tool; call it only when browsing.
+- **`list_assets { search? }`**: the asset-browser index lists, Khronos models
+  (with `glb_url`) and Polyhaven HDRIs and models (with `slug`s, each tagged with
+  its `categories`). Pass `search` to filter by a case-insensitive substring of
+  an asset's name, slug, category, or tag (e.g. `"chair"`, `"furniture"`,
+  `"sunset"`) and get back only the matches; omit it for the whole catalog
+  (large). The response also lists `model_categories` and `hdri_categories` so
+  the agent can see what to search by. The viewer fetches the indices once at
+  startup and the call waits for that, so a single call returns results (no
+  `idle`/retry handling).
 
 ### Spawn and edit entities
 

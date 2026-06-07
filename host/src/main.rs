@@ -208,7 +208,7 @@ fn request_correlation(request: &AgentRequest) -> CorrelationId {
         | AgentRequest::SetEnvironment { correlation_id, .. }
         | AgentRequest::SetMaterial { correlation_id, .. }
         | AgentRequest::ListMaterials { correlation_id }
-        | AgentRequest::ListAssets { correlation_id } => *correlation_id,
+        | AgentRequest::ListAssets { correlation_id, .. } => *correlation_id,
         AgentRequest::Resync { .. } => 0,
     }
 }
@@ -305,6 +305,14 @@ mod args {
 
     #[derive(Deserialize, Schema, Default)]
     pub struct Empty {}
+
+    #[derive(Deserialize, Schema, Default)]
+    pub struct ListAssets {
+        /// Case-insensitive substring matched against an asset's name, slug,
+        /// category, or tag. Omit to return the whole catalog.
+        #[serde(default)]
+        pub search: Option<String>,
+    }
 
     #[derive(Deserialize, Schema)]
     pub struct Query {
@@ -633,9 +641,16 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             }
         }
         "list_assets" => {
+            let typed: args::ListAssets = parse(arguments)?;
             let correlation_id = shared.correlation();
-            let response =
-                send_request(shared, AgentRequest::ListAssets { correlation_id }).await?;
+            let response = send_request(
+                shared,
+                AgentRequest::ListAssets {
+                    correlation_id,
+                    search: typed.search,
+                },
+            )
+            .await?;
             if let AgentResponse::Assets { assets, .. } = response {
                 Ok(compact(&assets))
             } else {
@@ -964,9 +979,9 @@ fn tool_definitions() -> Vec<Value> {
             "list_materials",
             "List every material in the library with its core PBR properties.",
         ),
-        tool::<args::Empty>(
+        tool::<args::ListAssets>(
             "list_assets",
-            "List the asset catalog the viewer can grab: Khronos models (with glb_url), Polyhaven hdris and models (with slugs). The call waits for the indices to finish loading, so a single call returns the full catalog (no retry needed). Large, so call it only when browsing; it is not part of get_viewer_state.",
+            "List the asset catalog the viewer can grab: Khronos models (with glb_url), Polyhaven hdris and models (with slugs, each tagged with its categories). Pass search to filter by a case-insensitive substring of an asset's name, slug, category, or tag (e.g. search \"chair\" or \"furniture\" or \"sunset\") and get back just the matches; omit it for the whole catalog (large). The response also lists model_categories and hdri_categories so you can see what categories exist to search by. The call waits for the indices to finish loading, so a single call returns results (no retry needed).",
         ),
         tool::<args::LoadPolyhavenModel>(
             "load_polyhaven_model",

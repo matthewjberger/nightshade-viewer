@@ -216,7 +216,7 @@ fn registry() -> Vec<ComponentEntry> {
 #[derive(Default)]
 struct AgentState {
     pending_subscribes: Vec<(CorrelationId, SubscriptionFilter)>,
-    pending_asset_lists: Vec<CorrelationId>,
+    pending_asset_lists: Vec<(CorrelationId, Option<String>)>,
     subscriptions: HashMap<SubscriptionId, SubscriptionFilter>,
     next_subscription_id: SubscriptionId,
     version: Version,
@@ -355,16 +355,22 @@ pub fn handle_agent_request(world: &mut World, viewer: &mut Viewer, request: Age
                 materials,
             }));
         }
-        AgentRequest::ListAssets { correlation_id } => {
+        AgentRequest::ListAssets {
+            correlation_id,
+            search,
+        } => {
             if browsers_terminal(viewer) {
-                let assets = build_assets(viewer);
+                let assets = build_assets(viewer, search.as_deref());
                 post(&WorkerMessage::Agent(AgentResponse::Assets {
                     correlation_id,
                     assets,
                 }));
             } else {
                 AGENT.with(|agent| {
-                    agent.borrow_mut().pending_asset_lists.push(correlation_id);
+                    agent
+                        .borrow_mut()
+                        .pending_asset_lists
+                        .push((correlation_id, search));
                 });
             }
         }
@@ -968,17 +974,20 @@ fn build_viewer_state(world: &World, viewer: &Viewer) -> Value {
     })
 }
 
-fn build_assets(viewer: &Viewer) -> Value {
+fn build_assets(viewer: &Viewer, search: Option<&str>) -> Value {
+    let browsers = &viewer.viewer.resources.browsers;
     serde_json::json!({
-        "khronos": khronos_list(viewer),
-        "hdris": polyhaven_list(&viewer.viewer.resources.browsers.hdris),
-        "models": polyhaven_list(&viewer.viewer.resources.browsers.models),
+        "khronos": khronos_list(viewer, search),
+        "hdris": polyhaven_list(&browsers.hdris, search),
+        "models": polyhaven_list(&browsers.models, search),
+        "model_categories": polyhaven_categories(&browsers.models),
+        "hdri_categories": polyhaven_categories(&browsers.hdris),
     })
 }
 
 /// Answers any list_assets requests that were deferred because the asset indices
 /// were still fetching. Once every index is terminal (Loaded or Failed), the
-/// agent gets the full catalog in one response instead of a "loading" placeholder.
+/// agent gets the catalog in one response instead of a "loading" placeholder.
 pub fn poll_agent_asset_lists(viewer: &Viewer) {
     if !browsers_terminal(viewer) {
         return;
@@ -987,11 +996,11 @@ pub fn poll_agent_asset_lists(viewer: &Viewer) {
     if pending.is_empty() {
         return;
     }
-    let assets = build_assets(viewer);
-    for correlation_id in pending {
+    for (correlation_id, search) in pending {
+        let assets = build_assets(viewer, search.as_deref());
         post(&WorkerMessage::Agent(AgentResponse::Assets {
             correlation_id,
-            assets: assets.clone(),
+            assets,
         }));
     }
 }
@@ -1008,14 +1017,22 @@ fn browsers_terminal(viewer: &Viewer) -> bool {
     terminal(&browsers.khronos) && terminal(&browsers.hdris) && terminal(&browsers.models)
 }
 
-fn khronos_list(viewer: &Viewer) -> Value {
+fn khronos_list(viewer: &Viewer, search: Option<&str>) -> Value {
     let Ok(state) = viewer.viewer.resources.browsers.khronos.lock() else {
         return Value::Null;
     };
+    let term = search.map(str::to_lowercase);
     match &*state {
         FetchState::Loaded(entries) => Value::Array(
             entries
                 .iter()
+                .filter(|asset| match &term {
+                    Some(term) => {
+                        asset.name.to_lowercase().contains(term)
+                            || asset.label.to_lowercase().contains(term)
+                    }
+                    None => true,
+                })
                 .map(|asset| {
                     serde_json::json!({
                         "name": asset.name,
@@ -1031,23 +1048,67 @@ fn khronos_list(viewer: &Viewer) -> Value {
     }
 }
 
-fn polyhaven_list(
-    handle: &std::sync::Arc<std::sync::Mutex<FetchState<Vec<crate::ecs::PolyAsset>>>>,
-) -> Value {
+type PolyHandle = std::sync::Arc<std::sync::Mutex<FetchState<Vec<crate::ecs::PolyAsset>>>>;
+
+fn polyhaven_list(handle: &PolyHandle, search: Option<&str>) -> Value {
     let Ok(state) = handle.lock() else {
         return Value::Null;
     };
+    let term = search.map(str::to_lowercase);
     match &*state {
         FetchState::Loaded(entries) => Value::Array(
             entries
                 .iter()
-                .map(|asset| serde_json::json!({ "slug": asset.slug, "name": asset.name }))
+                .filter(|asset| poly_matches(asset, term.as_deref()))
+                .map(|asset| {
+                    serde_json::json!({
+                        "slug": asset.slug,
+                        "name": asset.name,
+                        "categories": asset.categories,
+                    })
+                })
                 .collect(),
         ),
         FetchState::Loading => Value::String("loading".to_string()),
         FetchState::Failed => Value::String("failed".to_string()),
         FetchState::Idle => Value::String("idle (call refresh_browsers)".to_string()),
     }
+}
+
+/// Whether a Polyhaven asset matches a lowercased search term across its name,
+/// slug, categories, and tags. An absent term matches everything.
+fn poly_matches(asset: &crate::ecs::PolyAsset, term: Option<&str>) -> bool {
+    let Some(term) = term else {
+        return true;
+    };
+    asset.name.to_lowercase().contains(term)
+        || asset.slug.to_lowercase().contains(term)
+        || asset
+            .categories
+            .iter()
+            .any(|category| category.to_lowercase().contains(term))
+        || asset
+            .tags
+            .iter()
+            .any(|tag| tag.to_lowercase().contains(term))
+}
+
+/// The distinct, sorted set of categories across a Polyhaven index, so the agent
+/// can see what categories exist and pick one to search.
+fn polyhaven_categories(handle: &PolyHandle) -> Value {
+    let Ok(state) = handle.lock() else {
+        return Value::Null;
+    };
+    let FetchState::Loaded(entries) = &*state else {
+        return Value::Null;
+    };
+    let mut categories: Vec<String> = entries
+        .iter()
+        .flat_map(|asset| asset.categories.iter().cloned())
+        .collect();
+    categories.sort();
+    categories.dedup();
+    Value::Array(categories.into_iter().map(Value::String).collect())
 }
 
 fn apply_environment(
