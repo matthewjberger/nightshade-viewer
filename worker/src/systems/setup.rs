@@ -26,7 +26,12 @@ pub fn spawn(viewer: &mut ViewerWorld, world: &mut World) {
     world.resources.debug_draw.selection_outline_enabled = true;
     world.resources.debug_draw.selection_outline_color = [1.0, 0.5, 0.15, 1.0];
 
-    spawn_sun(world);
+    let sun = spawn_sun(world);
+    if let Some(light) = world.core.get_light_mut(sun) {
+        light.cast_shadows = true;
+        light.intensity = 3.5;
+        light.shadow_bias = 0.008;
+    }
 
     let camera = spawn_pan_orbit_camera(
         world,

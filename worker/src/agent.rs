@@ -463,7 +463,7 @@ fn apply_command(
             }
             for (name, value) in &components {
                 let entry = find(registry, name)?;
-                (entry.deserialize)(world, handle, value)?;
+                (entry.deserialize)(world, handle, &coerce_component(name, value))?;
             }
             Ok(())
         }
@@ -481,7 +481,7 @@ fn apply_command(
                 .ok_or("spawn failed")?;
             for (name, value) in &components {
                 let entry = find(registry, name)?;
-                (entry.deserialize)(world, handle, value)?;
+                (entry.deserialize)(world, handle, &coerce_component(name, value))?;
             }
             Ok(())
         }
@@ -787,9 +787,21 @@ fn apply_bag(
     }
     for (name, value) in components {
         let entry = find(registry, name)?;
-        (entry.deserialize)(world, entity, value)?;
+        (entry.deserialize)(world, entity, &coerce_component(name, value))?;
     }
     Ok(())
+}
+
+/// Accepts friendly shorthand for a component value. The agent naturally writes
+/// material_ref as a bare material name; promote a string to `{ "name": ... }`
+/// so it does not have to know the struct shape and retry.
+fn coerce_component(name: &str, value: &Value) -> Value {
+    if name == "material_ref"
+        && let Value::String(material) = value
+    {
+        return serde_json::json!({ "name": material });
+    }
+    value.clone()
 }
 
 fn writable(registry: &[ComponentEntry], name: &str) -> Result<u64, String> {
