@@ -1,3 +1,4 @@
+mod agent;
 mod ecs;
 mod state;
 mod systems;
@@ -323,6 +324,11 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 systems::browsers::resend(&mut app.state.viewer);
             }
         }
+        ClientMessage::Agent(request) => {
+            if let Some(app) = app_slot.borrow_mut().as_mut() {
+                agent::handle_agent_request(&mut app.world, &mut app.state, request);
+            }
+        }
     }
 }
 
@@ -344,6 +350,7 @@ async fn create_app(canvas: OffscreenCanvas, width: f32, height: f32) -> App {
         (physical_width, physical_height),
         1.0,
     );
+    agent::install_systems(&mut world);
 
     App {
         world,

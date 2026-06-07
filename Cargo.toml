@@ -51,5 +51,8 @@ web-sys = { version = "0.3", features = [
     "Storage",
 ] }
 
+[patch.crates-io]
+nightshade = { path = "../nightshade/crates/nightshade" }
+
 [profile.release]
 opt-level = "s"
