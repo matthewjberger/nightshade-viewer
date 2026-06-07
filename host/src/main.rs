@@ -558,35 +558,98 @@ async fn command(shared: &Arc<Shared>, command: AgentCommand) -> Result<String, 
     }
 }
 
-/// Runs a list of tool calls in one MCP round trip, returning each result.
-/// Independent ops (set_material, add_primitive with its transform/material,
-/// set_components on known handles) collapse from N agent round trips to one.
+/// Runs a list of tool calls in one MCP round trip, returning each result. A
+/// later op can reference an earlier op's result with a {"$ref":"<i>.<path>"}
+/// placeholder anywhere in its arguments (e.g. {"$ref":"0.roots.0"} is the first
+/// root the op at index 0 returned), so spawn-then-place is one batch.
 async fn batch_tool(shared: &Arc<Shared>, arguments: Value) -> Result<String, String> {
     let ops = arguments
         .get("ops")
         .and_then(Value::as_array)
         .cloned()
         .ok_or("missing array field: ops")?;
-    let mut results = Vec::with_capacity(ops.len());
+    let mut refs: Vec<Value> = Vec::with_capacity(ops.len());
+    let mut report: Vec<Value> = Vec::with_capacity(ops.len());
     for op in ops {
         let name = op
             .get("tool")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        let op_arguments = op.get("arguments").cloned().unwrap_or(json!({}));
+        let raw_arguments = op.get("arguments").cloned().unwrap_or(json!({}));
         if name == "batch" {
-            results
+            refs.push(Value::Null);
+            report
                 .push(json!({ "tool": name, "ok": false, "error": "nested batch is not allowed" }));
             continue;
         }
-        let entry = match Box::pin(run_tool(shared, &name, op_arguments)).await {
-            Ok(text) => json!({ "tool": name, "ok": true, "result": text }),
-            Err(error) => json!({ "tool": name, "ok": false, "error": error }),
+        let op_arguments = match resolve_refs(&raw_arguments, &refs) {
+            Ok(arguments) => arguments,
+            Err(error) => {
+                refs.push(Value::Null);
+                report.push(json!({ "tool": name, "ok": false, "error": error }));
+                continue;
+            }
         };
-        results.push(entry);
+        match Box::pin(run_tool(shared, &name, op_arguments)).await {
+            Ok(text) => {
+                refs.push(serde_json::from_str(&text).unwrap_or(Value::String(text.clone())));
+                report.push(json!({ "tool": name, "ok": true, "result": text }));
+            }
+            Err(error) => {
+                refs.push(Value::Null);
+                report.push(json!({ "tool": name, "ok": false, "error": error }));
+            }
+        }
     }
-    Ok(serde_json::to_string_pretty(&Value::Array(results)).unwrap_or_default())
+    Ok(serde_json::to_string_pretty(&Value::Array(report)).unwrap_or_default())
+}
+
+/// Replaces every {"$ref":"<index>.<path>"} placeholder in `value` with the
+/// referenced part of an earlier op's result.
+fn resolve_refs(value: &Value, results: &[Value]) -> Result<Value, String> {
+    match value {
+        Value::Object(map) => {
+            if map.len() == 1
+                && let Some(Value::String(path)) = map.get("$ref")
+            {
+                return lookup_ref(path, results);
+            }
+            let mut resolved = serde_json::Map::new();
+            for (key, inner) in map {
+                resolved.insert(key.clone(), resolve_refs(inner, results)?);
+            }
+            Ok(Value::Object(resolved))
+        }
+        Value::Array(items) => items
+            .iter()
+            .map(|item| resolve_refs(item, results))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
+        other => Ok(other.clone()),
+    }
+}
+
+fn lookup_ref(path: &str, results: &[Value]) -> Result<Value, String> {
+    let mut parts = path.split('.');
+    let index: usize = parts
+        .next()
+        .and_then(|segment| segment.parse().ok())
+        .ok_or_else(|| format!("bad $ref '{path}'"))?;
+    let mut current = results
+        .get(index)
+        .ok_or_else(|| format!("$ref '{path}': op {index} has not run"))?;
+    for part in parts {
+        current = match part.parse::<usize>() {
+            Ok(array_index) => current
+                .get(array_index)
+                .ok_or_else(|| format!("$ref '{path}': index {array_index} out of range"))?,
+            Err(_) => current
+                .get(part)
+                .ok_or_else(|| format!("$ref '{path}': no key '{part}'"))?,
+        };
+    }
+    Ok(current.clone())
 }
 
 async fn spawn_command(shared: &Arc<Shared>, command: AgentCommand) -> Result<String, String> {
@@ -925,7 +988,7 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "batch",
-            "description": "Run many tool calls in ONE round trip. ops is an array of {\"tool\":\"<name>\",\"arguments\":{...}}, executed in order; returns each result. Use this for the bulk of scene building (multiple set_material, add_primitive with transform+material, set_components, add_light, load_polyhaven_model) to avoid one slow agent round trip per call. Ops cannot reference handles returned by earlier ops in the same batch, so put self-contained ops here (add_primitive/add_light carry their own components) and use load_* results in a following batch.",
+            "description": "Run many tool calls in ONE round trip. ops is an array of {\"tool\":\"<name>\",\"arguments\":{...}}, executed in order; returns each result. Use this for the bulk of scene building to avoid one slow agent round trip per call. A later op may reference an earlier op's result with {\"$ref\":\"<index>.<path>\"} anywhere in its arguments: e.g. after op 0 is load_polyhaven_model, op 1 can be set_components with {\"entity\":{\"$ref\":\"0.roots.0\"},\"components\":{\"local_transform\":{...}}} to place the model it just loaded. So spawn AND placement fit in one batch: load_* / add_primitive / add_light return {roots:[...]}, and following set_components ops reference {\"$ref\":\"<i>.roots.0\"}. add_primitive and add_light can also just carry their local_transform/material_ref components inline and need no follow-up.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
