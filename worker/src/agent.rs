@@ -39,6 +39,32 @@ struct ComponentEntry {
 
 fn no_cascade(_world: &mut World, _entity: Entity) {}
 
+/// Cascade for a `material_ref` write: resolve the named material, add a
+/// reference so cleanup does not evict it, and force the renderer to rebind so
+/// the new material actually shows (the bag write alone leaves the old binding).
+fn rebind_material(world: &mut World, entity: Entity) {
+    let name = world
+        .core
+        .get_material_ref(entity)
+        .map(|material_ref| material_ref.name.clone());
+    if let Some(name) = name
+        && let Some(&index) = world
+            .resources
+            .assets
+            .material_registry
+            .registry
+            .name_to_index
+            .get(&name)
+    {
+        registry_add_reference(
+            &mut world.resources.assets.material_registry.registry,
+            index,
+        );
+    }
+    world.resources.mesh_render_state.mark_entity_added(entity);
+    world.resources.mesh_render_state.request_full_rebuild();
+}
+
 macro_rules! entry {
     ($name:literal, $field:ident, $get:ident, $set:ident, $mask:ident, $ty:ty, $policy:expr, $cascade:expr) => {
         ComponentEntry {
@@ -148,7 +174,7 @@ fn registry() -> Vec<ComponentEntry> {
             MATERIAL_REF,
             MaterialRef,
             Policy::Free,
-            no_cascade
+            rebind_material
         ),
         entry!(
             "bounding_volume",
