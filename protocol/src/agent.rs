@@ -126,7 +126,9 @@ pub struct MaterialSpec {
     pub emissive_strength: Option<f32>,
     pub unlit: Option<bool>,
     pub double_sided: Option<bool>,
-    /// Name of an already-loaded texture to use as the base-color map.
+    /// Name of an already-loaded texture for the base-color map. The built-in
+    /// prototype textures "checkerboard", "gradient", and "uv_test" are always
+    /// available.
     pub base_texture: Option<String>,
 }
 

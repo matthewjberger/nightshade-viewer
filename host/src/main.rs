@@ -958,7 +958,7 @@ fn tool_definitions() -> Vec<Value> {
         ),
         tool::<MaterialSpec>(
             "set_material",
-            "Create or edit a named material, then assign it with set_components material_ref. Only the fields you set are written, so editing keeps the rest. base_color is linear RGBA.",
+            "Create or edit a named material, then assign it with set_components material_ref. Only the fields you set are written, so editing keeps the rest. base_color is linear RGBA. base_texture is the name of a loaded texture; the engine ships three prototype textures always available by name: \"checkerboard\", \"gradient\", and \"uv_test\". Textures from loaded models can also be referenced by their name (visible via list_materials).",
         ),
         tool::<args::Empty>(
             "list_materials",
