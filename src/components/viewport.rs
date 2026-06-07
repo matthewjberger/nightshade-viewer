@@ -46,8 +46,7 @@ pub fn Viewport(
         if bridge.with_value(Option::is_some) {
             return;
         }
-        let window = web_sys::window().unwrap();
-        let dpr = window.device_pixel_ratio() as f32;
+        let dpr = render_dpr() as f32;
         let rect = canvas.get_bounding_client_rect();
         let width = rect.width() as f32 * dpr;
         let height = rect.height() as f32 * dpr;
@@ -289,8 +288,17 @@ pub fn Viewport(
     }
 }
 
+const MAX_RENDER_DPR: f64 = 2.0;
+
+fn render_dpr() -> f64 {
+    web_sys::window()
+        .unwrap()
+        .device_pixel_ratio()
+        .min(MAX_RENDER_DPR)
+}
+
 fn physical(canvas: &HtmlCanvasElement, client_x: i32, client_y: i32) -> (f32, f32) {
-    let dpr = web_sys::window().unwrap().device_pixel_ratio();
+    let dpr = render_dpr();
     let rect = canvas.get_bounding_client_rect();
     (
         ((client_x as f64 - rect.left()) * dpr) as f32,
@@ -323,10 +331,9 @@ fn attach_wheel(canvas: &HtmlCanvasElement, bridge: StoredValue<Option<Bridge>, 
 }
 
 fn observe_resize(canvas: HtmlCanvasElement, bridge: Bridge) {
-    let resize_window = web_sys::window().unwrap();
     let resize_canvas = canvas.clone();
     let on_resize = Closure::<dyn FnMut()>::new(move || {
-        let dpr = resize_window.device_pixel_ratio() as f32;
+        let dpr = render_dpr() as f32;
         let rect = resize_canvas.get_bounding_client_rect();
         send(
             &bridge,
