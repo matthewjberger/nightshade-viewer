@@ -27,6 +27,21 @@ pub fn spawn(viewer: &mut ViewerWorld, world: &mut World) {
     world.resources.debug_draw.selection_outline_color = [1.0, 0.5, 0.15, 1.0];
 
     nightshade::ecs::world::commands::load_procedural_textures(world);
+    nightshade::ecs::loading::load_texture_pack_from_image_bytes(
+        world,
+        &[
+            (
+                "greybox_light",
+                include_bytes!("../../assets/textures/greybox_light.png"),
+            ),
+            (
+                "greybox_dark",
+                include_bytes!("../../assets/textures/greybox_dark.png"),
+            ),
+        ],
+        nightshade::render::wgpu::texture_cache::TextureUsage::Color,
+        nightshade::render::wgpu::texture_cache::SamplerSettings::DEFAULT,
+    );
 
     let sun = spawn_sun(world);
     if let Some(light) = world.core.get_light_mut(sun) {

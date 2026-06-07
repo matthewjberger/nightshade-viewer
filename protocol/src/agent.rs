@@ -126,9 +126,9 @@ pub struct MaterialSpec {
     pub emissive_strength: Option<f32>,
     pub unlit: Option<bool>,
     pub double_sided: Option<bool>,
-    /// Name of an already-loaded texture for the base-color map. The built-in
-    /// prototype textures "checkerboard", "gradient", and "uv_test" are always
-    /// available.
+    /// Name of an already-loaded texture for the base-color map. Built-in
+    /// prototype textures are always available: "greybox_light" and
+    /// "greybox_dark" (grey grid greybox), "checkerboard", "gradient", "uv_test".
     pub base_texture: Option<String>,
 }
 
