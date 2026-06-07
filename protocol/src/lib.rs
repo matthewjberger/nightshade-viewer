@@ -1,7 +1,8 @@
-use enum2schema::Schema;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "agent")]
 mod agent;
+#[cfg(feature = "agent")]
 pub use agent::*;
 
 /// Envelope field carrying the serialized message in every `postMessage`.
@@ -16,8 +17,8 @@ pub const GLTF_KEY: &str = "gltf";
 pub const RESOURCES_KEY: &str = "resources";
 
 /// What a dropped binary payload is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
-#[schema(string_enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema), schema(string_enum))]
 pub enum AssetKind {
     /// A glTF or GLB model (loaded with `import_gltf_from_bytes`).
     Model,
@@ -26,8 +27,8 @@ pub enum AssetKind {
 }
 
 /// Which transform gizmo the manipulation handles show.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
-#[schema(string_enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema), schema(string_enum))]
 pub enum GizmoKind {
     Translate,
     Rotate,
@@ -35,8 +36,8 @@ pub enum GizmoKind {
 }
 
 /// A parametric primitive mesh the viewer can spawn from the Add menu.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
-#[schema(string_enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema), schema(string_enum))]
 pub enum PrimitiveKind {
     Cube,
     Sphere,
@@ -47,8 +48,8 @@ pub enum PrimitiveKind {
 }
 
 /// A light the viewer can spawn from the Add menu.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
-#[schema(string_enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema), schema(string_enum))]
 pub enum LightKind {
     Directional,
     Point,
@@ -56,8 +57,8 @@ pub enum LightKind {
 }
 
 /// Lifecycle phase of a forwarded touch contact.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
-#[schema(string_enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema), schema(string_enum))]
 pub enum TouchPhase {
     Started,
     Moved,
@@ -66,8 +67,8 @@ pub enum TouchPhase {
 }
 
 /// Viewport shading mode.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
-#[schema(string_enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema), schema(string_enum))]
 pub enum ShadingMode {
     Rendered,
     Solid,
@@ -76,8 +77,8 @@ pub enum ShadingMode {
 }
 
 /// PBR channel debug view.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
-#[schema(string_enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema), schema(string_enum))]
 pub enum PbrDebug {
     Off,
     BaseColor,
@@ -89,8 +90,8 @@ pub enum PbrDebug {
 }
 
 /// Tone mapping operator.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
-#[schema(string_enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema), schema(string_enum))]
 pub enum Tonemap {
     Aces,
     Reinhard,
@@ -120,7 +121,8 @@ pub struct ClipInfo {
 
 /// Page to worker. Pixel quantities are physical surface pixels (CSS pixels
 /// times the device pixel ratio), origin at the canvas top-left.
-#[derive(Clone, Debug, Serialize, Deserialize, Schema)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema))]
 pub enum ClientMessage {
     /// Sent once with the `OffscreenCanvas` in the transfer list.
     Init {
@@ -278,6 +280,7 @@ pub enum ClientMessage {
     RefreshBrowsers,
     /// External agent traffic (Claude Code via the MCP host), forwarded over the
     /// page's WebSocket relay onto this same postMessage path.
+    #[cfg(feature = "agent")]
     #[schema(skip)]
     Agent(AgentRequest),
 }
@@ -368,5 +371,6 @@ pub enum WorkerMessage {
         entries: Vec<PolyhavenEntry>,
     },
     /// External agent responses and delta batches, relayed back to the MCP host.
+    #[cfg(feature = "agent")]
     Agent(AgentResponse),
 }

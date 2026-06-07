@@ -6,10 +6,15 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+# External agent support (registry, command apply, delta collection). Off by
+# default; enable to build the agent-driveable worker.
+agent = ["protocol/agent", "dep:enum2schema"]
+
 [dependencies]
 protocol = { path = "../protocol" }
 nightshade = { version = "0.30", features = ["debug_render", "gizmos"] }
-enum2schema = "0.1"
+enum2schema = { version = "0.1", optional = true }
 serde = { version = "1", features = ["derive"] }
 wasm-bindgen = "=0.2.115"
 wasm-bindgen-futures = "0.4"

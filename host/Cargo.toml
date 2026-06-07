@@ -10,7 +10,7 @@ name = "nightshade-mcp"
 path = "src/main.rs"
 
 [dependencies]
-protocol = { path = "../protocol" }
+protocol = { path = "../protocol", features = ["agent"] }
 enum2schema = "0.1"
 tokio = { version = "1", features = [
     "rt-multi-thread",

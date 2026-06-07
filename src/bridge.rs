@@ -1,4 +1,6 @@
+#[cfg(feature = "agent")]
 use std::cell::RefCell;
+#[cfg(feature = "agent")]
 use std::rc::Rc;
 
 use leptos::prelude::*;
@@ -13,6 +15,7 @@ use web_sys::{
     Blob, DataTransfer, File, MessageEvent, OffscreenCanvas, Worker, WorkerOptions, WorkerType,
 };
 
+#[cfg(feature = "agent")]
 use crate::relay;
 use crate::state::ViewerState;
 use crate::validator;
@@ -32,7 +35,9 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
     let worker =
         Worker::new_with_options("runtime/worker.js", &options).expect("failed to spawn worker");
 
+    #[cfg(feature = "agent")]
     let relay_socket: relay::RelaySocket = Rc::new(RefCell::new(None));
+    #[cfg(feature = "agent")]
     let response_socket = relay_socket.clone();
 
     let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |event: MessageEvent| {
@@ -88,6 +93,7 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
             WorkerMessage::KhronosList { entries } => state.khronos.set(entries),
             WorkerMessage::PolyhavenList { entries } => state.hdris.set(entries),
             WorkerMessage::PolyhavenModelsList { entries } => state.models.set(entries),
+            #[cfg(feature = "agent")]
             WorkerMessage::Agent(response) => relay::send_response(&response_socket, &response),
         }
     });
@@ -97,6 +103,7 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
     let bridge = Bridge { worker };
     send_init(&bridge, offscreen, width, height);
     send(&bridge, &ClientMessage::RefreshBrowsers);
+    #[cfg(feature = "agent")]
     relay::start(bridge.clone(), relay_socket);
     bridge
 }

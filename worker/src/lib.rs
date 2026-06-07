@@ -1,3 +1,4 @@
+#[cfg(feature = "agent")]
 mod agent;
 mod ecs;
 mod state;
@@ -115,6 +116,7 @@ fn handle_message(scope: &DedicatedWorkerGlobalScope, app_slot: &AppSlot, event:
                 });
             }
         }
+        #[cfg(feature = "agent")]
         ClientMessage::Agent(request) => {
             if let Some(app) = app_slot.borrow_mut().as_mut() {
                 agent::handle_agent_request(&mut app.world, &mut app.state, request);
@@ -269,8 +271,9 @@ pub(crate) fn apply_client_message(world: &mut World, viewer: &mut Viewer, messa
         ClientMessage::Init { .. }
         | ClientMessage::Resize { .. }
         | ClientMessage::DropAsset { .. }
-        | ClientMessage::LoadGltfBundle
-        | ClientMessage::Agent(_) => {}
+        | ClientMessage::LoadGltfBundle => {}
+        #[cfg(feature = "agent")]
+        ClientMessage::Agent(_) => {}
     }
 }
 
@@ -292,6 +295,7 @@ async fn create_app(canvas: OffscreenCanvas, width: f32, height: f32) -> App {
         (physical_width, physical_height),
         1.0,
     );
+    #[cfg(feature = "agent")]
     agent::install_systems(&mut world);
 
     App {

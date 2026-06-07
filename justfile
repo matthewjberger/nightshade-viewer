@@ -19,6 +19,12 @@ worker:
     wasm-bindgen --target web --out-dir runtime --out-name engine target/wasm32-unknown-unknown/release/worker.wasm
     wasm-opt -Oz runtime/engine_bg.wasm -o runtime/engine_bg.wasm
 
+# Builds the worker with the external-agent feature (MCP-driveable) into runtime/
+worker-agent:
+    cargo build --release -p worker --target wasm32-unknown-unknown --features agent
+    wasm-bindgen --target web --out-dir runtime --out-name engine target/wasm32-unknown-unknown/release/worker.wasm
+    wasm-opt -Oz runtime/engine_bg.wasm -o runtime/engine_bg.wasm
+
 # Generates the Tailwind stylesheet from public/input.css
 tailwind:
     npx tailwindcss -i public/input.css -o public/styles.css
@@ -30,6 +36,11 @@ build: worker install tailwind
 # Builds the worker and stylesheet, then serves the app at http://127.0.0.1:8080
 run: worker install tailwind
     trunk serve
+
+# Like `run`, but builds the worker and app with the external-agent feature so
+# the MCP bridge can drive the viewer. See docs/agent-mcp.md.
+run-agent: worker-agent install tailwind
+    trunk serve --features agent
 
 # Serves the already-built app without rebuilding the worker
 serve:

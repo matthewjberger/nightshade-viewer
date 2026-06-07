@@ -66,10 +66,12 @@ pub enum PendingAsset {
 
 /// A queue of fetched agent assets, each paired with the command correlation id
 /// to acknowledge once it has spawned.
+#[cfg(feature = "agent")]
 pub type AgentLoadQueue = Arc<Mutex<Vec<(u64, Vec<u8>)>>>;
 
 /// A fetched multi-file model (glTF plus its texture/buffer resources) waiting to
 /// spawn additively, with the command correlation id to acknowledge.
+#[cfg(feature = "agent")]
 pub struct AgentModelLoad {
     pub correlation_id: u64,
     pub gltf: Vec<u8>,
@@ -77,6 +79,7 @@ pub struct AgentModelLoad {
 }
 
 /// A queue of fetched multi-file agent models.
+#[cfg(feature = "agent")]
 pub type AgentModelQueue = Arc<Mutex<Vec<AgentModelLoad>>>;
 
 /// Inbox for asset bytes from drops or browser fetches, plus the loading label
@@ -89,8 +92,11 @@ pub type AgentModelQueue = Arc<Mutex<Vec<AgentModelLoad>>>;
 pub struct Incoming {
     pub asset: Arc<Mutex<Option<PendingAsset>>>,
     pub loading: Arc<Mutex<Option<String>>>,
+    #[cfg(feature = "agent")]
     pub agent_loads: AgentLoadQueue,
+    #[cfg(feature = "agent")]
     pub agent_hdris: AgentLoadQueue,
+    #[cfg(feature = "agent")]
     pub agent_models: AgentModelQueue,
 }
 
@@ -99,8 +105,11 @@ impl Default for Incoming {
         Self {
             asset: Arc::new(Mutex::new(None)),
             loading: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "agent")]
             agent_loads: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature = "agent")]
             agent_hdris: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature = "agent")]
             agent_models: Arc::new(Mutex::new(Vec::new())),
         }
     }

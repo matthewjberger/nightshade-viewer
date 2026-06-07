@@ -5,5 +5,10 @@ edition = "2024"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-enum2schema = "0.1"
+serde_json = { version = "1", optional = true }
+enum2schema = { version = "0.1", optional = true }
+
+[features]
+# The external agent protocol (Claude Code via the MCP bridge). Off by default
+# so the plain viewer build carries none of it.
+agent = ["dep:serde_json", "dep:enum2schema"]

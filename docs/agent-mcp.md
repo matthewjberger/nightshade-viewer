@@ -29,6 +29,27 @@ contiguous, atomically-applied delta batches.
 - `worker/src/agent.rs` — the registry, the apply system (before transform
   propagation), and the collection system (last in the frame).
 
+## Feature flag
+
+The entire agent surface is behind a non-default `agent` cargo feature, so a
+plain `just run` / `just dist` build carries none of it: no relay websocket, no
+agent message types, no registry or agent systems in the worker. This keeps the
+deployed viewer clean (a normal build never opens a localhost socket).
+
+The feature spans three crates and is wired so enabling it on the app and worker
+turns it on in `protocol` too:
+
+- `protocol/agent` — the agent message types and their schemas.
+- `worker/agent` — the registry, command apply, and delta collection.
+- the app's `agent` — the page's relay websocket.
+
+The `host` bridge always enables `protocol/agent`; it is the agent and has no
+flag of its own.
+
+Build the agent-enabled worker and app together (mismatched features would
+desync the `protocol` enums between them), which the `*-agent` just recipes do
+for you.
+
 ## Run it
 
 1. Build the bridge (once):
@@ -37,13 +58,14 @@ contiguous, atomically-applied delta batches.
    cargo build --manifest-path host/Cargo.toml
    ```
 
-2. Serve the viewer:
+2. Serve the viewer with the agent feature on:
 
    ```
-   just run
+   just run-agent
    ```
 
-   This serves at http://127.0.0.1:8080. Open it in a browser.
+   This builds the worker and app with `--features agent` and serves at
+   http://127.0.0.1:8080. (Plain `just run` builds the viewer without the agent.)
 
 3. Register the bridge with Claude Code (from this repo root):
 

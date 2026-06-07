@@ -41,6 +41,7 @@ pub fn poll(viewer: &mut ViewerWorld, world: &mut World) {
 /// current scene in place. Each spawned model's entities are appended to the
 /// tracked model so the scene tree and future despawns include them, then the
 /// agent command is acknowledged.
+#[cfg(feature = "agent")]
 pub fn poll_agent_loads(viewer: &mut ViewerWorld, world: &mut World) {
     let loads = viewer
         .resources
@@ -65,6 +66,7 @@ pub fn poll_agent_loads(viewer: &mut ViewerWorld, world: &mut World) {
 
 /// Spawns the external agent's fetched multi-file models (Polyhaven) additively,
 /// reporting their root handles.
+#[cfg(feature = "agent")]
 pub fn poll_agent_models(viewer: &mut ViewerWorld, world: &mut World) {
     let models = viewer
         .resources
@@ -88,6 +90,7 @@ pub fn poll_agent_models(viewer: &mut ViewerWorld, world: &mut World) {
 }
 
 /// Loads the external agent's fetched HDRIs as the skybox, acknowledging each.
+#[cfg(feature = "agent")]
 pub fn poll_agent_hdris(viewer: &mut ViewerWorld, world: &mut World) {
     let hdris = viewer
         .resources
@@ -105,6 +108,7 @@ pub fn poll_agent_hdris(viewer: &mut ViewerWorld, world: &mut World) {
 
 /// Imports and spawns a model without despawning the current scene, appending
 /// the spawned entities to the tracked model. Returns the spawned root entities.
+#[cfg(feature = "agent")]
 fn spawn_additive(
     viewer: &mut ViewerWorld,
     world: &mut World,

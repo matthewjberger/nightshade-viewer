@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::ecs::{
-    AgentModelLoad, AgentModelQueue, FetchState, KhronosAsset, PendingAsset, PolyAsset, ViewerWorld,
-};
+#[cfg(feature = "agent")]
+use crate::ecs::{AgentModelLoad, AgentModelQueue};
+use crate::ecs::{FetchState, KhronosAsset, PendingAsset, PolyAsset, ViewerWorld};
 use nightshade::prelude::{ehttp, serde_json};
 use protocol::{KhronosEntry, PolyhavenEntry, WorkerMessage};
 use serde::Deserialize;
@@ -214,6 +214,7 @@ pub fn fetch_polyhaven_model(viewer: &ViewerWorld, slug: &str, resolution: u32) 
 /// Like `fetch_polyhaven_model`, but the resolved glTF and its resources are
 /// pushed onto the agent's additive model queue (tagged with `correlation_id`)
 /// instead of the replace inbox, so the model joins the scene without wiping it.
+#[cfg(feature = "agent")]
 pub fn fetch_polyhaven_model_additive(
     viewer: &ViewerWorld,
     slug: &str,
@@ -242,6 +243,7 @@ pub fn fetch_polyhaven_model_additive(
     });
 }
 
+#[cfg(feature = "agent")]
 fn download_model_additive(
     gltf_url: String,
     includes: Vec<(String, String)>,
