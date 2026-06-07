@@ -966,7 +966,7 @@ fn tool_definitions() -> Vec<Value> {
         ),
         tool::<args::Empty>(
             "list_assets",
-            "List the asset catalog the viewer can grab: Khronos models (with glb_url), Polyhaven hdris and models (with slugs). Large, so call it only when browsing; it is not part of get_viewer_state. If a list reads idle, run a RefreshBrowsers viewer_action first.",
+            "List the asset catalog the viewer can grab: Khronos models (with glb_url), Polyhaven hdris and models (with slugs). The call waits for the indices to finish loading, so a single call returns the full catalog (no retry needed). Large, so call it only when browsing; it is not part of get_viewer_state.",
         ),
         tool::<args::LoadPolyhavenModel>(
             "load_polyhaven_model",

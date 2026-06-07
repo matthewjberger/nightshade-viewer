@@ -216,6 +216,7 @@ fn registry() -> Vec<ComponentEntry> {
 #[derive(Default)]
 struct AgentState {
     pending_subscribes: Vec<(CorrelationId, SubscriptionFilter)>,
+    pending_asset_lists: Vec<CorrelationId>,
     subscriptions: HashMap<SubscriptionId, SubscriptionFilter>,
     next_subscription_id: SubscriptionId,
     version: Version,
@@ -355,11 +356,17 @@ pub fn handle_agent_request(world: &mut World, viewer: &mut Viewer, request: Age
             }));
         }
         AgentRequest::ListAssets { correlation_id } => {
-            let assets = build_assets(viewer);
-            post(&WorkerMessage::Agent(AgentResponse::Assets {
-                correlation_id,
-                assets,
-            }));
+            if browsers_terminal(viewer) {
+                let assets = build_assets(viewer);
+                post(&WorkerMessage::Agent(AgentResponse::Assets {
+                    correlation_id,
+                    assets,
+                }));
+            } else {
+                AGENT.with(|agent| {
+                    agent.borrow_mut().pending_asset_lists.push(correlation_id);
+                });
+            }
         }
         AgentRequest::Resync { .. } => {}
     }
@@ -967,6 +974,38 @@ fn build_assets(viewer: &Viewer) -> Value {
         "hdris": polyhaven_list(&viewer.viewer.resources.browsers.hdris),
         "models": polyhaven_list(&viewer.viewer.resources.browsers.models),
     })
+}
+
+/// Answers any list_assets requests that were deferred because the asset indices
+/// were still fetching. Once every index is terminal (Loaded or Failed), the
+/// agent gets the full catalog in one response instead of a "loading" placeholder.
+pub fn poll_agent_asset_lists(viewer: &Viewer) {
+    if !browsers_terminal(viewer) {
+        return;
+    }
+    let pending = AGENT.with(|agent| std::mem::take(&mut agent.borrow_mut().pending_asset_lists));
+    if pending.is_empty() {
+        return;
+    }
+    let assets = build_assets(viewer);
+    for correlation_id in pending {
+        post(&WorkerMessage::Agent(AgentResponse::Assets {
+            correlation_id,
+            assets: assets.clone(),
+        }));
+    }
+}
+
+/// Whether all three asset indices have finished fetching (Loaded or Failed). A
+/// poisoned lock counts as terminal so a request never hangs.
+fn browsers_terminal(viewer: &Viewer) -> bool {
+    fn terminal<T>(slot: &std::sync::Arc<std::sync::Mutex<FetchState<T>>>) -> bool {
+        slot.lock()
+            .map(|state| matches!(&*state, FetchState::Loaded(_) | FetchState::Failed))
+            .unwrap_or(true)
+    }
+    let browsers = &viewer.viewer.resources.browsers;
+    terminal(&browsers.khronos) && terminal(&browsers.hdris) && terminal(&browsers.models)
 }
 
 fn khronos_list(viewer: &Viewer) -> Value {

@@ -73,9 +73,10 @@ now occupies the slot.
   one call for questions like "what is selected". The asset catalog is separate
   (`list_assets`) to keep this lightweight.
 - **`list_assets`**: the asset-browser index lists, Khronos models (with
-  `glb_url`) and Polyhaven HDRIs and models (with `slug`s). Large, so it is its
-  own tool; call it only when browsing. If a list reads `idle`, run a
-  `RefreshBrowsers` `viewer_action` first, then call it again.
+  `glb_url`) and Polyhaven HDRIs and models (with `slug`s). The viewer fetches
+  these once at startup; the call waits for that fetch to finish, so a single
+  call returns the full catalog (no `idle`/retry handling needed). Large, so it
+  is its own tool; call it only when browsing.
 
 ### Spawn and edit entities
 

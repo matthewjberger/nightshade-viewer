@@ -25,6 +25,7 @@ impl State for Viewer {
             systems::load::poll_agent_loads(&mut self.viewer, world);
             systems::load::poll_agent_hdris(&mut self.viewer, world);
             systems::load::poll_agent_models(&mut self.viewer, world);
+            crate::agent::poll_agent_asset_lists(self);
         }
         systems::load::flush_report(&mut self.viewer, world);
         systems::picking::apply(&mut self.viewer, world);
