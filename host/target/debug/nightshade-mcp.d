@@ -1,1 +1,0 @@
-C:\Users\matth\code\nightshade-viewer\host\target\debug\nightshade-mcp.exe: C:\Users\matth\code\nightshade-viewer\host\src\main.rs C:\Users\matth\code\nightshade-viewer\protocol\src\agent.rs C:\Users\matth\code\nightshade-viewer\protocol\src\lib.rs
