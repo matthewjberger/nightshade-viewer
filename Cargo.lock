@@ -1121,6 +1121,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
+name = "enum2schema"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf9316773ad202acde3c5f31763b667c8c8cb52cdc83f686b9061d267bb0e34"
+dependencies = [
+ "enum2schema_derive",
+ "serde_json",
+]
+
+[[package]]
+name = "enum2schema_derive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ea6143ad3038c3861deccbc3c71a8e74fd5551ba482b7ef2a9e1aa73dae3d60"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "enumflags2"
 version = "0.7.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2560,7 +2581,9 @@ checksum = "60993920e071b0c9b66f14e2b32740a4e27ffc82854dcd72035887f336a09a28"
 
 [[package]]
 name = "nightshade"
-version = "0.26.0"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67f9e7facc3ee45231571fef1d4e2e85a7e3f32442d944f229f6d1d75fadfe29"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3375,6 +3398,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 name = "protocol"
 version = "0.1.0"
 dependencies = [
+ "enum2schema",
  "serde",
  "serde_json",
 ]

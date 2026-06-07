@@ -4,10 +4,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::{SinkExt, StreamExt};
 use protocol::{
-    AgentCommand, AgentRequest, AgentResponse, ClientMessage, CorrelationId, DeltaBatch, EntityRef,
-    Environment, LightKind, MaterialSpec, PrimitiveKind, SubscriptionFilter, SubscriptionId,
-    Version,
+    AgentCommand, AgentRequest, AgentResponse, CorrelationId, DeltaBatch, Environment,
+    MaterialSpec, SubscriptionFilter, SubscriptionId, Version,
 };
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Mutex, mpsc, oneshot};
@@ -290,6 +290,137 @@ async fn handle_tool_call(shared: &Arc<Shared>, params: Value, id: Option<Value>
     }
 }
 
+/// Typed tool arguments. Each struct drives both deserialization and, via
+/// `enum2schema`, the tool's `inputSchema`, so the two cannot drift.
+mod args {
+    use enum2schema::Schema;
+    use protocol::{ClientMessage, EntityRef, LightKind, PrimitiveKind};
+    use serde::Deserialize;
+    use serde_json::{Map, Value};
+
+    /// A component bag: component name to its JSON value.
+    pub type Bag = Map<String, Value>;
+
+    #[derive(Deserialize, Schema, Default)]
+    pub struct Empty {}
+
+    #[derive(Deserialize, Schema)]
+    pub struct Query {
+        /// Component type names that an entity must all have.
+        pub component_types: Vec<String>,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct GetComponents {
+        pub entity: EntityRef,
+        pub component_types: Vec<String>,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct Spawn {
+        #[serde(default)]
+        pub components: Bag,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct SetComponents {
+        pub entity: EntityRef,
+        #[serde(default)]
+        pub components: Bag,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct RemoveComponents {
+        pub entity: EntityRef,
+        pub component_types: Vec<String>,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct Reparent {
+        pub child: EntityRef,
+        /// Omit or null to detach to the scene root.
+        #[serde(default)]
+        pub new_parent: Option<EntityRef>,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct Entity {
+        pub entity: EntityRef,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct LoadGltf {
+        pub uri: String,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct LoadPolyhavenModel {
+        pub slug: String,
+        /// Texture resolution in k. Defaults to 2.
+        #[serde(default)]
+        pub resolution: Option<u32>,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct AddPrimitive {
+        pub kind: PrimitiveKind,
+        /// Applied at spawn (e.g. local_transform, material_ref).
+        #[serde(default)]
+        pub components: Bag,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct AddLight {
+        pub kind: LightKind,
+        #[serde(default)]
+        pub components: Bag,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct ViewerAction {
+        /// An externally tagged ClientMessage, e.g. {"SetGrid":{"enabled":false}}.
+        pub action: ClientMessage,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct SubscriptionId {
+        pub subscription_id: u64,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct Batch {
+        pub ops: Vec<Op>,
+    }
+
+    #[derive(Deserialize, Schema)]
+    pub struct Op {
+        pub tool: String,
+        #[serde(default)]
+        pub arguments: Value,
+    }
+}
+
+/// Deserializes tool arguments into a typed struct, reporting a readable error.
+fn parse<T: DeserializeOwned>(arguments: Value) -> Result<T, String> {
+    serde_json::from_value(arguments).map_err(|error| format!("invalid arguments: {error}"))
+}
+
+/// Flattens a component-bag object into the `(name, value)` pairs the worker takes.
+fn bag(map: args::Bag) -> Vec<(String, Value)> {
+    map.into_iter().collect()
+}
+
+/// Formats a terminal command response as an applied/version object.
+fn applied_result(response: AgentResponse) -> Result<String, String> {
+    match response {
+        AgentResponse::CommandApplied { version, .. } => {
+            Ok(json!({ "applied": true, "version": version }).to_string())
+        }
+        AgentResponse::CommandFailed { error, .. } => Err(error),
+        other => Ok(pretty(&response_payload(other))),
+    }
+}
+
 async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<String, String> {
     match name {
         "list_component_types" => {
@@ -299,125 +430,111 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             Ok(pretty(&response_payload(response)))
         }
         "query" => {
-            let component_types = string_array(&arguments, "component_types")?;
+            let typed: args::Query = parse(arguments)?;
             let correlation_id = shared.correlation();
             let response = send_request(
                 shared,
                 AgentRequest::Query {
                     correlation_id,
-                    component_types,
+                    component_types: typed.component_types,
                 },
             )
             .await?;
             Ok(pretty(&response_payload(response)))
         }
         "get_components" => {
-            let entity = parse_entity(&arguments, "entity")?;
-            let component_types = string_array(&arguments, "component_types")?;
+            let typed: args::GetComponents = parse(arguments)?;
             let correlation_id = shared.correlation();
             let response = send_request(
                 shared,
                 AgentRequest::GetComponents {
                     correlation_id,
-                    entity,
-                    component_types,
+                    entity: typed.entity,
+                    component_types: typed.component_types,
                 },
             )
             .await?;
             Ok(pretty(&response_payload(response)))
         }
         "spawn_entity" => {
-            let components = parse_component_bag(&arguments, "components")?;
-            command(shared, AgentCommand::SpawnEntity { components }).await
+            let typed: args::Spawn = parse(arguments)?;
+            command(
+                shared,
+                AgentCommand::SpawnEntity {
+                    components: bag(typed.components),
+                },
+            )
+            .await
         }
         "set_components" => {
-            let entity = parse_entity(&arguments, "entity")?;
-            let components = parse_component_bag(&arguments, "components")?;
-            command(shared, AgentCommand::SetComponents { entity, components }).await
+            let typed: args::SetComponents = parse(arguments)?;
+            command(
+                shared,
+                AgentCommand::SetComponents {
+                    entity: typed.entity,
+                    components: bag(typed.components),
+                },
+            )
+            .await
         }
         "remove_components" => {
-            let entity = parse_entity(&arguments, "entity")?;
-            let component_types = string_array(&arguments, "component_types")?;
+            let typed: args::RemoveComponents = parse(arguments)?;
             command(
                 shared,
                 AgentCommand::RemoveComponents {
-                    entity,
-                    component_types,
+                    entity: typed.entity,
+                    component_types: typed.component_types,
                 },
             )
             .await
         }
         "reparent" => {
-            let child = parse_entity(&arguments, "child")?;
-            let new_parent = match arguments.get("new_parent") {
-                None | Some(Value::Null) => None,
-                Some(_) => Some(parse_entity(&arguments, "new_parent")?),
-            };
-            command(shared, AgentCommand::Reparent { child, new_parent }).await
-        }
-        "delete_entity" => {
-            let entity = parse_entity(&arguments, "entity")?;
-            command(shared, AgentCommand::DeleteEntity { entity }).await
-        }
-        "select_node" => {
-            let entity = parse_entity(&arguments, "entity")?;
-            command(shared, AgentCommand::SelectNode { entity }).await
-        }
-        "load_gltf" => {
-            let uri = arguments
-                .get("uri")
-                .and_then(Value::as_str)
-                .ok_or("missing string field: uri")?
-                .to_string();
-            let correlation_id = shared.correlation();
-            let response = send_request(
+            let typed: args::Reparent = parse(arguments)?;
+            command(
                 shared,
-                AgentRequest::Command {
-                    correlation_id,
-                    command: AgentCommand::LoadGltf { uri },
+                AgentCommand::Reparent {
+                    child: typed.child,
+                    new_parent: typed.new_parent,
                 },
             )
-            .await?;
-            match response {
-                AgentResponse::Loaded { version, roots, .. } => {
-                    Ok(json!({ "applied": true, "version": version, "roots": roots }).to_string())
-                }
-                AgentResponse::CommandFailed { error, .. } => Err(error),
-                other => Ok(pretty(&response_payload(other))),
-            }
+            .await
+        }
+        "delete_entity" => {
+            let typed: args::Entity = parse(arguments)?;
+            command(
+                shared,
+                AgentCommand::DeleteEntity {
+                    entity: typed.entity,
+                },
+            )
+            .await
+        }
+        "select_node" => {
+            let typed: args::Entity = parse(arguments)?;
+            command(
+                shared,
+                AgentCommand::SelectNode {
+                    entity: typed.entity,
+                },
+            )
+            .await
+        }
+        "load_gltf" => {
+            let typed: args::LoadGltf = parse(arguments)?;
+            spawn_command(shared, AgentCommand::LoadGltf { uri: typed.uri }).await
         }
         "viewer_action" => {
-            let action = arguments
-                .get("action")
-                .cloned()
-                .ok_or("missing field: action")?;
-            // Accept the action as a real object ({"SetGrid":{"enabled":false}})
-            // or as a JSON string of one; a bare string ("Frame") stays a unit
-            // variant name.
-            let action = match action {
-                Value::String(text) => {
-                    serde_json::from_str::<Value>(&text).unwrap_or(Value::String(text))
-                }
-                other => other,
-            };
-            let message: ClientMessage = serde_json::from_value(action)
-                .map_err(|error| format!("not a valid viewer action: {error}"))?;
+            let typed: args::ViewerAction = parse(arguments)?;
             let correlation_id = shared.correlation();
             let response = send_request(
                 shared,
                 AgentRequest::ViewerAction {
                     correlation_id,
-                    message: Box::new(message),
+                    message: Box::new(typed.action),
                 },
             )
             .await?;
-            match response {
-                AgentResponse::CommandApplied { version, .. } => {
-                    Ok(json!({ "applied": true, "version": version }).to_string())
-                }
-                AgentResponse::CommandFailed { error, .. } => Err(error),
-                other => Ok(pretty(&response_payload(other))),
-            }
+            applied_result(response)
         }
         "get_viewer_state" => {
             let correlation_id = shared.correlation();
@@ -430,8 +547,7 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             }
         }
         "set_environment" => {
-            let environment: Environment = serde_json::from_value(arguments)
-                .map_err(|error| format!("invalid environment: {error}"))?;
+            let environment: Environment = parse(arguments)?;
             let correlation_id = shared.correlation();
             let response = send_request(
                 shared,
@@ -441,67 +557,44 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                 },
             )
             .await?;
-            match response {
-                AgentResponse::CommandApplied { version, .. } => {
-                    Ok(json!({ "applied": true, "version": version }).to_string())
-                }
-                AgentResponse::CommandFailed { error, .. } => Err(error),
-                other => Ok(pretty(&response_payload(other))),
-            }
+            applied_result(response)
         }
         "load_polyhaven_model" => {
-            let slug = arguments
-                .get("slug")
-                .and_then(Value::as_str)
-                .ok_or("missing string field: slug")?
-                .to_string();
-            let resolution = arguments
-                .get("resolution")
-                .and_then(Value::as_u64)
-                .unwrap_or(2) as u32;
-            let correlation_id = shared.correlation();
-            let response = send_request(
+            let typed: args::LoadPolyhavenModel = parse(arguments)?;
+            spawn_command(
                 shared,
-                AgentRequest::Command {
-                    correlation_id,
-                    command: AgentCommand::LoadPolyhavenModel { slug, resolution },
+                AgentCommand::LoadPolyhavenModel {
+                    slug: typed.slug,
+                    resolution: typed.resolution.unwrap_or(2),
                 },
             )
-            .await?;
-            match response {
-                AgentResponse::Loaded { version, roots, .. } => {
-                    Ok(json!({ "applied": true, "version": version, "roots": roots }).to_string())
-                }
-                AgentResponse::CommandFailed { error, .. } => Err(error),
-                other => Ok(pretty(&response_payload(other))),
-            }
+            .await
         }
         "add_primitive" => {
-            let kind: PrimitiveKind = serde_json::from_value(
-                arguments
-                    .get("kind")
-                    .cloned()
-                    .ok_or("missing field: kind")?,
+            let typed: args::AddPrimitive = parse(arguments)?;
+            spawn_command(
+                shared,
+                AgentCommand::AddPrimitive {
+                    kind: typed.kind,
+                    components: bag(typed.components),
+                },
             )
-            .map_err(|error| format!("invalid primitive kind: {error}"))?;
-            let components = parse_component_bag(&arguments, "components")?;
-            spawn_command(shared, AgentCommand::AddPrimitive { kind, components }).await
+            .await
         }
         "add_light" => {
-            let kind: LightKind = serde_json::from_value(
-                arguments
-                    .get("kind")
-                    .cloned()
-                    .ok_or("missing field: kind")?,
+            let typed: args::AddLight = parse(arguments)?;
+            spawn_command(
+                shared,
+                AgentCommand::AddLight {
+                    kind: typed.kind,
+                    components: bag(typed.components),
+                },
             )
-            .map_err(|error| format!("invalid light kind: {error}"))?;
-            let components = parse_component_bag(&arguments, "components")?;
-            spawn_command(shared, AgentCommand::AddLight { kind, components }).await
+            .await
         }
         "batch" => batch_tool(shared, arguments).await,
         "set_material" => {
-            let material: MaterialSpec = serde_json::from_value(arguments)
-                .map_err(|error| format!("invalid material: {error}"))?;
+            let material: MaterialSpec = parse(arguments)?;
             if material.name.is_empty() {
                 return Err("material name is required".to_string());
             }
@@ -514,13 +607,7 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                 },
             )
             .await?;
-            match response {
-                AgentResponse::CommandApplied { version, .. } => {
-                    Ok(json!({ "applied": true, "version": version }).to_string())
-                }
-                AgentResponse::CommandFailed { error, .. } => Err(error),
-                other => Ok(pretty(&response_payload(other))),
-            }
+            applied_result(response)
         }
         "list_materials" => {
             let correlation_id = shared.correlation();
@@ -532,9 +619,18 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                 Ok(pretty(&response_payload(response)))
             }
         }
-        "subscribe" => subscribe_tool(shared, arguments).await,
-        "poll_deltas" => poll_deltas_tool(shared, arguments).await,
-        "unsubscribe" => unsubscribe_tool(shared, arguments).await,
+        "subscribe" => {
+            let filter: SubscriptionFilter = parse(arguments)?;
+            subscribe_tool(shared, filter).await
+        }
+        "poll_deltas" => {
+            let typed: args::SubscriptionId = parse(arguments)?;
+            poll_deltas_tool(shared, typed.subscription_id).await
+        }
+        "unsubscribe" => {
+            let typed: args::SubscriptionId = parse(arguments)?;
+            unsubscribe_tool(shared, typed.subscription_id).await
+        }
         other => Err(format!("unknown tool: {other}")),
     }
 }
@@ -549,13 +645,7 @@ async fn command(shared: &Arc<Shared>, command: AgentCommand) -> Result<String, 
         },
     )
     .await?;
-    match response {
-        AgentResponse::CommandApplied { version, .. } => {
-            Ok(json!({ "applied": true, "version": version }).to_string())
-        }
-        AgentResponse::CommandFailed { error, .. } => Err(error),
-        other => Ok(pretty(&response_payload(other))),
-    }
+    applied_result(response)
 }
 
 /// Runs a list of tool calls in one MCP round trip, returning each result. A
@@ -563,20 +653,16 @@ async fn command(shared: &Arc<Shared>, command: AgentCommand) -> Result<String, 
 /// placeholder anywhere in its arguments (e.g. {"$ref":"0.roots.0"} is the first
 /// root the op at index 0 returned), so spawn-then-place is one batch.
 async fn batch_tool(shared: &Arc<Shared>, arguments: Value) -> Result<String, String> {
-    let ops = arguments
-        .get("ops")
-        .and_then(Value::as_array)
-        .cloned()
-        .ok_or("missing array field: ops")?;
-    let mut refs: Vec<Value> = Vec::with_capacity(ops.len());
-    let mut report: Vec<Value> = Vec::with_capacity(ops.len());
-    for op in ops {
-        let name = op
-            .get("tool")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let raw_arguments = op.get("arguments").cloned().unwrap_or(json!({}));
+    let typed: args::Batch = parse(arguments)?;
+    let mut refs: Vec<Value> = Vec::with_capacity(typed.ops.len());
+    let mut report: Vec<Value> = Vec::with_capacity(typed.ops.len());
+    for op in typed.ops {
+        let name = op.tool;
+        let raw_arguments = if op.arguments.is_null() {
+            json!({})
+        } else {
+            op.arguments
+        };
         if name == "batch" {
             refs.push(Value::Null);
             report
@@ -671,23 +757,10 @@ async fn spawn_command(shared: &Arc<Shared>, command: AgentCommand) -> Result<St
     }
 }
 
-async fn subscribe_tool(shared: &Arc<Shared>, arguments: Value) -> Result<String, String> {
-    let component_types = string_array(&arguments, "component_types")?;
-    let entities = match arguments.get("entities") {
-        None | Some(Value::Null) => None,
-        Some(Value::Array(items)) => {
-            let mut refs = Vec::with_capacity(items.len());
-            for item in items {
-                refs.push(entity_from_value(item)?);
-            }
-            Some(refs)
-        }
-        Some(_) => return Err("entities must be an array".to_string()),
-    };
-    let filter = SubscriptionFilter {
-        component_types,
-        entities,
-    };
+async fn subscribe_tool(
+    shared: &Arc<Shared>,
+    filter: SubscriptionFilter,
+) -> Result<String, String> {
     let correlation_id = shared.correlation();
     let response = send_request(
         shared,
@@ -722,12 +795,7 @@ async fn subscribe_tool(shared: &Arc<Shared>, arguments: Value) -> Result<String
     }
 }
 
-async fn poll_deltas_tool(shared: &Arc<Shared>, arguments: Value) -> Result<String, String> {
-    let subscription_id = arguments
-        .get("subscription_id")
-        .and_then(Value::as_u64)
-        .ok_or("missing integer field: subscription_id")?;
-
+async fn poll_deltas_tool(shared: &Arc<Shared>, subscription_id: u64) -> Result<String, String> {
     let mut subscriptions = shared.subscriptions.lock().await;
     let subscription = subscriptions
         .get_mut(&subscription_id)
@@ -763,11 +831,7 @@ async fn poll_deltas_tool(shared: &Arc<Shared>, arguments: Value) -> Result<Stri
     .to_string())
 }
 
-async fn unsubscribe_tool(shared: &Arc<Shared>, arguments: Value) -> Result<String, String> {
-    let subscription_id = arguments
-        .get("subscription_id")
-        .and_then(Value::as_u64)
-        .ok_or("missing integer field: subscription_id")?;
+async fn unsubscribe_tool(shared: &Arc<Shared>, subscription_id: u64) -> Result<String, String> {
     shared.subscriptions.lock().await.remove(&subscription_id);
     let correlation_id = shared.correlation();
     let response = send_request(
@@ -809,296 +873,91 @@ fn response_payload(response: AgentResponse) -> Value {
     serde_json::to_value(&response).unwrap_or(Value::Null)
 }
 
-fn string_array(arguments: &Value, field: &str) -> Result<Vec<String>, String> {
-    match arguments.get(field) {
-        None | Some(Value::Null) => Ok(Vec::new()),
-        Some(Value::Array(items)) => {
-            let mut out = Vec::with_capacity(items.len());
-            for item in items {
-                out.push(
-                    item.as_str()
-                        .ok_or_else(|| format!("{field} must be an array of strings"))?
-                        .to_string(),
-                );
-            }
-            Ok(out)
-        }
-        Some(_) => Err(format!("{field} must be an array of strings")),
-    }
-}
-
-fn parse_component_bag(arguments: &Value, field: &str) -> Result<Vec<(String, Value)>, String> {
-    match arguments.get(field) {
-        None | Some(Value::Null) => Ok(Vec::new()),
-        Some(Value::Object(map)) => Ok(map
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect()),
-        Some(_) => Err(format!("{field} must be an object of name to value")),
-    }
-}
-
-fn parse_entity(arguments: &Value, field: &str) -> Result<EntityRef, String> {
-    let value = arguments
-        .get(field)
-        .ok_or_else(|| format!("missing entity field: {field}"))?;
-    entity_from_value(value)
-}
-
-fn entity_from_value(value: &Value) -> Result<EntityRef, String> {
-    let id = value
-        .get("id")
-        .and_then(Value::as_u64)
-        .ok_or("entity needs an integer id")? as u32;
-    let generation = value
-        .get("generation")
-        .and_then(Value::as_u64)
-        .ok_or("entity needs an integer generation")? as u32;
-    Ok(EntityRef { id, generation })
-}
-
-fn entity_schema() -> Value {
-    json!({
-        "type": "object",
-        "properties": {
-            "id": { "type": "integer" },
-            "generation": { "type": "integer" }
-        },
-        "required": ["id", "generation"]
-    })
-}
-
 fn tool_definitions() -> Vec<Value> {
-    let string_list = json!({ "type": "array", "items": { "type": "string" } });
-    let component_bag = json!({
-        "type": "object",
-        "description": "Map of component name to its JSON value. Discover shapes with list_component_types.",
-        "additionalProperties": true
-    });
+    use enum2schema::mcp::tool;
     vec![
-        json!({
-            "name": "list_component_types",
-            "description": "Discover every component: name, write policy (Free, Owned by a command, or Derived), JSON schema, and an example value.",
-            "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-            "name": "query",
-            "description": "Return the entity handles whose archetype contains all of the named component types.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "component_types": string_list },
-                "required": ["component_types"]
-            }
-        }),
-        json!({
-            "name": "get_components",
-            "description": "Return serialized component values for one entity. A stale handle returns a not-live result, never another entity's data.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "entity": entity_schema(), "component_types": string_list },
-                "required": ["entity", "component_types"]
-            }
-        }),
-        json!({
-            "name": "spawn_entity",
-            "description": "Spawn an entity carrying the given component bag. Owned and Derived components are rejected.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "components": component_bag },
-                "required": ["components"]
-            }
-        }),
-        json!({
-            "name": "set_components",
-            "description": "Write the given component bag onto an existing entity. Owned and Derived components are rejected with the command to use.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "entity": entity_schema(), "components": component_bag },
-                "required": ["entity", "components"]
-            }
-        }),
-        json!({
-            "name": "remove_components",
-            "description": "Remove the named components from an entity.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "entity": entity_schema(), "component_types": string_list },
-                "required": ["entity", "component_types"]
-            }
-        }),
-        json!({
-            "name": "reparent",
-            "description": "Reparent a child entity. Omit new_parent or pass null to detach to the scene root.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "child": entity_schema(), "new_parent": entity_schema() },
-                "required": ["child"]
-            }
-        }),
-        json!({
-            "name": "delete_entity",
-            "description": "Despawn an entity and its descendants.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "entity": entity_schema() },
-                "required": ["entity"]
-            }
-        }),
-        json!({
-            "name": "select_node",
-            "description": "Select an entity in the viewer (drives the inspector and gizmo).",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "entity": entity_schema() },
-                "required": ["entity"]
-            }
-        }),
-        json!({
-            "name": "load_gltf",
-            "description": "Load a glTF or GLB by URI. Acknowledges when the scene has finished spawning.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "uri": { "type": "string" } },
-                "required": ["uri"]
-            }
-        }),
-        json!({
-            "name": "add_primitive",
-            "description": "Spawn a parametric primitive mesh (Cube, Sphere, Cylinder, Cone, Torus, Plane), apply the optional components bag to it in the same call (e.g. local_transform to place/scale it and material_ref to color it), and return its root handle. Passing components avoids a separate set_components round trip, so it is batchable.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "kind": { "type": "string", "enum": ["Cube", "Sphere", "Cylinder", "Cone", "Torus", "Plane"] },
-                    "components": { "type": "object", "description": "Free component bag, e.g. {\"local_transform\":{...},\"material_ref\":{\"name\":\"...\"}}", "additionalProperties": true }
-                },
-                "required": ["kind"]
-            }
-        }),
-        json!({
-            "name": "add_light",
-            "description": "Spawn a light (Directional, Point, or Spot) with a visible marker, apply the optional components bag (local_transform, light) in the same call, and return its handle.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "kind": { "type": "string", "enum": ["Directional", "Point", "Spot"] },
-                    "components": { "type": "object", "additionalProperties": true }
-                },
-                "required": ["kind"]
-            }
-        }),
-        json!({
-            "name": "batch",
-            "description": "Run many tool calls in ONE round trip. ops is an array of {\"tool\":\"<name>\",\"arguments\":{...}}, executed in order; returns each result. Use this for the bulk of scene building to avoid one slow agent round trip per call. A later op may reference an earlier op's result with {\"$ref\":\"<index>.<path>\"} anywhere in its arguments: e.g. after op 0 is load_polyhaven_model, op 1 can be set_components with {\"entity\":{\"$ref\":\"0.roots.0\"},\"components\":{\"local_transform\":{...}}} to place the model it just loaded. So spawn AND placement fit in one batch: load_* / add_primitive / add_light return {roots:[...]}, and following set_components ops reference {\"$ref\":\"<i>.roots.0\"}. add_primitive and add_light can also just carry their local_transform/material_ref components inline and need no follow-up.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "ops": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": { "tool": { "type": "string" }, "arguments": { "type": "object", "additionalProperties": true } },
-                            "required": ["tool"]
-                        }
-                    }
-                },
-                "required": ["ops"]
-            }
-        }),
-        json!({
-            "name": "set_material",
-            "description": "Create or edit a named material in the library, then assign it to entities with set_components material_ref {\"name\":\"<name>\"}. Only the fields you set are written, so editing keeps the rest (including textures). base_color is linear RGBA.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "name": { "type": "string" },
-                    "base_color": { "type": "array", "items": { "type": "number" } },
-                    "metallic": { "type": "number" },
-                    "roughness": { "type": "number" },
-                    "emissive_factor": { "type": "array", "items": { "type": "number" } },
-                    "emissive_strength": { "type": "number" },
-                    "unlit": { "type": "boolean" },
-                    "double_sided": { "type": "boolean" },
-                    "base_texture": { "type": "string" }
-                },
-                "required": ["name"]
-            }
-        }),
-        json!({
-            "name": "list_materials",
-            "description": "List every material in the library with its core PBR properties. Use it to find the name of a loaded model's material (also visible via get_components material_ref) so you can edit it.",
-            "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-            "name": "load_polyhaven_model",
-            "description": "Grab a Polyhaven model by slug (from get_viewer_state's models list) and load it additively. Returns the spawned root handle(s) to position with set_components. resolution is texture k (default 2).",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "slug": { "type": "string" },
-                    "resolution": { "type": "integer" }
-                },
-                "required": ["slug"]
-            }
-        }),
-        json!({
-            "name": "subscribe",
-            "description": "Subscribe to a slice of the world. Returns a subscription_id and an initial snapshot; poll with poll_deltas.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "component_types": string_list,
-                    "entities": { "type": "array", "items": entity_schema() }
-                },
-                "required": ["component_types"]
-            }
-        }),
-        json!({
-            "name": "poll_deltas",
-            "description": "Return the delta batches for a subscription since the last poll. resync_required true means re-subscribe.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "subscription_id": { "type": "integer" } },
-                "required": ["subscription_id"]
-            }
-        }),
-        json!({
-            "name": "unsubscribe",
-            "description": "Tear down a subscription.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "subscription_id": { "type": "integer" } },
-                "required": ["subscription_id"]
-            }
-        }),
-        json!({
-            "name": "get_viewer_state",
-            "description": "Read the full viewer state: render settings (atmosphere, sky, grid, exposure, tonemap, debug overlays), current selection, loaded model counts, and the asset-browser index lists (Khronos models with glb_url, Polyhaven hdris and models with slugs) so you can see what is available to grab. If a list is idle, run a refresh_browsers viewer_action first.",
-            "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-            "name": "set_environment",
-            "description": "Set the sky and environment. All fields optional. atmosphere is one of None, Sky, CloudySky, Space, Nebula, Sunset, DayNight, Hdr. hour (0-24) drives the DayNight sun. clear_color is linear RGBA used when atmosphere is None. hdri_uri fetches an .hdr and uses it as the skybox.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "atmosphere": { "type": "string" },
-                    "show_sky": { "type": "boolean" },
-                    "clear_color": { "type": "array", "items": { "type": "number" } },
-                    "hour": { "type": "number" },
-                    "exposure": { "type": "number" },
-                    "hdri_uri": { "type": "string" }
-                }
-            }
-        }),
-        json!({
-            "name": "viewer_action",
-            "description": "Perform any viewer UI action (everything a user can click). The action is an externally tagged ClientMessage object, e.g. {\"SetGrid\":{\"enabled\":false}}, {\"AddPrimitive\":{\"kind\":\"Cube\"}}, {\"AddLight\":{\"kind\":\"Point\"}}, {\"Frame\":null} or \"Frame\", {\"SetTurntable\":{\"enabled\":true}}, {\"SetShadingMode\":{\"mode\":\"Rendered\"}}, {\"SetExposure\":{\"exposure\":1.2}}, {\"SetTonemap\":{\"algorithm\":\"Aces\"}}, {\"SetShowSky\":{\"show\":true}}, {\"SetShowBounds\":{\"enabled\":true}}, {\"SetShowNormals\":{\"enabled\":true}}, {\"SetVariant\":{\"name\":\"red\"}}, {\"SetGizmoMode\":{\"mode\":\"Translate\"}}, {\"PlayAnimation\":{\"index\":0}}, \"PauseAnimation\", \"ResumeAnimation\", \"StopAnimation\", {\"SeekAnimation\":{\"time\":1.0}}, {\"SetAnimationSpeed\":{\"speed\":2.0}}, {\"SetAnimationLoop\":{\"looping\":true}}, {\"Select\":{\"id\":3}}, \"Deselect\", {\"LoadKhronos\":{\"name\":\"Duck\"}}, {\"LoadPolyhaven\":{\"slug\":\"kloofendal_48d_partly_cloudy_puresky\",\"resolution\":2}}, {\"LoadPolyhavenModel\":{\"slug\":\"...\",\"resolution\":2}}, \"RefreshBrowsers\". Use get_viewer_state to discover Khronos and Polyhaven slugs. Khronos and Polyhaven model loads via these actions replace the scene; use load_gltf for additive model loads.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "action": { "description": "An externally tagged ClientMessage." } },
-                "required": ["action"]
-            }
-        }),
+        tool::<args::Empty>(
+            "list_component_types",
+            "Discover every component: name, write policy (Free, Owned by a command, or Derived), JSON schema, and an example value.",
+        ),
+        tool::<args::Query>(
+            "query",
+            "Return the entity handles whose archetype contains all of the named component types.",
+        ),
+        tool::<args::GetComponents>(
+            "get_components",
+            "Return serialized component values for one entity. A stale handle returns a not-live result, never another entity's data.",
+        ),
+        tool::<args::Spawn>(
+            "spawn_entity",
+            "Spawn an entity carrying the given component bag. Owned and Derived components are rejected.",
+        ),
+        tool::<args::SetComponents>(
+            "set_components",
+            "Write the given component bag onto an existing entity. Owned and Derived components are rejected with the command to use.",
+        ),
+        tool::<args::RemoveComponents>(
+            "remove_components",
+            "Remove the named components from an entity.",
+        ),
+        tool::<args::Reparent>(
+            "reparent",
+            "Reparent a child entity. Omit new_parent or pass null to detach to the scene root.",
+        ),
+        tool::<args::Entity>("delete_entity", "Despawn an entity and its descendants."),
+        tool::<args::Entity>(
+            "select_node",
+            "Select an entity in the viewer (drives the inspector and gizmo).",
+        ),
+        tool::<args::LoadGltf>(
+            "load_gltf",
+            "Load a glTF or GLB by URI additively, returning the spawned root handle(s).",
+        ),
+        tool::<args::AddPrimitive>(
+            "add_primitive",
+            "Spawn a parametric primitive mesh and apply the optional components bag (local_transform, material_ref) at spawn, returning its root handle. Avoids a separate set_components round trip, so it is batchable.",
+        ),
+        tool::<args::AddLight>(
+            "add_light",
+            "Spawn a light and apply the optional components bag (local_transform, light) at spawn, returning its handle.",
+        ),
+        tool::<args::Batch>(
+            "batch",
+            "Run many tool calls in ONE round trip. ops is an array of {tool, arguments}, executed in order. A later op may reference an earlier op's result with {\"$ref\":\"<index>.<path>\"} (e.g. {\"$ref\":\"0.roots.0\"} is the first root op 0 returned), so spawn and placement fit in one batch. add_primitive and add_light can carry their components inline and need no follow-up.",
+        ),
+        tool::<MaterialSpec>(
+            "set_material",
+            "Create or edit a named material, then assign it with set_components material_ref. Only the fields you set are written, so editing keeps the rest. base_color is linear RGBA.",
+        ),
+        tool::<args::Empty>(
+            "list_materials",
+            "List every material in the library with its core PBR properties.",
+        ),
+        tool::<args::LoadPolyhavenModel>(
+            "load_polyhaven_model",
+            "Grab a Polyhaven model by slug (from get_viewer_state's models list) and load it additively, returning the spawned root handle(s) to position with set_components.",
+        ),
+        tool::<SubscriptionFilter>(
+            "subscribe",
+            "Subscribe to a slice of the world. Returns a subscription_id and an initial snapshot; poll with poll_deltas.",
+        ),
+        tool::<args::SubscriptionId>(
+            "poll_deltas",
+            "Return the delta batches for a subscription since the last poll. resync_required true means re-subscribe.",
+        ),
+        tool::<args::SubscriptionId>("unsubscribe", "Tear down a subscription."),
+        tool::<args::Empty>(
+            "get_viewer_state",
+            "Read render settings, current selection, loaded model counts, and the asset-browser lists (Khronos models with glb_url, Polyhaven hdris and models with slugs).",
+        ),
+        tool::<Environment>(
+            "set_environment",
+            "Set the sky and environment. atmosphere is one of None, Sky, CloudySky, Space, Nebula, Sunset, DayNight, Hdr. hour (0-24) drives the DayNight sun. clear_color is linear RGBA used when atmosphere is None. hdri_uri fetches an .hdr and uses it as the skybox.",
+        ),
+        tool::<args::ViewerAction>(
+            "viewer_action",
+            "Perform any viewer UI action (everything a user can click), e.g. {\"SetGrid\":{\"enabled\":false}}, {\"SetTurntable\":{\"enabled\":true}}, {\"SetShadingMode\":{\"mode\":\"Rendered\"}}, {\"PlayAnimation\":{\"index\":0}}, \"Frame\", {\"LoadPolyhaven\":{\"slug\":\"...\",\"resolution\":2}}, \"RefreshBrowsers\". Use get_viewer_state to discover slugs.",
+        ),
     ]
 }
 

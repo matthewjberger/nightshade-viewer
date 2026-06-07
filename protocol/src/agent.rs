@@ -1,3 +1,4 @@
+use enum2schema::Schema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -5,7 +6,7 @@ use serde_json::Value;
 /// bare index: a reused slot reads as a different handle, not the same entity
 /// mutated, so a command or read against a stale handle fails rather than
 /// hitting the new occupant.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Schema)]
 pub struct EntityRef {
     pub id: u32,
     pub generation: u32,
@@ -97,7 +98,7 @@ pub enum AgentCommand {
 }
 
 /// Which components and optionally which entities a subscription covers.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Schema)]
 pub struct SubscriptionFilter {
     pub component_types: Vec<String>,
     pub entities: Option<Vec<EntityRef>>,
@@ -106,7 +107,7 @@ pub struct SubscriptionFilter {
 /// A material to create or edit in the material library. `name` keys the
 /// material; every other field is optional and only the set ones are written, so
 /// editing leaves untouched fields (including textures) intact.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Schema)]
 pub struct MaterialSpec {
     pub name: String,
     /// Linear RGBA albedo.
@@ -123,7 +124,7 @@ pub struct MaterialSpec {
 
 /// Global sky and environment controls, beyond what the UI buttons expose. Every
 /// field is optional; only the set ones are applied.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Schema)]
 pub struct Environment {
     /// One of: None, Sky, CloudySky, Space, Nebula, Sunset, DayNight, Hdr.
     pub atmosphere: Option<String>,
