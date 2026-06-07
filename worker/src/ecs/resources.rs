@@ -68,6 +68,17 @@ pub enum PendingAsset {
 /// to acknowledge once it has spawned.
 pub type AgentLoadQueue = Arc<Mutex<Vec<(u64, Vec<u8>)>>>;
 
+/// A fetched multi-file model (glTF plus its texture/buffer resources) waiting to
+/// spawn additively, with the command correlation id to acknowledge.
+pub struct AgentModelLoad {
+    pub correlation_id: u64,
+    pub gltf: Vec<u8>,
+    pub resources: HashMap<String, Vec<u8>>,
+}
+
+/// A queue of fetched multi-file agent models.
+pub type AgentModelQueue = Arc<Mutex<Vec<AgentModelLoad>>>;
+
 /// Inbox for asset bytes from drops or browser fetches, plus the loading label
 /// that drives the page's progress indicator. The `Arc<Mutex<…>>` lets `ehttp`
 /// callbacks (which require `Send + 'static`) write results back.
@@ -80,6 +91,7 @@ pub struct Incoming {
     pub loading: Arc<Mutex<Option<String>>>,
     pub agent_loads: AgentLoadQueue,
     pub agent_hdris: AgentLoadQueue,
+    pub agent_models: AgentModelQueue,
 }
 
 impl Default for Incoming {
@@ -89,6 +101,7 @@ impl Default for Incoming {
             loading: Arc::new(Mutex::new(None)),
             agent_loads: Arc::new(Mutex::new(Vec::new())),
             agent_hdris: Arc::new(Mutex::new(Vec::new())),
+            agent_models: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::ecs::{FetchState, KhronosAsset, PendingAsset, PolyAsset, ViewerWorld};
+use crate::ecs::{
+    AgentModelLoad, AgentModelQueue, FetchState, KhronosAsset, PendingAsset, PolyAsset, ViewerWorld,
+};
 use nightshade::prelude::{ehttp, serde_json};
 use protocol::{KhronosEntry, PolyhavenEntry, WorkerMessage};
 use serde::Deserialize;
@@ -205,6 +207,96 @@ pub fn fetch_polyhaven_model(viewer: &ViewerWorld, slug: &str, resolution: u32) 
                 download_model(gltf.url, includes, asset, loading);
             }
             None => clear(&loading),
+        }
+    });
+}
+
+/// Like `fetch_polyhaven_model`, but the resolved glTF and its resources are
+/// pushed onto the agent's additive model queue (tagged with `correlation_id`)
+/// instead of the replace inbox, so the model joins the scene without wiping it.
+pub fn fetch_polyhaven_model_additive(
+    viewer: &ViewerWorld,
+    slug: &str,
+    resolution: u32,
+    correlation_id: u64,
+) {
+    let queue = Arc::clone(&viewer.resources.incoming.agent_models);
+    let files_url = format!("{POLYHAVEN_FILES}{slug}");
+    ehttp::fetch(ehttp::Request::get(&files_url), move |result| {
+        let gltf = result
+            .ok()
+            .filter(|response| response.ok)
+            .and_then(|response| serde_json::from_slice::<ModelFiles>(&response.bytes).ok())
+            .and_then(|files| pick_model(files, resolution));
+        match gltf {
+            Some(gltf) => {
+                let includes: Vec<(String, String)> = gltf
+                    .include
+                    .into_iter()
+                    .map(|(key, file)| (key, file.url))
+                    .collect();
+                download_model_additive(gltf.url, includes, queue, correlation_id);
+            }
+            None => crate::agent::fail(correlation_id, "could not resolve the Polyhaven model"),
+        }
+    });
+}
+
+fn download_model_additive(
+    gltf_url: String,
+    includes: Vec<(String, String)>,
+    queue: AgentModelQueue,
+    correlation_id: u64,
+) {
+    ehttp::fetch(ehttp::Request::get(&gltf_url), move |result| {
+        let gltf = match result.ok().filter(|response| response.ok).map(|r| r.bytes) {
+            Some(bytes) => bytes,
+            None => {
+                crate::agent::fail(correlation_id, "failed to download the Polyhaven glTF");
+                return;
+            }
+        };
+        if includes.is_empty() {
+            if let Ok(mut guard) = queue.lock() {
+                guard.push(AgentModelLoad {
+                    correlation_id,
+                    gltf,
+                    resources: HashMap::new(),
+                });
+            }
+            return;
+        }
+
+        let total = includes.len();
+        let progress = Arc::new(Mutex::new((Some(gltf), HashMap::new(), 0usize, false)));
+        for (key, url) in includes {
+            let progress = Arc::clone(&progress);
+            let queue = Arc::clone(&queue);
+            ehttp::fetch(ehttp::Request::get(&url), move |result| {
+                let bytes = result.ok().filter(|response| response.ok).map(|r| r.bytes);
+                let mut guard = progress.lock().unwrap();
+                match bytes {
+                    Some(bytes) => {
+                        guard.1.insert(key.clone(), bytes);
+                        guard.2 += 1;
+                    }
+                    None => guard.3 = true,
+                }
+                if guard.3 {
+                    return;
+                }
+                if guard.2 == total {
+                    let gltf = guard.0.take().unwrap();
+                    let resources = std::mem::take(&mut guard.1);
+                    if let Ok(mut models) = queue.lock() {
+                        models.push(AgentModelLoad {
+                            correlation_id,
+                            gltf,
+                            resources,
+                        });
+                    }
+                }
+            });
         }
     });
 }

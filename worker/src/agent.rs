@@ -341,6 +341,18 @@ fn handle_command(
             None => fail(correlation_id, "entity not live"),
         },
         AgentCommand::LoadGltf { uri } => start_load(viewer, &uri, correlation_id),
+        AgentCommand::LoadPolyhavenModel { slug, resolution } => {
+            post(&WorkerMessage::Agent(AgentResponse::CommandProgress {
+                correlation_id,
+                stage: format!("fetching polyhaven model {slug}"),
+            }));
+            crate::systems::browsers::fetch_polyhaven_model_additive(
+                &viewer.viewer,
+                &slug,
+                resolution,
+                correlation_id,
+            );
+        }
         other => AGENT.with(|agent| agent.borrow_mut().inbound.push((correlation_id, other))),
     }
 }
@@ -455,9 +467,9 @@ fn apply_command(
             nightshade::ecs::world::commands::despawn_recursive_immediate(world, handle);
             Ok(())
         }
-        AgentCommand::SelectNode { .. } | AgentCommand::LoadGltf { .. } => {
-            Err("command handled out of band".to_string())
-        }
+        AgentCommand::SelectNode { .. }
+        | AgentCommand::LoadGltf { .. }
+        | AgentCommand::LoadPolyhavenModel { .. } => Err("command handled out of band".to_string()),
     }
 }
 

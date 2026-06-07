@@ -445,6 +445,33 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
                 other => Ok(pretty(&response_payload(other))),
             }
         }
+        "load_polyhaven_model" => {
+            let slug = arguments
+                .get("slug")
+                .and_then(Value::as_str)
+                .ok_or("missing string field: slug")?
+                .to_string();
+            let resolution = arguments
+                .get("resolution")
+                .and_then(Value::as_u64)
+                .unwrap_or(2) as u32;
+            let correlation_id = shared.correlation();
+            let response = send_request(
+                shared,
+                AgentRequest::Command {
+                    correlation_id,
+                    command: AgentCommand::LoadPolyhavenModel { slug, resolution },
+                },
+            )
+            .await?;
+            match response {
+                AgentResponse::Loaded { version, roots, .. } => {
+                    Ok(json!({ "applied": true, "version": version, "roots": roots }).to_string())
+                }
+                AgentResponse::CommandFailed { error, .. } => Err(error),
+                other => Ok(pretty(&response_payload(other))),
+            }
+        }
         "subscribe" => subscribe_tool(shared, arguments).await,
         "poll_deltas" => poll_deltas_tool(shared, arguments).await,
         "unsubscribe" => unsubscribe_tool(shared, arguments).await,
@@ -760,6 +787,18 @@ fn tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": { "uri": { "type": "string" } },
                 "required": ["uri"]
+            }
+        }),
+        json!({
+            "name": "load_polyhaven_model",
+            "description": "Grab a Polyhaven model by slug (from get_viewer_state's models list) and load it additively. Returns the spawned root handle(s) to position with set_components. resolution is texture k (default 2).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": { "type": "string" },
+                    "resolution": { "type": "integer" }
+                },
+                "required": ["slug"]
             }
         }),
         json!({

@@ -66,6 +66,11 @@ pub enum AgentCommand {
     SelectNode {
         entity: EntityRef,
     },
+    /// Browse-and-grab a Polyhaven model by slug, loaded additively.
+    LoadPolyhavenModel {
+        slug: String,
+        resolution: u32,
+    },
     SpawnEntity {
         components: Vec<(String, Value)>,
     },

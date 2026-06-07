@@ -63,6 +63,30 @@ pub fn poll_agent_loads(viewer: &mut ViewerWorld, world: &mut World) {
     }
 }
 
+/// Spawns the external agent's fetched multi-file models (Polyhaven) additively,
+/// reporting their root handles.
+pub fn poll_agent_models(viewer: &mut ViewerWorld, world: &mut World) {
+    let models = viewer
+        .resources
+        .incoming
+        .agent_models
+        .lock()
+        .ok()
+        .map(|mut queue| std::mem::take(&mut *queue))
+        .unwrap_or_default();
+    for model in models {
+        match nightshade::ecs::prefab::import_gltf_with_resources(&model.gltf, &model.resources) {
+            Ok(result) => {
+                let roots = spawn_additive(viewer, world, result);
+                crate::agent::ack_load(model.correlation_id, &roots);
+            }
+            Err(error) => {
+                crate::agent::fail(model.correlation_id, &format!("import failed: {error}"));
+            }
+        }
+    }
+}
+
 /// Loads the external agent's fetched HDRIs as the skybox, acknowledging each.
 pub fn poll_agent_hdris(viewer: &mut ViewerWorld, world: &mut World) {
     let hdris = viewer
