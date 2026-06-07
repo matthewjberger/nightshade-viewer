@@ -26,14 +26,31 @@ just run
 
 ## Agent (MCP)
 
-An external MCP agent (such as Claude Code) can drive the viewer with the same access a user has plus structured queries. This is behind a non-default `agent` cargo feature, so `just run` and `just dist` never include it and a deployed build never opens a localhost socket. Build the worker and the page together with the feature, then run the bridge:
+An external MCP agent (such as Claude Code) can drive the viewer with the same access a user has plus structured queries. This is behind a non-default `agent` cargo feature, so `just run` and `just dist` never include it and a deployed build never opens a localhost socket.
 
-```bash
-just run-agent                                   # serves page + worker built with --features agent
-cargo build --manifest-path host/Cargo.toml      # the nightshade-mcp stdio <-> websocket bridge
-```
+Three steps:
 
-The worker and the page must share the same `agent` setting; the `*-agent` recipes handle that. See [docs/agent-mcp.md](docs/agent-mcp.md) for the architecture, the MCP tool surface, and how to point Claude Code at it.
+1. Serve the viewer with the agent feature on (builds the worker **and** the page with `--features agent`, served at http://127.0.0.1:8080):
+
+   ```bash
+   just run-agent
+   ```
+
+2. Build the bridge (`host` is its own workspace, so build it by manifest path):
+
+   ```bash
+   cargo build --manifest-path host/Cargo.toml
+   ```
+
+3. Register the bridge with Claude Code, from this repo root:
+
+   ```bash
+   claude mcp add nightshade-viewer -- C:\Users\matth\code\nightshade-viewer\host\target\debug\nightshade-mcp.exe
+   ```
+
+   You run this **once**. After that Claude Code spawns and owns the `nightshade-mcp.exe` process itself (over stdio) every time it starts — you never launch the bridge by hand. The bridge binds `ws://127.0.0.1:8787`; the agent-enabled page reconnects automatically, so start order does not matter. To stop it, `claude mcp remove nightshade-viewer`.
+
+The worker and the page must share the same `agent` setting; the `*-agent` recipes handle that. See [docs/agent-mcp.md](docs/agent-mcp.md) for the architecture, the full MCP tool surface, and how to drive it.
 
 ## License
 
