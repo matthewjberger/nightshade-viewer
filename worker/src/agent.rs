@@ -382,6 +382,10 @@ fn handle_command(
             }
             None => fail(correlation_id, "entity not live"),
         },
+        AgentCommand::ClearScene => {
+            crate::systems::load::despawn_current(&mut viewer.viewer, world);
+            ack(correlation_id, current_version());
+        }
         AgentCommand::LoadGltf { uri } => start_load(viewer, &uri, correlation_id),
         AgentCommand::LoadPolyhavenModel { slug, resolution } => {
             post(&WorkerMessage::Agent(AgentResponse::CommandProgress {
@@ -513,7 +517,8 @@ fn apply_command(
             nightshade::ecs::world::commands::despawn_recursive_immediate(world, handle);
             Ok(())
         }
-        AgentCommand::SelectNode { .. }
+        AgentCommand::ClearScene
+        | AgentCommand::SelectNode { .. }
         | AgentCommand::LoadGltf { .. }
         | AgentCommand::LoadPolyhavenModel { .. }
         | AgentCommand::AddPrimitive { .. }

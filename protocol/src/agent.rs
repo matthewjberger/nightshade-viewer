@@ -84,6 +84,10 @@ pub enum AgentCommand {
         kind: crate::LightKind,
         components: Vec<(String, Value)>,
     },
+    /// Despawn the whole current scene (the default model and everything the
+    /// agent has spawned), leaving an empty stage with the camera, sun, and
+    /// environment intact.
+    ClearScene,
     SpawnEntity {
         components: Vec<(String, Value)>,
     },

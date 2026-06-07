@@ -501,6 +501,7 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             )
             .await
         }
+        "clear_scene" => command(shared, AgentCommand::ClearScene).await,
         "delete_entity" => {
             let typed: args::Entity = parse(arguments)?;
             command(
@@ -917,6 +918,10 @@ fn tool_definitions() -> Vec<Value> {
             "Reparent a child entity. Omit new_parent or pass null to detach to the scene root.",
         ),
         tool::<args::Entity>("delete_entity", "Despawn an entity and its descendants."),
+        tool::<args::Empty>(
+            "clear_scene",
+            "Despawn the entire current scene (the default startup model and everything previously spawned), leaving an empty stage with the camera, sun, and environment intact. Call this first when you want to build a scene from scratch rather than around whatever is already loaded.",
+        ),
         tool::<args::Entity>(
             "select_node",
             "Select an entity in the viewer (drives the inspector and gizmo).",

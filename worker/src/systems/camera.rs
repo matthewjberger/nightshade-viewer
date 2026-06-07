@@ -75,7 +75,7 @@ pub fn frame_model(viewer: &mut ViewerWorld, world: &mut World) {
             _ => None,
         })
         .unwrap_or(45.0_f32.to_radians());
-    let radius = half_diagonal / (fov * 0.5).sin() * 1.4;
+    let radius = half_diagonal / (fov * 0.5).sin() * 1.2;
 
     let near = (half_diagonal * 0.001).clamp(0.001, 0.1);
     if let Some(camera_component) = world.core.get_camera_mut(camera)
