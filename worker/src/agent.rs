@@ -384,6 +384,7 @@ fn handle_command(
         },
         AgentCommand::ClearScene => {
             crate::systems::load::despawn_current(&mut viewer.viewer, world);
+            crate::systems::setup::ensure_camera(world);
             ack(correlation_id, current_version());
         }
         AgentCommand::LoadGltf { uri } => start_load(viewer, &uri, correlation_id),

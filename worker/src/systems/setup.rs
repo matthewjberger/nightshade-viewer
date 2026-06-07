@@ -33,6 +33,22 @@ pub fn spawn(viewer: &mut ViewerWorld, world: &mut World) {
         light.shadow_bias = 0.008;
     }
 
+    ensure_camera(world);
+
+    load::load_default(viewer, world);
+}
+
+/// Spawns the viewer's pan-orbit camera and makes it active, unless a live active
+/// camera already exists. Lets the scene be cleared without leaving the viewer
+/// without a camera.
+pub(crate) fn ensure_camera(world: &mut World) {
+    let alive = world
+        .resources
+        .active_camera
+        .is_some_and(|camera| world.core.entity_has_components(camera, LOCAL_TRANSFORM));
+    if alive {
+        return;
+    }
     let camera = spawn_pan_orbit_camera(
         world,
         Vec3::new(0.0, 0.0, 0.0),
@@ -47,6 +63,4 @@ pub fn spawn(viewer: &mut ViewerWorld, world: &mut World) {
         camera,
         nightshade::ecs::camera::components::ViewportShading::default(),
     );
-
-    load::load_default(viewer, world);
 }

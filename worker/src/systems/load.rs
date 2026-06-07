@@ -331,7 +331,11 @@ fn load_hdri(world: &mut World, bytes: &[u8]) {
 /// individually (with a liveness check) so nothing survives even if a recursive
 /// despawn from the root would have missed it.
 pub(crate) fn despawn_current(viewer: &mut ViewerWorld, world: &mut World) {
+    let camera = world.resources.active_camera;
     for entity in std::mem::take(&mut viewer.resources.model.entities) {
+        if Some(entity) == camera {
+            continue;
+        }
         if world.core.entity_has_components(entity, LOCAL_TRANSFORM) {
             despawn_recursive_immediate(world, entity);
         }
