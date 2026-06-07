@@ -2581,9 +2581,9 @@ checksum = "60993920e071b0c9b66f14e2b32740a4e27ffc82854dcd72035887f336a09a28"
 
 [[package]]
 name = "nightshade"
-version = "0.27.0"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67f9e7facc3ee45231571fef1d4e2e85a7e3f32442d944f229f6d1d75fadfe29"
+checksum = "455e459cc2275d79b64c4acdab32df12856a5246d3a357e45c3abf3c29c35473"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -2597,6 +2597,7 @@ dependencies = [
  "cosmic-text",
  "dirs",
  "ehttp",
+ "enum2schema",
  "freecs",
  "futures",
  "getrandom 0.3.4",
@@ -5662,6 +5663,7 @@ name = "worker"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "enum2schema",
  "js-sys",
  "nightshade",
  "protocol",

@@ -34,6 +34,7 @@ struct ComponentEntry {
     serialize: fn(&World, Entity) -> Option<Value>,
     deserialize: fn(&mut World, Entity, &Value) -> Result<(), String>,
     sample: fn() -> Value,
+    schema: fn() -> Value,
     collect_changed: fn(&mut World, &mut dyn FnMut(Entity, Value)),
 }
 
@@ -85,6 +86,7 @@ macro_rules! entry {
                 Ok(())
             },
             sample: || serde_json::to_value(<$ty>::default()).unwrap_or(Value::Null),
+            schema: || <$ty as enum2schema::Schema>::schema(),
             collect_changed: |world, callback| {
                 world
                     .core
@@ -752,7 +754,7 @@ fn filter_entries(filter: &SubscriptionFilter, registry: &[ComponentEntry]) -> V
 
 fn component_info(entry: &ComponentEntry) -> ComponentInfo {
     let example = (entry.sample)();
-    let schema = shape_of(&example);
+    let schema = (entry.schema)();
     ComponentInfo {
         name: entry.name.to_string(),
         write_policy: match entry.policy {
@@ -764,29 +766,6 @@ fn component_info(entry: &ComponentEntry) -> ComponentInfo {
         },
         schema,
         example,
-    }
-}
-
-fn shape_of(value: &Value) -> Value {
-    match value {
-        Value::Null => Value::String("null".to_string()),
-        Value::Bool(_) => Value::String("boolean".to_string()),
-        Value::Number(_) => Value::String("number".to_string()),
-        Value::String(_) => Value::String("string".to_string()),
-        Value::Array(items) => {
-            let inner = items
-                .first()
-                .map(shape_of)
-                .unwrap_or(Value::String("any".to_string()));
-            Value::Array(vec![inner])
-        }
-        Value::Object(map) => {
-            let shaped = map
-                .iter()
-                .map(|(key, inner)| (key.clone(), shape_of(inner)))
-                .collect();
-            Value::Object(shaped)
-        }
     }
 }
 
