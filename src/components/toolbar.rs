@@ -108,7 +108,7 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 "☰"
             </button>
             <a
-                href="https://github.com/matthewjberger/nightshade"
+                href="https://github.com/matthewjberger/nightshade-viewer"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="shrink min-w-0 truncate text-[13px] font-semibold text-white/90 hover:text-white mr-1 sm:mr-3"
