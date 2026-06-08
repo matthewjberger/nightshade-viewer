@@ -914,8 +914,15 @@ fn apply_material(world: &mut World, spec: MaterialSpec, correlation_id: Correla
     if let Some(double_sided) = spec.double_sided {
         material.double_sided = double_sided;
     }
+    let assigned_texture = spec.base_texture.is_some();
     if let Some(base_texture) = spec.base_texture {
         material.base_texture = Some(base_texture);
+    }
+    // Tile the texture. A 1x scale stretches one texel cell across the whole
+    // surface and reads as untextured, so apply an explicit tiling, or a small
+    // default whenever a texture was just assigned.
+    if let Some(tiling) = spec.tiling.or(assigned_texture.then_some(2.0)) {
+        material.base_texture_transform.scale = [tiling, tiling];
     }
     material_registry_insert(registry, spec.name, material);
     world.resources.mesh_render_state.request_full_rebuild();

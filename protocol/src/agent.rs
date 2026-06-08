@@ -130,6 +130,11 @@ pub struct MaterialSpec {
     /// prototype textures are always available: "greybox_light" and
     /// "greybox_dark" (grey grid greybox), "checkerboard", "gradient", "uv_test".
     pub base_texture: Option<String>,
+    /// How many times the base texture repeats across a surface. Higher tiles the
+    /// pattern more finely; set it near a surface's size in units (e.g. 6 for a
+    /// 6-unit wall) so a greybox grid reads as roughly one cell per unit. Applied
+    /// when a base_texture is set; defaults to a small value.
+    pub tiling: Option<f32>,
 }
 
 /// Global sky and environment controls, beyond what the UI buttons expose. Every
