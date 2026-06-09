@@ -22,5 +22,6 @@ freecs::ecs! {
         scene_sync: SceneSync,
         incoming: Incoming,
         browsers: Browsers,
+        game: Game,
     }
 }

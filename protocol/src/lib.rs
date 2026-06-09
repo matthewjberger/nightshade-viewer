@@ -101,6 +101,55 @@ pub enum Tonemap {
     None,
 }
 
+/// Number of levels in the built-in siege game.
+pub const GAME_LEVELS: u32 = 5;
+
+/// Display name of a siege game level (1-based).
+pub fn game_level_name(level: u32) -> &'static str {
+    match level {
+        1 => "First Contact",
+        2 => "Twin Keeps",
+        3 => "The Wall",
+        4 => "Citadel",
+        _ => "Nightshade Spire",
+    }
+}
+
+/// Lifecycle phase of the siege game.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema), schema(string_enum))]
+pub enum GamePhase {
+    Idle,
+    Playing,
+    Cleared,
+    Failed,
+}
+
+/// Page to worker game actions.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "agent", derive(enum2schema::Schema))]
+pub enum GameCommand {
+    /// Build the given level (1-based) and start playing.
+    Start { level: u32 },
+    /// Fire a cannonball through this physical pixel position.
+    Fire { x: f32, y: f32 },
+    /// Tear the arena down and return to the viewer.
+    Exit,
+}
+
+/// Worker to page game scoreboard, sent whenever it changes.
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct GameStatus {
+    pub phase: GamePhase,
+    pub level: u32,
+    pub score: u32,
+    pub shots_left: u32,
+    pub shots_total: u32,
+    pub targets_left: u32,
+    pub targets_total: u32,
+    pub combo: u32,
+}
+
 /// Counts and size of the loaded model, for the stats panel.
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct ModelStats {
@@ -280,6 +329,10 @@ pub enum ClientMessage {
     },
     /// Ask the worker to fetch the browser indices if it has not yet.
     RefreshBrowsers,
+    /// Drive the built-in siege game.
+    Game {
+        command: GameCommand,
+    },
     /// External agent traffic (Claude Code via the MCP host), forwarded over the
     /// page's WebSocket relay onto this same postMessage path.
     #[cfg(feature = "agent")]
@@ -371,6 +424,15 @@ pub enum WorkerMessage {
     },
     PolyhavenModelsList {
         entries: Vec<PolyhavenEntry>,
+    },
+    /// The siege game scoreboard, sent whenever it changes.
+    Game {
+        status: GameStatus,
+    },
+    /// A target was knocked off the arena, with the points it scored.
+    GameHit {
+        points: u32,
+        combo: u32,
     },
     /// External agent responses and delta batches, relayed back to the MCP host.
     #[cfg(feature = "agent")]

@@ -82,6 +82,10 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
             );
         }
     };
+    let play = move |_| {
+        dismiss_hint();
+        state.game_menu_open.set(true);
+    };
     let status = move || format!("{:.0} fps", state.fps.get());
 
     let menu_open = RwSignal::new(false);
@@ -171,6 +175,16 @@ pub fn Toolbar(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 </button>
             </div>
             <div class="flex-1"></div>
+            <button
+                class=format!(
+                    "{BUTTON} text-violet-300 hover:bg-violet-500/15 font-semibold"
+                )
+                title="Play Nightshade Siege"
+                on:click=play
+            >
+                "▶ Play"
+            </button>
+            <div class="shrink-0 w-px h-4 bg-white/10 mx-1"></div>
             <button class=BUTTON title="Browse the asset library" on:click=browse>
                 "Browse"
             </button>

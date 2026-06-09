@@ -90,6 +90,39 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
                     state.validation.set(None);
                 }
             }
+            WorkerMessage::Game { status } => {
+                let was_cleared = state.game_phase.get_untracked() == protocol::GamePhase::Cleared;
+                state.game_phase.set(status.phase);
+                state.game_level.set(status.level);
+                state.game_score.set(status.score);
+                state.game_shots_left.set(status.shots_left);
+                state.game_shots_total.set(status.shots_total);
+                state.game_targets_left.set(status.targets_left);
+                state.game_targets_total.set(status.targets_total);
+                state.game_combo.set(status.combo);
+                if status.phase == protocol::GamePhase::Cleared && !was_cleared {
+                    crate::state::record_game_best(status.level, status.score);
+                    crate::state::unlock_game_level(status.level + 1);
+                }
+                if status.phase != protocol::GamePhase::Playing {
+                    state.game_hits.set(Vec::new());
+                }
+            }
+            WorkerMessage::GameHit { points, combo } => {
+                state.game_hits.update(|hits| {
+                    let id = hits.last().map(|(id, _)| id + 1).unwrap_or(0);
+                    let text = if combo > 1 {
+                        format!("+{points} x{combo}")
+                    } else {
+                        format!("+{points}")
+                    };
+                    hits.push((id, text));
+                    if hits.len() > 3 {
+                        let excess = hits.len() - 3;
+                        hits.drain(0..excess);
+                    }
+                });
+            }
             WorkerMessage::KhronosList { entries } => state.khronos.set(entries),
             WorkerMessage::PolyhavenList { entries } => state.hdris.set(entries),
             WorkerMessage::PolyhavenModelsList { entries } => state.models.set(entries),

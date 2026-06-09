@@ -1,5 +1,6 @@
 pub mod browsers;
 pub mod camera;
+pub mod game;
 pub mod load;
 pub mod picking;
 pub mod scene;

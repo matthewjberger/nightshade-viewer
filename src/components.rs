@@ -1,6 +1,7 @@
 pub mod add_menu;
 pub mod animation_bar;
 pub mod browser;
+pub mod game;
 pub mod gizmo_panel;
 pub mod hint;
 pub mod inspector;

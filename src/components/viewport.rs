@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use leptos::html;
 use leptos::prelude::*;
-use protocol::{ClientMessage, TouchPhase};
+use protocol::{ClientMessage, GameCommand, GamePhase, TouchPhase};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::{DragEvent, HtmlCanvasElement, MouseEvent, PointerEvent, ResizeObserver, WheelEvent};
@@ -188,7 +188,7 @@ pub fn Viewport(
                         },
                     );
                     if count == 1 && moved < 5.0 {
-                        send(&bridge, &ClientMessage::Pick { x, y });
+                        send(&bridge, &tap_message(state, x, y));
                     }
                 }
             }
@@ -212,7 +212,7 @@ pub fn Viewport(
                     },
                 );
                 if button == Some(0) && moved < 5.0 {
-                    send(&bridge, &ClientMessage::Pick { x, y });
+                    send(&bridge, &tap_message(state, x, y));
                 }
             }
         }
@@ -256,6 +256,9 @@ pub fn Viewport(
     let on_drop = move |event: DragEvent| {
         event.prevent_default();
         state.dragging.set(false);
+        if state.game_phase.get_untracked() != GamePhase::Idle {
+            return;
+        }
         if let (Some(transfer), Some(bridge)) = (event.data_transfer(), bridge.get_value()) {
             bridge::handle_drop(&bridge, transfer, state);
         }
@@ -288,6 +291,18 @@ pub fn Viewport(
                 on:contextmenu=on_contextmenu
             ></canvas>
         </div>
+    }
+}
+
+/// A click without drag fires a cannonball while the siege game is playing and
+/// picks otherwise.
+fn tap_message(state: ViewerState, x: f32, y: f32) -> ClientMessage {
+    if state.game_phase.get_untracked() == GamePhase::Playing {
+        ClientMessage::Game {
+            command: GameCommand::Fire { x, y },
+        }
+    } else {
+        ClientMessage::Pick { x, y }
     }
 }
 

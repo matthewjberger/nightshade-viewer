@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use nightshade::prelude::Entity;
-use protocol::{ClipInfo, ModelStats};
+use protocol::{ClipInfo, GamePhase, ModelStats};
 
 /// Camera requests from the page. Orbit, pan, and zoom now come from forwarded
 /// pointer input the engine reads directly, so only framing and the turntable
@@ -52,6 +52,48 @@ pub struct Picking {
 pub struct SceneSync {
     pub needs_tree: bool,
     pub needs_selection: bool,
+}
+
+/// The siege game: arena entities, scoreboard, and the timers that drive
+/// combo decay, projectile cleanup, and the failed-level settle check.
+pub struct Game {
+    pub phase: GamePhase,
+    pub level: u32,
+    pub score: u32,
+    pub shots_left: u32,
+    pub shots_total: u32,
+    pub targets_total: u32,
+    pub arena: Vec<Entity>,
+    pub blocks: Vec<Entity>,
+    pub targets: Vec<(Entity, f32)>,
+    pub projectiles: Vec<(Entity, f32)>,
+    pub combo: u32,
+    pub combo_timer: f32,
+    pub settle_timer: f32,
+    pub grid_was_enabled: bool,
+    pub dirty: bool,
+}
+
+impl Default for Game {
+    fn default() -> Self {
+        Self {
+            phase: GamePhase::Idle,
+            level: 1,
+            score: 0,
+            shots_left: 0,
+            shots_total: 0,
+            targets_total: 0,
+            arena: Vec::new(),
+            blocks: Vec::new(),
+            targets: Vec::new(),
+            projectiles: Vec::new(),
+            combo: 0,
+            combo_timer: 0.0,
+            settle_timer: 0.0,
+            grid_was_enabled: true,
+            dirty: false,
+        }
+    }
 }
 
 /// A binary asset waiting to be loaded into the engine.

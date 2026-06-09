@@ -271,6 +271,9 @@ pub(crate) fn apply_client_message(world: &mut World, viewer: &mut Viewer, messa
         ClientMessage::RefreshBrowsers => {
             systems::browsers::resend(&mut viewer.viewer);
         }
+        ClientMessage::Game { command } => {
+            systems::game::apply(&mut viewer.viewer, world, command);
+        }
         ClientMessage::Init { .. }
         | ClientMessage::Resize { .. }
         | ClientMessage::DropAsset { .. }

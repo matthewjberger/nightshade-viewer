@@ -1,12 +1,13 @@
 use leptos::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
 
-use protocol::ClientMessage;
+use protocol::{ClientMessage, GamePhase};
 
 use crate::bridge::{Bridge, send};
 use crate::components::add_menu::AddMenu;
 use crate::components::animation_bar::AnimationBar;
 use crate::components::browser::AssetBrowser;
+use crate::components::game::Game;
 use crate::components::gizmo_panel::GizmoPanel;
 use crate::components::hint::Hint;
 use crate::components::inspector::Inspector;
@@ -45,9 +46,11 @@ pub fn App() -> impl IntoView {
         }
     });
 
+    let game_idle = move || state.game_phase.get() == GamePhase::Idle;
+
     view! {
         <Viewport bridge state />
-        <Show when=move || !state.ui_hidden.get() fallback=|| ()>
+        <Show when=move || !state.ui_hidden.get() && game_idle() fallback=|| ()>
             <Toolbar bridge state />
             <Hint state />
             <LeftPanel bridge state />
@@ -58,15 +61,16 @@ pub fn App() -> impl IntoView {
             <AssetBrowser bridge state />
             <AddMenu bridge state />
         </Show>
+        <Game bridge state />
         <Loader state />
-        <Show when=move || state.ui_hidden.get() fallback=|| ()>
+        <Show when=move || state.ui_hidden.get() && game_idle() fallback=|| ()>
             <button
                 class="fixed bottom-3 right-3 z-40 w-2.5 h-2.5 rounded-full bg-white/25 hover:bg-white/70 transition-colors"
                 title="Show interface (H)"
                 on:click=move |_| state.ui_hidden.set(false)
             ></button>
         </Show>
-        <Show when=move || state.dragging.get() fallback=|| ()>
+        <Show when=move || state.dragging.get() && game_idle() fallback=|| ()>
             <div class="fixed inset-2 z-30 pointer-events-none flex items-center justify-center rounded-2xl border-4 border-dashed border-orange-400/50 bg-orange-500/10">
                 <div class="px-6 py-4 rounded-xl bg-[#14161d]/90 border border-white/10 text-white/90 text-[15px] shadow-2xl">
                     "Drop a .glb, .gltf, or .hdr file"
