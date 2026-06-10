@@ -54,7 +54,7 @@ the ring, the poll returns `resync_required` and the agent re-subscribes.
 
 ## What the agent can do
 
-The bridge exposes 25 tools. Entities are always full generational handles:
+The bridge exposes 26 tools. Entities are always full generational handles:
 `{ "id": <int>, "generation": <int> }`. A reused slot reads as a *different*
 handle, so a command against a stale handle fails rather than hitting whatever
 now occupies the slot.
@@ -83,6 +83,19 @@ now occupies the slot.
   the agent can see what to search by. The viewer fetches the indices once at
   startup and the call waits for that, so a single call returns results (no
   `idle`/retry handling).
+
+### See the scene
+
+- **`screenshot { camera?, max_dimension? }`**: the rendered viewport as a PNG
+  image content block, so the agent can *look* at what it built. With `camera`
+  (an entity handle carrying a `camera` component), a frame is rendered from
+  that camera and the previously active camera is restored afterward, so any
+  placed camera's view is capturable without disturbing the user's view.
+  `max_dimension` caps the longer side in pixels (default 1024). Not batchable:
+  it returns an image, not text. The capture reads the worker's
+  `OffscreenCanvas` back through `convertToBlob` in the same task as the render
+  (a WebGPU canvas is cleared once its frame is presented), so it sees exactly
+  the frame the engine drew, overlays included.
 
 ### Spawn and edit entities
 

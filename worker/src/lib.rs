@@ -284,6 +284,8 @@ async fn create_app(canvas: OffscreenCanvas, width: f32, height: f32) -> App {
     let physical_width = (width as u32).max(1);
     let physical_height = (height as u32).max(1);
 
+    #[cfg(feature = "agent")]
+    agent::set_canvas(canvas.clone());
     let surface_target = wgpu::SurfaceTarget::OffscreenCanvas(canvas);
     let mut renderer = create_wgpu_renderer(surface_target, physical_width, physical_height)
         .await
@@ -316,6 +318,8 @@ fn start_render_loop(_scope: DedicatedWorkerGlobalScope, app_slot: AppSlot) {
     spawn_animation_frame_loop(move || {
         if let Some(app) = app_slot.borrow_mut().as_mut() {
             tick_offscreen(&mut app.world, &mut app.state, &mut app.renderer);
+            #[cfg(feature = "agent")]
+            agent::flush_screenshots(&mut app.world);
             post_camera_basis(&app.world, &last_basis);
             if let Some(&root) = app.state.viewer.resources.model.roots.first() {
                 post_animation(&app.world, root, &last_anim);

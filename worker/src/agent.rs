@@ -11,6 +11,10 @@ use protocol::{
     SubscriptionId, Version, WorkerMessage, WritePolicyInfo,
 };
 
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{Blob, FileReaderSync, OffscreenCanvas, OffscreenCanvasRenderingContext2d};
+
 use crate::ecs::FetchState;
 use crate::post;
 use crate::state::Viewer;
@@ -211,12 +215,23 @@ fn registry() -> Vec<ComponentEntry> {
     ]
 }
 
+/// A screenshot waiting for the requested camera to render. The camera switch
+/// applies when the request arrives; the capture fires after a couple of frames
+/// have rendered from it, then the previous camera is restored.
+struct PendingScreenshot {
+    correlation_id: CorrelationId,
+    max_dimension: Option<u32>,
+    restore_camera: Option<Entity>,
+    frames_remaining: u8,
+}
+
 /// Per-worker agent state. Lives in a `thread_local` because the collection
 /// system is `fn(&mut World)` and cannot carry it.
 #[derive(Default)]
 struct AgentState {
     pending_subscribes: Vec<(CorrelationId, SubscriptionFilter)>,
     pending_asset_lists: Vec<(CorrelationId, Option<String>)>,
+    pending_screenshots: Vec<PendingScreenshot>,
     subscriptions: HashMap<SubscriptionId, SubscriptionFilter>,
     next_subscription_id: SubscriptionId,
     version: Version,
@@ -229,6 +244,14 @@ thread_local! {
         next_subscription_id: 1,
         ..AgentState::default()
     });
+    static CANVAS: RefCell<Option<OffscreenCanvas>> = const { RefCell::new(None) };
+}
+
+/// Keeps a handle to the render canvas so screenshots can read it back. The
+/// canvas itself is owned by the renderer; this is the same underlying JS
+/// object.
+pub fn set_canvas(canvas: OffscreenCanvas) {
+    CANVAS.with(|slot| *slot.borrow_mut() = Some(canvas));
 }
 
 /// Inserts the agent delta-collection system last in the frame schedule, so it
@@ -374,8 +397,182 @@ pub fn handle_agent_request(world: &mut World, viewer: &mut Viewer, request: Age
                 });
             }
         }
+        AgentRequest::Screenshot {
+            correlation_id,
+            camera,
+            max_dimension,
+        } => handle_screenshot(world, correlation_id, camera, max_dimension),
         AgentRequest::Resync { .. } => {}
     }
+}
+
+/// Routes a screenshot request by queueing it for the post-render flush. A
+/// WebGPU canvas is only readable in the task that rendered it (the presented
+/// texture is cleared afterward), so the capture itself always happens in
+/// [`flush_screenshots`], right after the engine submits a frame.
+fn handle_screenshot(
+    world: &mut World,
+    correlation_id: CorrelationId,
+    camera: Option<EntityRef>,
+    max_dimension: Option<u32>,
+) {
+    let mut restore_camera = None;
+    let mut frames_remaining = 0;
+    if let Some(reference) = camera {
+        let Some(handle) = live(world, reference) else {
+            fail(correlation_id, "entity not live");
+            return;
+        };
+        if !world.core.entity_has_components(handle, CAMERA) {
+            fail(correlation_id, "entity is not a camera");
+            return;
+        }
+        let previous = world.resources.active_camera;
+        if previous != Some(handle) {
+            world.resources.active_camera = Some(handle);
+            restore_camera = previous;
+            frames_remaining = 1;
+        }
+    }
+    AGENT.with(|agent| {
+        agent
+            .borrow_mut()
+            .pending_screenshots
+            .push(PendingScreenshot {
+                correlation_id,
+                max_dimension,
+                restore_camera,
+                frames_remaining,
+            });
+    });
+}
+
+/// Captures the screenshots whose frame has rendered, restoring the previous
+/// camera after a switched capture. Called from the render loop right after
+/// the engine ticks, in the same task as the render, so the canvas still holds
+/// the submitted frame.
+pub fn flush_screenshots(world: &mut World) {
+    let ready = AGENT.with(|agent| {
+        let mut state = agent.borrow_mut();
+        if state.pending_screenshots.is_empty() {
+            return Vec::new();
+        }
+        let mut ready = Vec::new();
+        state.pending_screenshots.retain_mut(|pending| {
+            if pending.frames_remaining > 0 {
+                pending.frames_remaining -= 1;
+                return true;
+            }
+            ready.push((
+                pending.correlation_id,
+                pending.max_dimension,
+                pending.restore_camera,
+            ));
+            false
+        });
+        ready
+    });
+    for (correlation_id, max_dimension, restore_camera) in ready {
+        capture_screenshot(correlation_id, max_dimension);
+        if let Some(previous) = restore_camera
+            && world.core.component_mask(previous).is_some()
+        {
+            world.resources.active_camera = Some(previous);
+        }
+    }
+}
+
+/// Reads the render canvas back as a PNG and posts the response. The bitmap
+/// capture and `convert_to_blob` run synchronously, in the same task as the
+/// render that produced the frame; only the encode and the response are async.
+fn capture_screenshot(correlation_id: CorrelationId, max_dimension: Option<u32>) {
+    let Some(canvas) = CANVAS.with(|slot| slot.borrow().clone()) else {
+        fail(correlation_id, "the render canvas is not available");
+        return;
+    };
+    let (promise, width, height) = match begin_capture(&canvas, max_dimension) {
+        Ok(begun) => begun,
+        Err(error) => {
+            fail(correlation_id, &error);
+            return;
+        }
+    };
+    wasm_bindgen_futures::spawn_local(async move {
+        match finish_capture(promise).await {
+            Ok(png_base64) => {
+                post(&WorkerMessage::Agent(AgentResponse::Screenshot {
+                    correlation_id,
+                    width,
+                    height,
+                    png_base64,
+                }));
+            }
+            Err(error) => fail(correlation_id, &error),
+        }
+    });
+}
+
+/// Captures the canvas bitmap (downscaled through a 2d canvas when
+/// `max_dimension` asks for it) and starts the PNG encode, returning the
+/// encode promise with the capture dimensions.
+fn begin_capture(
+    canvas: &OffscreenCanvas,
+    max_dimension: Option<u32>,
+) -> Result<(js_sys::Promise, u32, u32), String> {
+    let source_width = canvas.width();
+    let source_height = canvas.height();
+    if source_width == 0 || source_height == 0 {
+        return Err("the render canvas has zero size".to_string());
+    }
+    let longer = source_width.max(source_height);
+    let (target, width, height) = match max_dimension {
+        Some(limit) if limit > 0 && longer > limit => {
+            let scale = limit as f64 / longer as f64;
+            let width = ((source_width as f64 * scale).round() as u32).max(1);
+            let height = ((source_height as f64 * scale).round() as u32).max(1);
+            let scaled = OffscreenCanvas::new(width, height)
+                .map_err(|_| "failed to create the scaling canvas".to_string())?;
+            let context = scaled
+                .get_context("2d")
+                .ok()
+                .flatten()
+                .and_then(|object| object.dyn_into::<OffscreenCanvasRenderingContext2d>().ok())
+                .ok_or_else(|| "failed to get a 2d context".to_string())?;
+            context
+                .draw_image_with_offscreen_canvas_and_dw_and_dh(
+                    canvas,
+                    0.0,
+                    0.0,
+                    width as f64,
+                    height as f64,
+                )
+                .map_err(|_| "failed to downscale the capture".to_string())?;
+            (scaled, width, height)
+        }
+        _ => (canvas.clone(), source_width, source_height),
+    };
+    let promise = target
+        .convert_to_blob()
+        .map_err(|_| "failed to start the png encode".to_string())?;
+    Ok((promise, width, height))
+}
+
+/// Awaits the PNG encode and returns the bytes as base64, via a data URL from
+/// `FileReaderSync`.
+async fn finish_capture(promise: js_sys::Promise) -> Result<String, String> {
+    let blob: Blob = JsFuture::from(promise)
+        .await
+        .map_err(|_| "the png encode failed".to_string())?
+        .unchecked_into();
+    let reader =
+        FileReaderSync::new().map_err(|_| "failed to create the blob reader".to_string())?;
+    let data_url = reader
+        .read_as_data_url(&blob)
+        .map_err(|_| "failed to read the png blob".to_string())?;
+    let comma = data_url
+        .find(',')
+        .ok_or_else(|| "unexpected data url shape".to_string())?;
+    Ok(data_url[comma + 1..].to_string())
 }
 
 fn handle_command(

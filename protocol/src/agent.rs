@@ -221,6 +221,15 @@ pub enum AgentRequest {
         correlation_id: CorrelationId,
         search: Option<String>,
     },
+    /// Capture the rendered viewport as a PNG. With `camera`, a frame is
+    /// rendered from that camera and the active camera is restored afterward;
+    /// without it, the current view is captured. `max_dimension` downscales the
+    /// capture (preserving aspect) so the longer side fits.
+    Screenshot {
+        correlation_id: CorrelationId,
+        camera: Option<EntityRef>,
+        max_dimension: Option<u32>,
+    },
 }
 
 /// A read against a stale handle returns this distinct outcome, never the new
@@ -362,6 +371,13 @@ pub enum AgentResponse {
     Assets {
         correlation_id: CorrelationId,
         assets: Value,
+    },
+    /// A captured viewport frame as a base64 PNG.
+    Screenshot {
+        correlation_id: CorrelationId,
+        width: u32,
+        height: u32,
+        png_base64: String,
     },
     /// One batch per tracking-on frame, broadcast to the host fan-out.
     Batch { batch: DeltaBatch },

@@ -173,7 +173,8 @@ fn response_correlation(response: &AgentResponse) -> Option<CorrelationId> {
         | AgentResponse::Unsubscribed { correlation_id, .. }
         | AgentResponse::ViewerState { correlation_id, .. }
         | AgentResponse::Materials { correlation_id, .. }
-        | AgentResponse::Assets { correlation_id, .. } => Some(*correlation_id),
+        | AgentResponse::Assets { correlation_id, .. }
+        | AgentResponse::Screenshot { correlation_id, .. } => Some(*correlation_id),
         AgentResponse::Batch { .. }
         | AgentResponse::Replay { .. }
         | AgentResponse::Resnapshot { .. } => None,
@@ -225,7 +226,8 @@ fn request_correlation(request: &AgentRequest) -> CorrelationId {
         | AgentRequest::SetEnvironment { correlation_id, .. }
         | AgentRequest::SetMaterial { correlation_id, .. }
         | AgentRequest::ListMaterials { correlation_id }
-        | AgentRequest::ListAssets { correlation_id, .. } => *correlation_id,
+        | AgentRequest::ListAssets { correlation_id, .. }
+        | AgentRequest::Screenshot { correlation_id, .. } => *correlation_id,
         AgentRequest::Resync { .. } => 0,
     }
 }
@@ -334,6 +336,18 @@ async fn handle_tool_call(shared: &Arc<Shared>, params: Value, id: Option<Value>
         .to_string();
     let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
+    // Screenshot returns an image content block, not text, so it bypasses the
+    // text-tool path.
+    if name == "screenshot" {
+        return match screenshot_tool(shared, arguments).await {
+            Ok(content) => rpc_result(id, json!({ "content": content, "isError": false })),
+            Err(error) => rpc_result(
+                id,
+                json!({ "content": [{ "type": "text", "text": error }], "isError": true }),
+            ),
+        };
+    }
+
     match run_tool(shared, &name, arguments).await {
         Ok(text) => rpc_result(
             id,
@@ -438,6 +452,18 @@ mod args {
         pub kind: LightKind,
         #[serde(default)]
         pub components: Bag,
+    }
+
+    #[derive(Deserialize, Schema, Default)]
+    pub struct Screenshot {
+        /// Capture from this camera entity instead of the current view; the
+        /// active camera is restored afterward.
+        #[serde(default)]
+        pub camera: Option<EntityRef>,
+        /// The longer side of the capture is downscaled to at most this many
+        /// pixels, preserving aspect. Defaults to 1024.
+        #[serde(default)]
+        pub max_dimension: Option<u32>,
     }
 
     #[derive(Deserialize, Schema)]
@@ -668,6 +694,9 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             .await
         }
         "batch" => batch_tool(shared, arguments).await,
+        "screenshot" => {
+            Err("screenshot returns an image and cannot run inside a batch".to_string())
+        }
         "set_material" => {
             let material: MaterialSpec = parse(arguments)?;
             if material.name.is_empty() {
@@ -724,6 +753,38 @@ async fn run_tool(shared: &Arc<Shared>, name: &str, arguments: Value) -> Result<
             unsubscribe_tool(shared, typed.subscription_id).await
         }
         other => Err(format!("unknown tool: {other}")),
+    }
+}
+
+/// Captures the viewport (or a specific camera's render) and returns MCP
+/// content blocks: the PNG as an image, plus a small text block with the
+/// dimensions.
+async fn screenshot_tool(shared: &Arc<Shared>, arguments: Value) -> Result<Value, String> {
+    let typed: args::Screenshot = parse(arguments)?;
+    let correlation_id = shared.correlation();
+    let response = send_request(
+        shared,
+        AgentRequest::Screenshot {
+            correlation_id,
+            camera: typed.camera,
+            max_dimension: Some(typed.max_dimension.unwrap_or(1024)),
+        },
+    )
+    .await?;
+    match response {
+        AgentResponse::Screenshot {
+            width,
+            height,
+            png_base64,
+            ..
+        } => Ok(json!([
+            { "type": "image", "data": png_base64, "mimeType": "image/png" },
+            { "type": "text", "text": json!({ "width": width, "height": height }).to_string() },
+        ])),
+        AgentResponse::CommandFailed { error, .. } => Err(error),
+        other => Ok(json!([
+            { "type": "text", "text": compact(&response_payload(other)) },
+        ])),
     }
 }
 
@@ -1050,6 +1111,10 @@ fn tool_definitions() -> Vec<Value> {
             "Return the delta batches for a subscription since the last poll. resync_required true means re-subscribe.",
         ),
         tool::<args::SubscriptionId>("unsubscribe", "Tear down a subscription."),
+        tool::<args::Screenshot>(
+            "screenshot",
+            "Capture the rendered viewport as a PNG image, so you can see the scene. Pass camera (an entity handle with a camera component) to render from that camera instead of the current view; the active camera is restored afterward. max_dimension caps the longer side in pixels (default 1024). Cannot run inside a batch.",
+        ),
         tool::<args::Empty>(
             "get_viewer_state",
             "Read render settings, the current selection (entity handle plus its name and local_transform), and loaded-model counts. Small and cheap; this is the one call for questions like what is selected. The asset catalog is separate (list_assets).",
