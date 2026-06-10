@@ -20,7 +20,7 @@ src/state.rs      grouped signals     worker/src/systems/*  camera, load, pickin
 
 ## Crates
 
-protocol holds the message and data types, the one place the wire is defined. worker is the wasm module: the engine World plus a ViewerWorld, a freecs world that holds the viewer's own state (selection, the loaded model, camera input, the browser fetch state), driven by free functions in worker/src/systems. The root crate is the Leptos UI. desktop is the native shell that hosts the web bundle in a webview window. host is the native nightshade-mcp bridge that exposes the viewer to an external MCP agent, built only with the optional agent feature. Nightshade is the published crate with its default features.
+protocol holds the message and data types, the one place the wire is defined. worker is the wasm module: the engine World plus a ViewerWorld, a freecs world that holds the viewer's own state (selection, the loaded model, camera input, the browser fetch state), driven by free functions in worker/src/systems. The root crate is the Leptos UI. desktop is the native shell that hosts the web bundle in a webview window and, behind the optional agent feature, the MCP bridge that exposes the viewer to an external agent. Nightshade is the published crate with its default features.
 
 ## The message protocol
 
@@ -42,7 +42,7 @@ After a load the worker walks the spawned entities from the root with query_desc
 
 ## The agent surface
 
-Behind the optional agent feature, an external MCP agent can read and mutate the live world with the same access a user has plus structured queries and a delta stream. It is a fourth process: the agent speaks MCP to the native host bridge, which relays over a websocket to the page (src/relay.rs), which forwards onto the same worker postMessage path as the UI. The bridge holds no engine state; the world stays in the worker, where agent_apply (before transform propagation) and agent_collect (last in the frame) systems handle commands and diff the world into version-stamped delta batches. The Agent variant on ClientMessage and WorkerMessage carries the requests and responses. The whole surface compiles out by default, so a deployed build opens no localhost socket. See agent-mcp.md for the full design, tool list, and how to drive it.
+Behind the optional agent feature, an external MCP agent can read and mutate the live world with the same access a user has plus structured queries and a delta stream. The agent speaks MCP over local HTTP to the desktop process (desktop/src/agent.rs), which relays over a websocket to the page (src/relay.rs), which forwards onto the same worker postMessage path as the UI. The bridge holds no engine state; the world stays in the worker, where agent_apply (before transform propagation) and agent_collect (last in the frame) systems handle commands and diff the world into version-stamped delta batches. The Agent variant on ClientMessage and WorkerMessage carries the requests and responses. The whole surface compiles out by default, so a deployed build opens no localhost socket. See agent-mcp.md for the full design, tool list, and how to drive it.
 
 ## The desktop shell
 
@@ -52,4 +52,4 @@ The bundle rides along via rust-embed. Debug builds read dist from disk at reque
 
 ## Build
 
-just run builds the worker to wasm with wasm-bindgen and wasm-opt, generates the Tailwind stylesheet, builds the bundle with Trunk, and opens it in a native webview window. just run-web serves the bundle at 127.0.0.1:8080 for a browser instead. A push to main runs the same steps in .github/workflows/deploy.yml and publishes dist/ to GitHub Pages. just run-agent serves the web build with the agent feature on, for both the worker and the page.
+just run builds the worker to wasm with wasm-bindgen and wasm-opt, generates the Tailwind stylesheet, builds the bundle with Trunk, and opens it in a native webview window. just run-web serves the bundle at 127.0.0.1:8080 for a browser instead. A push to main runs the same steps in .github/workflows/deploy.yml and publishes dist/ to GitHub Pages. just run-agent is the desktop run with the agent feature on across the worker, the page, and the shell, adding the in-process MCP endpoint and page relay.

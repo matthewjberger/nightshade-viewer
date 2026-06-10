@@ -41,10 +41,12 @@ run: build
 run-web: worker install tailwind
     trunk serve
 
-# Like `run`, but builds the worker and app with the external-agent feature so
-# the MCP bridge can drive the viewer. See docs/agent-mcp.md.
+# Like `run`, but builds the worker, the app, and the desktop shell with the
+# external-agent feature, so an MCP client can drive the viewer over
+# http://127.0.0.1:8788/mcp. See docs/agent-mcp.md.
 run-agent: worker-agent install tailwind
-    trunk serve --features agent
+    trunk build --features agent
+    cargo run -p desktop --features agent
 
 # Serves the already-built app without rebuilding the worker
 serve:
@@ -62,12 +64,14 @@ build-desktop: dist
 check:
     cargo check -p protocol -p worker -p nightshade-viewer --target wasm32-unknown-unknown
     cargo check -p desktop
+    cargo check -p desktop --features agent
     cargo fmt --all -- --check
 
 # Runs clippy across the workspace and denies warnings
 lint:
     cargo clippy -p protocol -p worker -p nightshade-viewer --target wasm32-unknown-unknown -- -D warnings
     cargo clippy -p desktop -- -D warnings
+    cargo clippy -p desktop --features agent -- -D warnings
 
 # Formats the code
 format:

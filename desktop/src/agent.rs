@@ -1,3 +1,8 @@
+//! The in-process agent bridge: an MCP endpoint over local HTTP in front of a
+//! websocket relay to the page. It turns each `tools/call` into an
+//! `AgentRequest`, sends it to the page, and matches the `AgentResponse` by
+//! correlation id. It holds no engine state; the world stays in the worker.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,11 +14,11 @@ use protocol::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
 const WS_ADDR: &str = "127.0.0.1:8787";
+const MCP_ADDR: &str = "127.0.0.1:8788";
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const RING_CAPACITY: usize = 4096;
 
@@ -46,16 +51,28 @@ impl Shared {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    let shared = Arc::new(Shared::new());
-
-    let ws_shared = shared.clone();
-    tokio::spawn(async move {
-        run_ws_server(ws_shared).await;
+/// Starts the bridge on a background thread: a tokio runtime hosting the page
+/// relay websocket, and a blocking HTTP loop serving MCP. Returns immediately
+/// so the caller can run the window event loop.
+pub fn start() {
+    std::thread::spawn(|| {
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log(&format!("failed to start the agent runtime: {error}"));
+                return;
+            }
+        };
+        let shared = Arc::new(Shared::new());
+        let ws_shared = shared.clone();
+        runtime.spawn(async move {
+            run_ws_server(ws_shared).await;
+        });
+        run_mcp_server(shared, runtime.handle().clone());
     });
-
-    run_stdio(shared).await;
 }
 
 async fn run_ws_server(shared: Arc<Shared>) {
@@ -213,34 +230,64 @@ fn request_correlation(request: &AgentRequest) -> CorrelationId {
     }
 }
 
-async fn run_stdio(shared: Arc<Shared>) {
-    let stdin = tokio::io::stdin();
-    let mut reader = BufReader::new(stdin).lines();
-    let mut stdout = tokio::io::stdout();
-
-    while let Ok(Some(line)) = reader.next_line().await {
-        if line.trim().is_empty() {
-            continue;
+/// Serves MCP over streamable HTTP. Each POST carries one JSON-RPC message;
+/// the reply is the JSON-RPC response, or 202 for a notification. Requests are
+/// handled on their own threads so a slow tool call never blocks another.
+fn run_mcp_server(shared: Arc<Shared>, handle: tokio::runtime::Handle) {
+    let server = match tiny_http::Server::http(MCP_ADDR) {
+        Ok(server) => server,
+        Err(error) => {
+            log(&format!("failed to bind {MCP_ADDR}: {error}"));
+            return;
         }
-        let Ok(message) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        let id = message.get("id").cloned();
-        let method = message
-            .get("method")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let params = message.get("params").cloned().unwrap_or(Value::Null);
+    };
+    log(&format!("mcp endpoint listening on http://{MCP_ADDR}/mcp"));
+    for request in server.incoming_requests() {
+        let request_shared = shared.clone();
+        let request_handle = handle.clone();
+        std::thread::spawn(move || {
+            handle_mcp_request(request_shared, request_handle, request);
+        });
+    }
+}
 
-        let response = dispatch(&shared, &method, params, id.clone()).await;
-        if let Some(response) = response {
-            let mut text = response.to_string();
-            text.push('\n');
-            if stdout.write_all(text.as_bytes()).await.is_err() {
-                break;
-            }
-            let _ = stdout.flush().await;
+fn handle_mcp_request(
+    shared: Arc<Shared>,
+    handle: tokio::runtime::Handle,
+    mut request: tiny_http::Request,
+) {
+    if *request.method() != tiny_http::Method::Post {
+        let _ = request.respond(tiny_http::Response::empty(405));
+        return;
+    }
+    let mut body = String::new();
+    if request.as_reader().read_to_string(&mut body).is_err() {
+        let _ = request.respond(tiny_http::Response::empty(400));
+        return;
+    }
+    let Ok(message) = serde_json::from_str::<Value>(&body) else {
+        let _ = request.respond(tiny_http::Response::empty(400));
+        return;
+    };
+    let id = message.get("id").cloned();
+    let method = message
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let params = message.get("params").cloned().unwrap_or(Value::Null);
+
+    let response = handle.block_on(dispatch(&shared, &method, params, id));
+    match response {
+        Some(value) => {
+            let header =
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                    .expect("static header is valid");
+            let _ = request
+                .respond(tiny_http::Response::from_string(value.to_string()).with_header(header));
+        }
+        None => {
+            let _ = request.respond(tiny_http::Response::empty(202));
         }
     }
 }
@@ -252,14 +299,21 @@ async fn dispatch(
     id: Option<Value>,
 ) -> Option<Value> {
     match method {
-        "initialize" => Some(rpc_result(
-            id,
-            json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": { "tools": {} },
-                "serverInfo": { "name": "nightshade-viewer", "version": "0.1.0" }
-            }),
-        )),
+        "initialize" => {
+            let version = params
+                .get("protocolVersion")
+                .and_then(Value::as_str)
+                .unwrap_or("2025-03-26")
+                .to_string();
+            Some(rpc_result(
+                id,
+                json!({
+                    "protocolVersion": version,
+                    "capabilities": { "tools": {} },
+                    "serverInfo": { "name": "nightshade-viewer", "version": "0.1.0" }
+                }),
+            ))
+        }
         "notifications/initialized" => None,
         "ping" => Some(rpc_result(id, json!({}))),
         "tools/list" => Some(rpc_result(id, json!({ "tools": tool_definitions() }))),
@@ -1024,5 +1078,5 @@ fn compact(value: &Value) -> String {
 }
 
 fn log(message: &str) {
-    eprintln!("[nightshade-mcp] {message}");
+    eprintln!("[agent] {message}");
 }

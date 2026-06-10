@@ -5,25 +5,27 @@ An external agent (Claude Code, or any MCP client) reads and mutates the live
 It gets everything a user clicking the UI can do, plus structured queries,
 component-level edits, and a live delta stream the UI itself does not expose.
 
-The agent never touches the engine directly. The engine only runs in the
-browser, so the agent speaks MCP to a small native bridge, which relays over a
-websocket to the page, which forwards onto the worker's existing `postMessage`
-path.
+The agent never touches the engine directly. The engine only runs in the web
+page, so the agent speaks MCP over local HTTP to the desktop shell, which
+relays over a websocket to the page in its webview, which forwards onto the
+worker's existing `postMessage` path. The bridge and the viewer are one
+process.
 
 ```
-Claude Code  --MCP stdio-->  nightshade-mcp (native bridge)
-                                   |  ws://127.0.0.1:8787
-                              Leptos page (relay)
-                                   |  postMessage
-                              wasm worker (Nightshade World + agent systems)
+Claude Code  --MCP http://127.0.0.1:8788/mcp-->  nightshade-viewer (desktop shell)
+                                                       |  ws://127.0.0.1:8787
+                                                  Leptos page (relay)
+                                                       |  postMessage
+                                                  wasm worker (Nightshade World + agent systems)
 ```
 
 ## How it works
 
 **The bridge holds no engine state.** The world lives in the worker. The bridge
-(`host/`) is a stdio MCP server in front of a websocket server: it turns each
-`tools/call` into an `AgentRequest`, sends it to the page, and waits for the
-matching `AgentResponse`. The page (`src/relay.rs`) is a thin websocket client
+(`desktop/src/agent.rs`) is an MCP endpoint over local HTTP in front of a
+websocket server, both inside the desktop process: it turns each `tools/call`
+into an `AgentRequest`, sends it to the page, and waits for the matching
+`AgentResponse`. The page (`src/relay.rs`) is a thin websocket client
 that hands requests to the worker and ships responses back. The worker
 (`worker/src/agent.rs`) is where requests actually meet the `World`.
 
@@ -229,44 +231,40 @@ plain `just run` / `just dist` build carries none of it: no relay websocket, no
 agent message types, no registry or agent systems in the worker. A deployed
 viewer never opens a localhost socket.
 
-The feature spans three crates and is wired so enabling it on the app and worker
-turns it on in `protocol` too:
+The feature spans four crates and is wired so enabling it anywhere turns it on
+in `protocol` too:
 
 - `protocol/agent` - the agent message types and their `Schema` derives.
 - `worker/agent` - the component registry, command apply, and delta collection.
 - the app's `agent` - the page's relay websocket (`src/relay.rs`).
+- `desktop/agent` - the in-process MCP endpoint and the websocket relay server
+  (`desktop/src/agent.rs`).
 
-The `host` bridge always enables `protocol/agent`; it *is* the agent and has no
-flag of its own.
-
-Build the agent-enabled worker and app **together**: mismatched features would
-desync the `protocol` enums between the two halves. The `*-agent` just recipes do
-this for you.
+Build the agent-enabled worker, app, and desktop shell **together**: mismatched
+features would desync the `protocol` enums between the halves. The `run-agent`
+just recipe does this for you.
 
 ## Run it
 
-1. Serve the viewer with the agent feature on (builds the worker and app with
-   `--features agent` and serves at http://127.0.0.1:8080):
+1. Run the viewer with the agent feature on (builds the worker, the app, and
+   the desktop shell with `--features agent` and opens the viewer window):
 
    ```
    just run-agent
    ```
 
-2. Build the bridge (its own workspace, so build it by manifest path):
+   The viewer binds the MCP endpoint at `http://127.0.0.1:8788/mcp` and the
+   page relay at `ws://127.0.0.1:8787` as it starts; the page in the webview
+   reconnects to the relay automatically.
+
+2. Register the endpoint with Claude Code (once):
 
    ```
-   cargo build --manifest-path host/Cargo.toml
+   claude mcp add --transport http nightshade-viewer http://127.0.0.1:8788/mcp
    ```
 
-3. Register the bridge with Claude Code (from this repo root):
-
-   ```
-   claude mcp add nightshade-viewer -- C:\Users\matth\code\nightshade-viewer\host\target\debug\nightshade-mcp.exe
-   ```
-
-   Claude Code spawns the bridge, which binds `ws://127.0.0.1:8787`. The page
-   reconnects automatically, so start order does not matter - open the tab and
-   the relay finds the bridge.
+   Claude Code connects whenever the agent-enabled viewer is running. For a
+   session started before the viewer, reconnect with `/mcp`.
 
 ## Example sessions
 

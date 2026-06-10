@@ -7,8 +7,31 @@ edition = "2024"
 name = "nightshade-viewer"
 path = "src/main.rs"
 
+[features]
+agent = [
+    "dep:protocol",
+    "dep:enum2schema",
+    "dep:tokio",
+    "dep:tokio-tungstenite",
+    "dep:futures-util",
+    "dep:serde",
+    "dep:serde_json",
+]
+
 [dependencies]
 wry = "0.55"
 winit = "0.30"
 rust-embed = "8"
 tiny_http = "0.12"
+protocol = { path = "../protocol", features = ["agent"], optional = true }
+enum2schema = { version = "0.1", optional = true }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "net",
+    "sync",
+    "time",
+], optional = true }
+tokio-tungstenite = { version = "0.24", optional = true }
+futures-util = { version = "0.3", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }

@@ -3,6 +3,9 @@
 //! from disk so a fresh `trunk build` shows up on relaunch; release builds
 //! embed the bundle into the executable.
 
+#[cfg(feature = "agent")]
+mod agent;
+
 use rust_embed::RustEmbed;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -115,6 +118,8 @@ fn main() {
         std::process::exit(1);
     }
     let port = serve_dist();
+    #[cfg(feature = "agent")]
+    agent::start();
     let event_loop = EventLoop::new().expect("failed to create event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
     let mut app = App {
