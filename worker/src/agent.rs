@@ -634,16 +634,32 @@ fn handle_command(
     }
 }
 
+/// Starts an agent glTF load. GLB and self-contained documents queue directly;
+/// a JSON glTF with external buffer or image URIs fetches those first
+/// (relative URIs resolve against the document URL) and queues the bundle.
 fn start_load(viewer: &mut Viewer, uri: &str, correlation_id: CorrelationId) {
     post(&WorkerMessage::Agent(AgentResponse::CommandProgress {
         correlation_id,
         stage: format!("fetching {uri}"),
     }));
-    let queue = viewer.viewer.resources.incoming.agent_loads.clone();
+    let loads = viewer.viewer.resources.incoming.agent_loads.clone();
+    let models = viewer.viewer.resources.incoming.agent_models.clone();
+    let document_url = uri.to_string();
     ehttp::fetch(ehttp::Request::get(uri), move |result| match result {
         Ok(response) if response.ok => {
-            if let Ok(mut guard) = queue.lock() {
-                guard.push((correlation_id, response.bytes));
+            let uris = external_resource_uris(&response.bytes);
+            if uris.is_empty() {
+                if let Ok(mut guard) = loads.lock() {
+                    guard.push((correlation_id, response.bytes));
+                }
+            } else {
+                fetch_external_resources(
+                    document_url,
+                    response.bytes,
+                    uris,
+                    models,
+                    correlation_id,
+                );
             }
         }
         Ok(response) => fail(
@@ -652,6 +668,160 @@ fn start_load(viewer: &mut Viewer, uri: &str, correlation_id: CorrelationId) {
         ),
         Err(error) => fail(correlation_id, &format!("fetch error: {error}")),
     });
+}
+
+/// The external (non data-URI) buffer and image URIs of a glTF document. GLB
+/// and self-contained documents return none.
+fn external_resource_uris(bytes: &[u8]) -> Vec<String> {
+    if bytes.starts_with(b"glTF") {
+        return Vec::new();
+    }
+    let Ok(document) = serde_json::from_slice::<Value>(bytes) else {
+        return Vec::new();
+    };
+    let mut uris = Vec::new();
+    for section in ["buffers", "images"] {
+        let Some(entries) = document.get(section).and_then(Value::as_array) else {
+            continue;
+        };
+        for entry in entries {
+            if let Some(uri) = entry.get("uri").and_then(Value::as_str)
+                && !uri.starts_with("data:")
+                && !uris.iter().any(|existing| existing == uri)
+            {
+                uris.push(uri.to_string());
+            }
+        }
+    }
+    uris
+}
+
+/// Fetches a document's external resources and queues the bundle once every
+/// fetch lands, keyed the way the importer looks resources up (the
+/// percent-decoded, slash-normalized URI). The first failed fetch fails the
+/// command.
+fn fetch_external_resources(
+    document_url: String,
+    gltf: Vec<u8>,
+    uris: Vec<String>,
+    queue: crate::ecs::AgentModelQueue,
+    correlation_id: CorrelationId,
+) {
+    use std::sync::{Arc, Mutex};
+    type Progress = (Option<Vec<u8>>, HashMap<String, Vec<u8>>, usize, bool);
+
+    let total = uris.len();
+    let progress: Arc<Mutex<Progress>> =
+        Arc::new(Mutex::new((Some(gltf), HashMap::new(), 0, false)));
+    for uri in uris {
+        let url = resolve_resource_url(&document_url, &uri);
+        let key = normalize_uri_key(&uri);
+        let progress = Arc::clone(&progress);
+        let queue = Arc::clone(&queue);
+        ehttp::fetch(ehttp::Request::get(&url), move |result| {
+            let bytes = result
+                .ok()
+                .filter(|response| response.ok)
+                .map(|response| response.bytes);
+            let Ok(mut guard) = progress.lock() else {
+                return;
+            };
+            if guard.3 {
+                return;
+            }
+            match bytes {
+                Some(bytes) => {
+                    guard.1.insert(key, bytes);
+                    guard.2 += 1;
+                }
+                None => {
+                    guard.3 = true;
+                    fail(correlation_id, &format!("failed to fetch resource '{url}'"));
+                    return;
+                }
+            }
+            if guard.2 == total {
+                let gltf = guard.0.take().unwrap_or_default();
+                let resources = std::mem::take(&mut guard.1);
+                if let Ok(mut models) = queue.lock() {
+                    models.push(crate::ecs::AgentModelLoad {
+                        correlation_id,
+                        gltf,
+                        resources,
+                    });
+                }
+            }
+        });
+    }
+}
+
+/// Resolves a glTF resource URI against the document URL: absolute URIs pass
+/// through, root-relative URIs join the document origin, and relative URIs
+/// join the document directory.
+fn resolve_resource_url(document_url: &str, uri: &str) -> String {
+    if uri.contains("://") {
+        return uri.to_string();
+    }
+    let trimmed = document_url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(document_url);
+    if let Some(path) = uri.strip_prefix('/') {
+        let origin_end = trimmed
+            .find("://")
+            .map(|scheme_end| scheme_end + 3)
+            .and_then(|host_start| {
+                trimmed[host_start..]
+                    .find('/')
+                    .map(|slash| host_start + slash)
+            })
+            .unwrap_or(trimmed.len());
+        return format!("{}/{}", &trimmed[..origin_end], path);
+    }
+    match trimmed.rfind('/') {
+        Some(last_slash) => format!("{}/{}", &trimmed[..last_slash], uri),
+        None => uri.to_string(),
+    }
+}
+
+/// Mirrors the importer's resource-map key: percent-decode, then collapse
+/// dot segments, empty segments, and backslashes.
+fn normalize_uri_key(uri: &str) -> String {
+    let decoded = percent_decode_uri(uri);
+    let normalized = decoded.replace('\\', "/");
+    let mut parts: Vec<&str> = Vec::new();
+    for piece in normalized.split('/') {
+        match piece {
+            "" | "." => continue,
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    parts.join("/")
+}
+
+fn percent_decode_uri(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && index + 2 < bytes.len()
+            && let (Some(high), Some(low)) = (
+                (bytes[index + 1] as char).to_digit(16),
+                (bytes[index + 2] as char).to_digit(16),
+            )
+        {
+            out.push((high * 16 + low) as u8);
+            index += 3;
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| input.to_string())
 }
 
 /// Acknowledges an additive agent load once the model has spawned, reporting the

@@ -42,6 +42,22 @@ pub fn spawn(viewer: &mut ViewerWorld, world: &mut World) {
         nightshade::render::wgpu::texture_cache::TextureUsage::Color,
         nightshade::render::wgpu::texture_cache::SamplerSettings::DEFAULT,
     );
+    // The engine evicts zero-reference texture-cache entries on every load
+    // drain and only glTF imports protect their names. Materials reference
+    // these by name without reference counting, so protect them the same way
+    // or any load (an HDRI, a model) evicts them for good.
+    for name in [
+        "checkerboard",
+        "gradient",
+        "uv_test",
+        "greybox_light",
+        "greybox_dark",
+    ] {
+        nightshade::render::wgpu::texture_cache::texture_cache_protect(
+            &mut world.resources.texture_cache,
+            name.to_string(),
+        );
+    }
 
     let sun = spawn_sun(world);
     if let Some(light) = world.core.get_light_mut(sun) {
