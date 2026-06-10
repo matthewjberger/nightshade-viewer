@@ -33,8 +33,12 @@ tailwind:
 build: worker install tailwind
     trunk build
 
+# Builds the web bundle and opens the viewer in a native webview window
+run: build
+    cargo run -p desktop
+
 # Builds the worker and stylesheet, then serves the app at http://127.0.0.1:8080
-run: worker install tailwind
+run-web: worker install tailwind
     trunk serve
 
 # Like `run`, but builds the worker and app with the external-agent feature so
@@ -50,14 +54,20 @@ serve:
 dist: worker install tailwind
     trunk build --release
 
+# Builds the standalone viewer executable with the web bundle embedded
+build-desktop: dist
+    cargo build --release -p desktop
+
 # Runs cargo check and a format check across the workspace
 check:
-    cargo check --workspace --target wasm32-unknown-unknown
+    cargo check -p protocol -p worker -p nightshade-viewer --target wasm32-unknown-unknown
+    cargo check -p desktop
     cargo fmt --all -- --check
 
 # Runs clippy across the workspace and denies warnings
 lint:
-    cargo clippy --workspace --target wasm32-unknown-unknown -- -D warnings
+    cargo clippy -p protocol -p worker -p nightshade-viewer --target wasm32-unknown-unknown -- -D warnings
+    cargo clippy -p desktop -- -D warnings
 
 # Formats the code
 format:

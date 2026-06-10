@@ -1,5 +1,5 @@
 [workspace]
-members = ["protocol", "worker"]
+members = ["desktop", "protocol", "worker"]
 resolver = "2"
 
 [package]

@@ -22,7 +22,7 @@ just init
 just run
 ```
 
-`just run` builds the worker, generates the stylesheet, and serves at http://127.0.0.1:8080. The worker compiles the whole engine, so the first build is large and the worker wasm is several megabytes even after wasm-opt. It needs a browser with WebGPU and OffscreenCanvas-in-workers support (Chromium 113+, Firefox 141+).
+`just run` builds the worker, generates the stylesheet, and opens the viewer in a native webview window. `just run-web` serves the same bundle at http://127.0.0.1:8080 instead; it needs a browser with WebGPU and OffscreenCanvas-in-workers support (Chromium 113+, Firefox 141+). The worker compiles the whole engine, so the first build is large and the worker wasm is several megabytes even after wasm-opt.
 
 ## Agent (MCP)
 
