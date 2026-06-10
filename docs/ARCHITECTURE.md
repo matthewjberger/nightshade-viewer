@@ -20,7 +20,7 @@ src/state.rs      grouped signals     worker/src/systems/*  camera, load, pickin
 
 ## Crates
 
-protocol holds the message and data types, the one place the wire is defined. worker is the wasm module: the engine World plus a ViewerWorld, a freecs world that holds the viewer's own state (selection, the loaded model, camera input, the browser fetch state), driven by free functions in worker/src/systems. The root crate is the Leptos UI. host is the native nightshade-mcp bridge that exposes the viewer to an external MCP agent, built only with the optional agent feature. Nightshade is the published crate with its default features.
+protocol holds the message and data types, the one place the wire is defined. worker is the wasm module: the engine World plus a ViewerWorld, a freecs world that holds the viewer's own state (selection, the loaded model, camera input, the browser fetch state), driven by free functions in worker/src/systems. The root crate is the Leptos UI. desktop is the native shell that hosts the web bundle in a webview window. host is the native nightshade-mcp bridge that exposes the viewer to an external MCP agent, built only with the optional agent feature. Nightshade is the published crate with its default features.
 
 ## The message protocol
 
@@ -44,6 +44,12 @@ After a load the worker walks the spawned entities from the root with query_desc
 
 Behind the optional agent feature, an external MCP agent can read and mutate the live world with the same access a user has plus structured queries and a delta stream. It is a fourth process: the agent speaks MCP to the native host bridge, which relays over a websocket to the page (src/relay.rs), which forwards onto the same worker postMessage path as the UI. The bridge holds no engine state; the world stays in the worker, where agent_apply (before transform propagation) and agent_collect (last in the frame) systems handle commands and diff the world into version-stamped delta batches. The Agent variant on ClientMessage and WorkerMessage carries the requests and responses. The whole surface compiles out by default, so a deployed build opens no localhost socket. See agent-mcp.md for the full design, tool list, and how to drive it.
 
+## The desktop shell
+
+The desktop crate runs the viewer as a standalone app without changing anything above. There is no second rendering path: the same wasm, worker, and Leptos bundle that a browser loads runs inside a wry webview (WebView2 on Windows, WebKit elsewhere, with WebGPU enabled through a browser flag on Windows). At startup a tiny_http server on a background thread serves the Trunk dist on an ephemeral 127.0.0.1 port, and a winit window hosts a webview pointed at it. Localhost is a secure context, so WebGPU and module workers behave exactly as they do in a browser tab, which is why the bundle is served over a port rather than loaded from a custom protocol. A navigation handler pins the webview to localhost.
+
+The bundle rides along via rust-embed. Debug builds read dist from disk at request time, so a fresh trunk build shows up on relaunch without recompiling the shell; release builds embed the files in the executable, so just build-desktop produces a single self-contained binary.
+
 ## Build
 
-just run builds the worker to wasm with wasm-bindgen and wasm-opt, generates the Tailwind stylesheet, and serves the bundle with Trunk. A push to main runs the same steps in .github/workflows/deploy.yml and publishes dist/ to GitHub Pages. just run-agent does the same with the agent feature on, for both the worker and the page.
+just run builds the worker to wasm with wasm-bindgen and wasm-opt, generates the Tailwind stylesheet, builds the bundle with Trunk, and opens it in a native webview window. just run-web serves the bundle at 127.0.0.1:8080 for a browser instead. A push to main runs the same steps in .github/workflows/deploy.yml and publishes dist/ to GitHub Pages. just run-agent serves the web build with the agent feature on, for both the worker and the page.
