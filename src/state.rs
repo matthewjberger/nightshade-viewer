@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use protocol::{
-    ClipInfo, EntityDetail, GizmoKind, KhronosEntry, ModelStats, PbrDebug, PolyhavenEntry,
-    SceneNode, ShadingMode, Tonemap,
+    ClipInfo, EntityDetail, GizmoKind, KhronosEntry, ModelStats, MorphInfo, PbrDebug,
+    PolyhavenEntry, SceneNode, ShadingMode, Tonemap,
 };
 
 /// Which asset browser overlay, if any, is open.
@@ -60,6 +60,7 @@ pub struct ViewerState {
     pub clips: RwSignal<Vec<ClipInfo>>,
     pub variants: RwSignal<Vec<String>>,
     pub active_variant: RwSignal<Option<String>>,
+    pub morphs: RwSignal<Vec<MorphInfo>>,
     pub anim_clip: RwSignal<Option<u32>>,
     pub anim_playing: RwSignal<bool>,
     pub anim_time: RwSignal<f32>,
@@ -70,6 +71,7 @@ pub struct ViewerState {
     pub pbr_debug: RwSignal<PbrDebug>,
     pub show_normals: RwSignal<bool>,
     pub show_bounds: RwSignal<bool>,
+    pub show_skeleton: RwSignal<bool>,
     pub show_sky: RwSignal<bool>,
     pub exposure: RwSignal<f32>,
     pub tonemap: RwSignal<Tonemap>,
@@ -107,6 +109,7 @@ impl ViewerState {
             clips: RwSignal::new(Vec::new()),
             variants: RwSignal::new(Vec::new()),
             active_variant: RwSignal::new(None),
+            morphs: RwSignal::new(Vec::new()),
             anim_clip: RwSignal::new(None),
             anim_playing: RwSignal::new(false),
             anim_time: RwSignal::new(0.0),
@@ -117,6 +120,7 @@ impl ViewerState {
             pbr_debug: RwSignal::new(PbrDebug::Off),
             show_normals: RwSignal::new(false),
             show_bounds: RwSignal::new(false),
+            show_skeleton: RwSignal::new(false),
             show_sky: RwSignal::new(true),
             exposure: RwSignal::new(1.0),
             tonemap: RwSignal::new(Tonemap::Aces),

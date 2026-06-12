@@ -119,6 +119,15 @@ pub struct ClipInfo {
     pub duration: f32,
 }
 
+/// One mesh's morph targets: the entity id, a display name, and the current
+/// weight per target.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct MorphInfo {
+    pub id: u32,
+    pub name: String,
+    pub weights: Vec<f32>,
+}
+
 /// Page to worker. Pixel quantities are physical surface pixels (CSS pixels
 /// times the device pixel ratio), origin at the canvas top-left.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -221,6 +230,16 @@ pub enum ClientMessage {
     /// Toggle the bounding-volume overlay.
     SetShowBounds {
         enabled: bool,
+    },
+    /// Toggle the skeleton overlay (joints drawn as lines).
+    SetShowSkeleton {
+        enabled: bool,
+    },
+    /// Set one morph target weight on the mesh entity with the given raw id.
+    SetMorphWeight {
+        id: u32,
+        index: u32,
+        weight: f32,
     },
     /// Set the exposure multiplier.
     SetExposure {
@@ -344,6 +363,7 @@ pub enum WorkerMessage {
         stats: ModelStats,
         clips: Vec<ClipInfo>,
         variants: Vec<String>,
+        morphs: Vec<MorphInfo>,
         exposure: f32,
     },
     /// Animation playhead, streamed while a clip plays.
@@ -352,6 +372,11 @@ pub enum WorkerMessage {
         duration: f32,
         playing: bool,
         clip: Option<u32>,
+    },
+    /// A mesh's morph weights, streamed when they change (animation or edits).
+    MorphWeights {
+        id: u32,
+        weights: Vec<f32>,
     },
     Scene {
         nodes: Vec<SceneNode>,

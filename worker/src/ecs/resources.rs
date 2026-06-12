@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use nightshade::prelude::Entity;
-use protocol::{ClipInfo, ModelStats};
+use protocol::{ClipInfo, ModelStats, MorphInfo};
 
 /// Camera requests from the page. Orbit, pan, and zoom now come from forwarded
 /// pointer input the engine reads directly, so only framing and the turntable
@@ -33,8 +33,17 @@ pub struct LoadReport {
     pub stats: ModelStats,
     pub clips: Vec<ClipInfo>,
     pub variants: Vec<String>,
+    pub morphs: Vec<MorphInfo>,
     pub exposure: f32,
     pub delay: u32,
+}
+
+/// The skeleton overlay: whether bones are drawn, and the lines entity that
+/// draws them once it has been spawned.
+#[derive(Default)]
+pub struct Skeleton {
+    pub enabled: bool,
+    pub entity: Option<Entity>,
 }
 
 /// Pending GPU pick plus the click-cycle state (repeated clicks on one spot

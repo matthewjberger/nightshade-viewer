@@ -165,6 +165,11 @@ fn render_tab(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                     state.show_bounds,
                     move |enabled| sendc(bridge, ClientMessage::SetShowBounds { enabled }),
                 )}
+                {toggle(
+                    "Skeleton",
+                    state.show_skeleton,
+                    move |enabled| sendc(bridge, ClientMessage::SetShowSkeleton { enabled }),
+                )}
             </div>
             <div class="space-y-2">
                 <div class="text-[11px] uppercase tracking-wider text-white/40">"Environment"</div>
@@ -191,6 +196,7 @@ fn render_tab(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 )}
             </div>
             {variant_section(bridge, state)}
+            {morph_section(bridge, state)}
         </div>
     }
 }
@@ -219,6 +225,85 @@ fn variant_section(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
                 </select>
             </div>
         </Show>
+    }
+}
+
+fn morph_section(bridge: BridgeSlot, state: ViewerState) -> impl IntoView {
+    view! {
+        <Show when=move || !state.morphs.get().is_empty() fallback=|| ()>
+            <div class="space-y-2">
+                <div class="text-[11px] uppercase tracking-wider text-white/40">"Morph targets"</div>
+                <For
+                    each=move || state.morphs.get()
+                    key=|morph| (morph.id, morph.weights.len())
+                    let:morph
+                >
+                    {
+                        let id = morph.id;
+                        let name = morph.name.clone();
+                        let count = morph.weights.len();
+                        view! {
+                            <div class="space-y-1">
+                                <div class="text-white/55 truncate">{name}</div>
+                                {(0..count)
+                                    .map(|index| morph_slider(bridge, state, id, index))
+                                    .collect_view()}
+                            </div>
+                        }
+                    }
+                </For>
+            </div>
+        </Show>
+    }
+}
+
+fn morph_slider(bridge: BridgeSlot, state: ViewerState, id: u32, index: usize) -> impl IntoView {
+    let value = move || {
+        state
+            .morphs
+            .get()
+            .iter()
+            .find(|morph| morph.id == id)
+            .and_then(|morph| morph.weights.get(index))
+            .copied()
+            .unwrap_or(0.0)
+    };
+    view! {
+        <div class="flex items-center gap-2">
+            <span class="w-16 text-white/50 shrink-0 truncate">{format!("Target {index}")}</span>
+            <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                prop:value=move || value().to_string()
+                on:input=move |event| {
+                    if let Ok(weight) = event_target_value(&event).parse::<f32>() {
+                        state
+                            .morphs
+                            .update(|morphs| {
+                                if let Some(morph) = morphs.iter_mut().find(|morph| morph.id == id)
+                                    && let Some(slot) = morph.weights.get_mut(index)
+                                {
+                                    *slot = weight;
+                                }
+                            });
+                        sendc(
+                            bridge,
+                            ClientMessage::SetMorphWeight {
+                                id,
+                                index: index as u32,
+                                weight,
+                            },
+                        );
+                    }
+                }
+                class="flex-1 accent-orange-400"
+            />
+            <span class="w-10 text-right text-white/60 tabular-nums">
+                {move || format!("{:.2}", value())}
+            </span>
+        </div>
     }
 }
 

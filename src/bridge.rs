@@ -60,11 +60,13 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
                 stats,
                 clips,
                 variants,
+                morphs,
                 exposure,
             } => {
                 state.stats.set(Some(stats));
                 state.clips.set(clips);
                 state.variants.set(variants);
+                state.morphs.set(morphs);
                 state.exposure.set(exposure);
                 state.active_variant.set(None);
                 state.anim_clip.set(None);
@@ -81,6 +83,13 @@ pub fn connect(offscreen: OffscreenCanvas, width: f32, height: f32, state: Viewe
                 state.anim_duration.set(duration);
                 state.anim_playing.set(playing);
                 state.anim_clip.set(clip);
+            }
+            WorkerMessage::MorphWeights { id, weights } => {
+                state.morphs.update(|morphs| {
+                    if let Some(morph) = morphs.iter_mut().find(|morph| morph.id == id) {
+                        morph.weights = weights;
+                    }
+                });
             }
             WorkerMessage::Scene { nodes } => state.scene.set(nodes),
             WorkerMessage::Selected { detail } => state.selected.set(detail),

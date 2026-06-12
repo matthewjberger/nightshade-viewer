@@ -27,6 +27,7 @@ use crate::state::Viewer;
 
 type AppSlot = Rc<RefCell<Option<App>>>;
 type AnimState = Rc<RefCell<Option<(f32, bool, Option<u32>)>>>;
+type MorphState = Rc<RefCell<HashMap<u32, Vec<f32>>>>;
 
 struct App {
     world: World,
@@ -237,6 +238,19 @@ pub(crate) fn apply_client_message(world: &mut World, viewer: &mut Viewer, messa
         ClientMessage::SetShowBounds { enabled } => {
             world.resources.debug_draw.show_bounding_volumes = enabled;
         }
+        ClientMessage::SetShowSkeleton { enabled } => {
+            viewer.viewer.resources.skeleton.enabled = enabled;
+        }
+        ClientMessage::SetMorphWeight { id, index, weight } => {
+            if let Some(entity) = world
+                .core
+                .query_entities(MORPH_WEIGHTS)
+                .find(|entity| entity.id == id)
+                && let Some(weights) = world.core.get_morph_weights_mut(entity)
+            {
+                weights.set_weight(index as usize, weight);
+            }
+        }
         ClientMessage::SetExposure { exposure } => {
             world.resources.render_settings.color_grading.exposure = exposure;
         }
@@ -314,6 +328,7 @@ fn start_render_loop(_scope: DedicatedWorkerGlobalScope, app_slot: AppSlot) {
     let last_push = Rc::new(RefCell::new(0.0_f64));
     let last_basis = Rc::new(RefCell::new(None::<[[f32; 3]; 3]>));
     let last_anim: AnimState = Rc::new(RefCell::new(None));
+    let last_morphs: MorphState = Rc::new(RefCell::new(HashMap::new()));
 
     spawn_animation_frame_loop(move || {
         if let Some(app) = app_slot.borrow_mut().as_mut() {
@@ -324,6 +339,7 @@ fn start_render_loop(_scope: DedicatedWorkerGlobalScope, app_slot: AppSlot) {
             if let Some(&root) = app.state.viewer.resources.model.roots.first() {
                 post_animation(&app.world, root, &last_anim);
             }
+            post_morphs(&app.world, &last_morphs);
             let scope: DedicatedWorkerGlobalScope = js_sys::global().unchecked_into();
             if let Some(performance) = scope.performance() {
                 let now = performance.now();
@@ -468,6 +484,34 @@ fn post_animation(world: &World, root: Entity, last: &AnimState) {
             playing: player.playing,
             clip,
         });
+    }
+}
+
+/// Posts each mesh's morph weights when they differ from the last posted set,
+/// so the page's sliders follow animation-driven weights.
+fn post_morphs(world: &World, last: &MorphState) {
+    let mut cache = last.borrow_mut();
+    for entity in world.core.query_entities(MORPH_WEIGHTS) {
+        let Some(weights) = world.core.get_morph_weights(entity) else {
+            continue;
+        };
+        let changed = cache
+            .get(&entity.id)
+            .map(|previous| {
+                previous.len() != weights.weights.len()
+                    || previous
+                        .iter()
+                        .zip(weights.weights.iter())
+                        .any(|(a, b)| (a - b).abs() > 0.001)
+            })
+            .unwrap_or(true);
+        if changed {
+            cache.insert(entity.id, weights.weights.clone());
+            post(&WorkerMessage::MorphWeights {
+                id: entity.id,
+                weights: weights.weights.clone(),
+            });
+        }
     }
 }
 

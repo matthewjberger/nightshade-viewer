@@ -28,6 +28,7 @@ impl State for Viewer {
             crate::agent::poll_agent_asset_lists(self);
         }
         systems::load::flush_report(&mut self.viewer, world);
+        systems::skeleton::update(&mut self.viewer, world);
         systems::picking::apply(&mut self.viewer, world);
         systems::scene::sync(&mut self.viewer, world);
     }

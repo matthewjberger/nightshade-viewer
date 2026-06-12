@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::ecs::{LoadReport, PendingAsset, ViewerWorld};
 use nightshade::ecs::prefab::GltfLoadResult;
 use nightshade::prelude::*;
-use protocol::{ClipInfo, ModelStats, WorkerMessage};
+use protocol::{ClipInfo, ModelStats, MorphInfo, WorkerMessage};
 
 const DEFAULT_MODEL: &[u8] = include_bytes!("../../assets/DamagedHelmet.glb");
 
@@ -261,10 +261,12 @@ fn spawn_result(viewer: &mut ViewerWorld, world: &mut World, mut result: GltfLoa
         .first()
         .map(|prefab| prefab.material_variants.clone())
         .unwrap_or_default();
+    let morphs = morph_meshes(world, &viewer.resources.model.entities);
     viewer.resources.model.report = Some(LoadReport {
         stats,
         clips,
         variants,
+        morphs,
         exposure: result.suggested_exposure,
         delay: 1,
     });
@@ -295,8 +297,30 @@ pub fn flush_report(viewer: &mut ViewerWorld, world: &World) {
         stats: report.stats,
         clips: report.clips,
         variants: report.variants,
+        morphs: report.morphs,
         exposure: report.exposure,
     });
+}
+
+/// Lists the spawned meshes that carry morph targets, with their current weights.
+fn morph_meshes(world: &World, entities: &[Entity]) -> Vec<MorphInfo> {
+    entities
+        .iter()
+        .filter_map(|&entity| {
+            let weights = world.core.get_morph_weights(entity)?;
+            let name = world
+                .core
+                .get_name(entity)
+                .map(|name| name.0.clone())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| weights.mesh_name.clone());
+            Some(MorphInfo {
+                id: entity.id,
+                name,
+                weights: weights.weights.clone(),
+            })
+        })
+        .collect()
 }
 
 /// Orders the spawned set parent-before-child (a hierarchy walk from each root),
