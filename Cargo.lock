@@ -1376,19 +1376,20 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
 name = "enum2schema"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baf9316773ad202acde3c5f31763b667c8c8cb52cdc83f686b9061d267bb0e34"
+checksum = "11d325a574526ab9a609ee97c22e68eee0a6937f408f079dee6a932ad2ae5fee"
 dependencies = [
  "enum2schema_derive",
+ "nalgebra-glm",
  "serde_json",
 ]
 
 [[package]]
 name = "enum2schema_derive"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ea6143ad3038c3861deccbc3c71a8e74fd5551ba482b7ef2a9e1aa73dae3d60"
+checksum = "235483388c5dad7c782c3afffa9b2b70e23bf1bc9dca5d399c14270319380427"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3177,9 +3178,9 @@ checksum = "60993920e071b0c9b66f14e2b32740a4e27ffc82854dcd72035887f336a09a28"
 
 [[package]]
 name = "nightshade"
-version = "0.33.0"
+version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82ddabeb96949af839843d3d96e19749901e0cb404f11a1751f6fde2c693d141"
+checksum = "028b7bbf87631babe13f1cccbb7940e0e19f4bb2840d7f5a3ae72f5d31489582"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -4893,6 +4894,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5841,6 +5848,7 @@ dependencies = [
  "getrandom 0.4.2",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 
